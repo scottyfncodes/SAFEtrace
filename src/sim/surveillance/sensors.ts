@@ -1,5 +1,5 @@
 /** Sensor state and observation generation. */
-import { type Vec2, angleDelta, clamp01, dist, remap, wrapAngle } from '../../core/math';
+import { angleDelta, clamp01, dist, remap, wrapAngle } from '../../core/math';
 import type { World } from '../world';
 import type { SensorData } from '../worldTypes';
 import type { Observation, Subject } from './types';
@@ -132,20 +132,4 @@ export function observe(
     identityConfidence,
     attributedIdentity: subject.identity,
   };
-}
-
-/** Coverage sample used by the player-facing "is this cell watched" query. */
-export function coverageAt(sensors: Sensor[], world: World, p: Vec2): number {
-  let cov = 0;
-  for (const s of sensors) {
-    if (!sensorActive(s)) continue;
-    const d = s.data;
-    const dd = dist(d.pos, p);
-    if (dd > d.range) continue;
-    const bearing = Math.atan2(p.y - d.pos.y, p.x - d.pos.x);
-    if (Math.abs(angleDelta(s.facing, bearing)) > halfFov(s)) continue;
-    if (world.blocked(d.pos, p, d.height)) continue;
-    cov += remap(dd, 0, d.range, 1, 0.3);
-  }
-  return cov;
 }

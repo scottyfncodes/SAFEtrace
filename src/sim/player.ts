@@ -5,7 +5,7 @@
  * to a spectator as good, purely from how they move down a street.
  */
 import {
-  type Vec2, TAU, angleOf, clamp, clamp01, damp, dot, fromAngle, len,
+  type Vec2, angleOf, clamp, clamp01, damp, dot, fromAngle, len,
   norm, remap, wrapAngle,
 } from '../core/math';
 import type { Intent } from '../core/input';
@@ -37,6 +37,8 @@ export const TUNE = {
   flowRise: 0.34,
   flowFall: 0.9,
   landingToleranceDeg: 42,
+  /** How long an early press is remembered. Two thirds of a push cycle. */
+  inputBuffer: 0.28,
 };
 
 export interface PlayerState {
@@ -62,6 +64,13 @@ export interface PlayerState {
   /** Metres travelled; used only for telemetry and story pacing. */
   odometer: number;
   lastSurface: string;
+  /**
+   * An ollie asked for slightly too early is remembered, not thrown away.
+   * Without this, pressing ollie a few frames before landing does nothing,
+   * which reads as the control being broken rather than the player being early.
+   */
+  ollieBuffer: number;
+  pushBuffer: number;
   /** Rendering hooks. */
   landedThisTick: boolean;
   bailedThisTick: boolean;
@@ -89,6 +98,8 @@ export function makePlayer(spawn: Vec2): PlayerState {
     aiming: false,
     draw: 0,
     odometer: 0,
+    ollieBuffer: 0,
+    pushBuffer: 0,
     lastSurface: 'asphalt',
     landedThisTick: false,
     bailedThisTick: false,
@@ -108,6 +119,9 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
 
   if (p.stance === 'BAIL') {
     p.bailTimer -= dt;
+    // A bail costs speed and time, not agency. Leaving the player with no
+    // steering at all reads as the game having stopped responding.
+    p.heading = wrapAngle(p.heading + intent.steer * 1.6 * dt);
     p.vel.x = damp(p.vel.x, 0, 0.12, dt);
     p.vel.y = damp(p.vel.y, 0, 0.12, dt);
     integrate(p, world, dt);
@@ -153,7 +167,8 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   // --- push -------------------------------------------------------------
   p.pushCooldown = Math.max(0, p.pushCooldown - dt);
   p.pushTimer = Math.max(0, p.pushTimer - dt);
-  if (intent.pushPressed && p.pushCooldown <= 0 && p.stance === 'ROLL') {
+  p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
+  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL') {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
     const room = clamp01((cap - speed) / cap);
     const imp = TUNE.pushImpulse * room;
@@ -163,21 +178,40 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
       p.vel.y += h.y;
       p.pushCooldown = TUNE.pushCooldown;
       p.pushTimer = TUNE.pushDuration;
+      p.pushBuffer = 0;
       p.pushedThisTick = true;
     }
   }
 
   // --- ollie ------------------------------------------------------------
+  if (intent.olliePressed) p.ollieBuffer = TUNE.inputBuffer;
+  else p.ollieBuffer = Math.max(0, p.ollieBuffer - dt);
+
   if (p.stance !== 'AIR') {
-    if (intent.olliePressed) p.ollieLoad = 0;
-    if (p.ollieLoad >= 0 && intent.ollieHeld) p.ollieLoad = Math.min(TUNE.ollieMaxLoad, p.ollieLoad + dt);
-    if (p.ollieLoad >= 0 && (intent.ollieReleased || p.ollieLoad >= TUNE.ollieMaxLoad)) {
-      const charge = clamp01(p.ollieLoad / TUNE.ollieMaxLoad);
-      p.vz = TUNE.ollieImpulse * (0.7 + charge * 0.3);
+    const pop = (charge: number) => {
+      p.vz = TUNE.ollieImpulse * (0.7 + clamp01(charge) * 0.3);
       p.z = 0.001;
       p.stance = 'AIR';
       p.ollieLoad = -1;
+      p.ollieBuffer = 0;
       p.poppedThisTick = true;
+    };
+
+    // Still holding: load the pop, and let go when they do.
+    if (p.ollieBuffer > 0 && p.ollieLoad < 0 && intent.ollieHeld) {
+      p.ollieLoad = 0;
+      p.ollieBuffer = 0;
+    }
+    if (p.ollieLoad >= 0 && intent.ollieHeld) {
+      p.ollieLoad = Math.min(TUNE.ollieMaxLoad, p.ollieLoad + dt);
+    }
+
+    if (p.ollieLoad >= 0 && (intent.ollieReleased || p.ollieLoad >= TUNE.ollieMaxLoad)) {
+      pop(p.ollieLoad / TUNE.ollieMaxLoad);
+    } else if (p.ollieBuffer > 0 && p.ollieLoad < 0) {
+      // Asked for and released while there was no ground to push against.
+      // Honour it the instant there is, rather than making them ask twice.
+      pop(0.75);
     }
   }
 
@@ -320,15 +354,15 @@ function updateFlow(p: PlayerState, intent: Intent, dt: number, cap: number): vo
   }
 }
 
-/** Heading of travel, falling back to board heading when stationary. */
-export function travelAngle(p: PlayerState): number {
-  return p.speed > 0.4 ? angleOf(p.vel) : p.heading;
-}
-
-/** Aim sway: high speed hurts, high flow helps. Skill is rewarded twice. */
+/**
+ * Aim sway, in radians.
+ *
+ * Speed hurts and flow helps, so a player who is skating well is *more*
+ * accurate at speed than one who is merely fast. Skill is rewarded twice, and
+ * the reward points at the same behaviour the surveillance model finds hardest
+ * to predict.
+ */
 export function aimSway(p: PlayerState): number {
   const speedTerm = remap(p.speed, 0, maxSpeedFor(p), 0, 0.085);
   return clamp(speedTerm * (1 - p.flow * 0.65), 0, 0.09);
 }
-
-export const TAU_CONST = TAU;

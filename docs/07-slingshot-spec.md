@@ -44,6 +44,16 @@ That last row is a design statement. The player character will not shoot a
 person, and the input is silently declined rather than punished, because
 explaining it would be preachy.
 
+**Built in the slice:** camera lens, housing and PTZ motor; junction box; trash
+can, sign, cone and hydrant as noise events; car alarm; drone rotor; and the
+refusal to target a person.
+
+**Specified but not built:** streetlight darkness, sprinkler valves and hanging
+cables. The sensor lighting term they would drive exists and is live
+(`Sensor.light`), but nothing writes to it yet — these belong with the night
+pass rather than with the slice, and are listed in
+`docs/18-phase-8-readiness.md` rather than pretended into existence here.
+
 ## 4. Noise events are the heart of it
 
 The most powerful use of the slingshot is not breaking cameras. It is **making a

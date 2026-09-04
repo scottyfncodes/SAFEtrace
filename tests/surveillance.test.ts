@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeSim, place, skate, step } from './harness';
+import { emptyIntent } from '../src/core/input';
+import { TICK_DT } from '../src/core/loop';
 import { Rng } from '../src/core/rng';
 import { makeSensor, observe } from '../src/sim/surveillance/sensors';
 import { fuse, makeTrack } from '../src/sim/surveillance/fusion';
@@ -330,5 +332,110 @@ describe('sensor cone geometry', () => {
     const inside = subject({ pos: { x: 10 * Math.cos(29 * DEG) + 1000, y: 10 * Math.sin(29 * DEG) } });
     void world; void inside; void sensor;
     expect(sensor.data.fov).toBeCloseTo(60 * DEG, 6);
+  });
+});
+
+describe('what it costs to look', () => {
+  /**
+   * Seeing the machine comes at the expense of acting normally. This lived only
+   * in the touch layer, which meant the rule did not exist on a keyboard.
+   */
+  const looking = () => {
+    const i = emptyIntent();
+    i.vision = true;
+    i.push = true;
+    i.pushPressed = true;
+    i.aim = true;
+    i.fire = true;
+    i.firePressed = true;
+    i.olliePressed = true;
+    i.ollieReleased = true;
+    i.steer = 1;
+    i.brake = true;
+    return i;
+  };
+
+  it('will not let the player push, aim, or ollie while VISION is held', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 6, y: 0 });
+    sim.unlockVision();
+    const before = sim.player.bearings;
+    for (let i = 0; i < 90; i++) sim.step(TICK_DT, looking(), { x: 200, y: 215 });
+
+    expect(sim.player.aiming).toBe(false);
+    expect(sim.player.bearings).toBe(before);
+    expect(sim.projectiles.length).toBe(0);
+    expect(sim.player.stance).not.toBe('AIR');
+  });
+
+  it('still lets the player hold their line and stop, so looking is not a crash', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 8, y: 0 });
+    sim.unlockVision();
+    const heading = sim.player.heading;
+    for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
+    expect(sim.player.heading).not.toBe(heading);
+    expect(sim.visionActive).toBe(true);
+  });
+
+  it('applies the same rule whatever the device, because the device is not asked', () => {
+    // The intent is identical; only the simulation decides.
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 });
+    sim.unlockVision();
+    const i = looking();
+    sim.step(TICK_DT, i, null);
+    // The caller's intent object is not mutated: suppression is internal.
+    expect(i.push).toBe(true);
+    expect(sim.player.aiming).toBe(false);
+  });
+
+  it('drops an interference in progress the moment the player looks away from it', () => {
+    const sim = makeSim();
+    const node = sim.network.get('CM-207')!;
+    place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
+    step(sim, 0.1);
+    sim.unlockVision();
+    sim.startHack('LOOP', 'CM-207');
+    expect(sim.hack).not.toBeNull();
+    sim.step(TICK_DT, looking(), null);
+    expect(sim.hack).toBeNull();
+  });
+});
+
+describe('records the player can reach', () => {
+  it('cannot hold a service before an edge has been followed to it', () => {
+    const sim = makeSim();
+    sim.selectNode('SVC-VISION');
+    expect(sim.selectedNodeId).toBeNull();
+  });
+
+  it('lets a traced service be read from anywhere, because a record has no place', () => {
+    const sim = makeSim();
+    const node = sim.network.get('CM-207')!;
+    place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
+    step(sim, 0.1);
+    sim.applyHack('TRACE', 'CM-207');
+
+    expect(sim.reachableServices().map((n) => n.id).sort())
+      .toEqual(['SVC-PREDICT', 'SVC-VISION']);
+
+    // Skate to the far side of town; the record is still readable.
+    place(sim, { x: 300, y: 442 });
+    step(sim, 0.2);
+    sim.selectNode('SVC-VISION');
+    expect(sim.focusNode?.id).toBe('SVC-VISION');
+    expect(sim.focusNode?.records?.length).toBeGreaterThan(0);
+  });
+
+  it('holds the six records the investigation is written around', () => {
+    const sim = makeSim();
+    const joined = (id: string) => (sim.network.get(id)!.records ?? []).join(' | ');
+    expect(joined('SVC-VISION')).toMatch(/ENROLLED MINORS/);
+    expect(joined('SVC-VISION')).toMatch(/CONSENT BASIS/);
+    expect(joined('SVC-VISION')).toMatch(/THRESHOLD/);
+    expect(joined('SVC-PREDICT')).toMatch(/ASSOCIATION IS NOT AN ACCUSATION/);
+    expect(joined('SVC-RECORD')).toMatch(/RETENTION: INDEFINITE/);
+    expect(joined('SVC-RECORD')).toMatch(/RECORD IMMUTABLE/);
   });
 });

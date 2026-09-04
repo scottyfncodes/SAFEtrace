@@ -88,22 +88,6 @@ export class Network {
     return seg.nodeIds.map((id) => this.nodes.get(id)).filter((n): n is NetworkNode => !!n);
   }
 
-  /** Uplink loss degrades a whole segment. Rarely correct, always available. */
-  applyUplinkLoss(uplinkId: string, untilTick: number): NetworkNode[] {
-    const affected: NetworkNode[] = [];
-    for (const seg of this.segments.values()) {
-      if (seg.uplinkId !== uplinkId) continue;
-      for (const n of this.segmentNodes(seg.id)) {
-        if (n.state === 'NOMINAL') {
-          n.state = 'DEGRADED';
-          n.stateUntil = untilTick;
-          affected.push(n);
-        }
-      }
-    }
-    return affected;
-  }
-
   update(tick: number): NetworkNode[] {
     const expired: NetworkNode[] = [];
     for (const n of this.nodes.values()) {

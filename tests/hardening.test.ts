@@ -1,0 +1,217 @@
+import { describe, expect, it } from 'vitest';
+import { makeSim, place } from './harness';
+import { emptyIntent } from '../src/core/input';
+import { TICK_DT } from '../src/core/loop';
+import { buildBellhaven } from '../src/content/bellhaven';
+import { aimSway, TUNE } from '../src/sim/player';
+import { StoryDirector } from '../src/content/story';
+import type { Sim } from '../src/sim/sim';
+
+/**
+ * The story director needs a host. These stand in for the parts of the game
+ * that draw things, so beats can be exercised headlessly.
+ */
+function directorFor(sim: Sim) {
+  const said: string[] = [];
+  const director = new StoryDirector({
+    sim,
+    hud: { say: (lines: string[]) => said.push(lines.join(' ')) } as never,
+    audio: { motif: () => {}, peelIn: () => {} } as never,
+    renderer: { kick: () => {} } as never,
+    playReprise: () => {},
+    hint: { vision: 'HOLD Q', inspect: 'PRESS E' },
+  });
+  return { director, said };
+}
+
+describe('the story runs on simulation time', () => {
+  it('schedules on ticks, so a beat cannot drift away from the world', () => {
+    const sim = makeSim();
+    const { director, said } = directorFor(sim);
+    let fired = 0;
+    director.ctx.after(2, () => { fired++; });
+    expect(director.pending).toBe(1);
+
+    // Nothing happens until the simulation has actually advanced two seconds.
+    for (let i = 0; i < 119; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
+    expect(fired).toBe(0);
+    sim.step(TICK_DT, emptyIntent(), null); director.update();
+    expect(fired).toBe(1);
+    expect(director.pending).toBe(0);
+    void said;
+  });
+
+  it('fires queued work in order, whatever order it was scheduled in', () => {
+    const sim = makeSim();
+    const { director } = directorFor(sim);
+    const seen: string[] = [];
+    director.ctx.after(3, () => seen.push('late'));
+    director.ctx.after(1, () => seen.push('early'));
+    for (let i = 0; i < 200; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
+    expect(seen).toEqual(['early', 'late']);
+  });
+
+  it('reaches the false positive identically from the same seed', () => {
+    const run = () => {
+      const sim = makeSim(4242);
+      const { director } = directorFor(sim);
+      const beats: string[] = [];
+      sim.bus.on('story:beat', (b) => beats.push(b.id));
+      place(sim, { x: 196, y: 428 });
+      for (let i = 0; i < 60 * 70; i++) {
+        sim.step(TICK_DT, emptyIntent(), null);
+        director.update();
+      }
+      return { beats, identity: sim.incidents[0]?.associated[0] };
+    };
+    const a = run();
+    const b = run();
+    expect(a.beats).toEqual(b.beats);
+    expect(a.identity).toBe('ARAYA, DEVON M.');
+    expect(a.beats).toContain('the-match');
+    expect(a.beats).toContain('devon-stopped');
+  });
+
+  it('does not schedule story work on any wall clock', () => {
+    const src = String(StoryDirector);
+    expect(src).not.toMatch(/setTimeout|setInterval|Date\.now|performance\.now/);
+  });
+});
+
+describe('skating responds when the player is early', () => {
+  it('remembers an ollie asked for while there was no ground to push against', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 9, y: 0 });
+
+    const flick = () => { const i = emptyIntent(); i.olliePressed = true; i.ollieReleased = true; return i; };
+    sim.step(TICK_DT, flick(), null);
+    expect(sim.player.stance).toBe('AIR');
+
+    // Ask again mid-air, then simply wait. The press must survive the landing.
+    let asked = false;
+    let poppedAgain = false;
+    for (let i = 0; i < 60; i++) {
+      const airborne = sim.player.stance === 'AIR';
+      // Ask once, late enough that the board is still off the ground.
+      if (airborne && !asked && sim.player.vz < 0) { sim.step(TICK_DT, flick(), null); asked = true; continue; }
+      sim.step(TICK_DT, emptyIntent(), null);
+      if (asked && sim.player.poppedThisTick) { poppedAgain = true; break; }
+    }
+    expect(asked).toBe(true);
+    expect(poppedAgain).toBe(true);
+  });
+
+  it('forgets a press that was far too early, so ollies are not queued up', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 9, y: 0 });
+    const flick = () => { const i = emptyIntent(); i.olliePressed = true; i.ollieReleased = true; return i; };
+    sim.step(TICK_DT, flick(), null);
+    expect(sim.player.stance).toBe('AIR');
+    sim.step(TICK_DT, flick(), null);
+
+    // Wait out the buffer entirely while still airborne.
+    for (let i = 0; i < 120 && sim.player.stance === 'AIR'; i++) sim.step(TICK_DT, emptyIntent(), null);
+    let popped = false;
+    for (let i = 0; i < 30; i++) {
+      sim.step(TICK_DT, emptyIntent(), null);
+      if (sim.player.poppedThisTick) popped = true;
+    }
+    expect(popped).toBe(false);
+  });
+
+  it('holds an early press for a bounded time, not forever', () => {
+    expect(TUNE.inputBuffer).toBeGreaterThan(0.15);
+    expect(TUNE.inputBuffer).toBeLessThan(TUNE.pushCooldown);
+  });
+
+  it('leaves the player steering through a bail', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 10, y: 0 });
+    sim.player.stance = 'BAIL';
+    sim.player.bailTimer = TUNE.bailTime;
+    const heading = sim.player.heading;
+    const steer = () => { const i = emptyIntent(); i.steer = 1; return i; };
+    for (let i = 0; i < 30; i++) sim.step(TICK_DT, steer(), null);
+    expect(sim.player.stance).toBe('BAIL');
+    expect(sim.player.heading).not.toBe(heading);
+  });
+});
+
+describe('skating well is rewarded twice', () => {
+  it('makes a flowing player more accurate at speed than a merely fast one', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 10, y: 0 });
+    sim.player.flow = 0;
+    const sloppy = aimSway(sim.player);
+    sim.player.flow = 1;
+    const flowing = aimSway(sim.player);
+    expect(sloppy).toBeGreaterThan(flowing);
+
+    // And standing still is steadiest of all.
+    place(sim, { x: 155, y: 215 }, { x: 0, y: 0 });
+    sim.player.flow = 0;
+    expect(aimSway(sim.player)).toBeLessThan(sloppy);
+  });
+
+  it('reports the same sway to the reticle that it applies to the shot', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 215 }, { x: 8, y: 0 });
+    expect(sim.aim.sway).toBe(aimSway(sim.player));
+  });
+});
+
+describe('the town is already watched, and stays exactly as watched', () => {
+  /**
+   * The thesis in one assertion: surveillance does not escalate by inventory.
+   * The camera count is fixed at construction and never grows, whatever the
+   * player does or how far the story runs.
+   */
+  it('never adds a sensor, a drone, or a patrol during play', () => {
+    const sim = makeSim();
+    const { director } = directorFor(sim);
+    const before = { sensors: sim.sensors.length, drones: sim.drones.length, patrols: sim.patrols.length };
+
+    place(sim, { x: 196, y: 428 });
+    for (let i = 0; i < 60 * 80; i++) {
+      const intent = emptyIntent();
+      intent.steer = Math.sin(i / 40);
+      intent.push = true;
+      intent.pushPressed = i % 30 === 0;
+      sim.step(TICK_DT, intent, null);
+      director.update();
+    }
+
+    expect(sim.sensors.length).toBe(before.sensors);
+    expect(sim.drones.length).toBe(before.drones);
+    expect(sim.patrols.length).toBe(before.patrols);
+    // And the escalation actually happened, so this is not a vacuous run.
+    expect(sim.incidents.length).toBeGreaterThan(0);
+  });
+
+  it('authors the whole surveillance network up front, in content', () => {
+    const a = buildBellhaven();
+    const b = buildBellhaven();
+    expect(a.sensors.length).toBe(b.sensors.length);
+    expect(a.sensors.length).toBeGreaterThanOrEqual(25);
+    // Nothing in the world data is act-gated or unlocked later.
+    const acts = JSON.stringify(a).match(/"act"|"unlockedAt"|"phase"/g);
+    expect(acts).toBeNull();
+  });
+});
+
+describe('simulation cost has headroom for more town', () => {
+  it('stays well inside a frame at several times the current scale', () => {
+    const sim = makeSim();
+    const base = [...sim.sensors];
+    for (let m = 1; m < 4; m++) {
+      for (const s of base) {
+        sim.sensors.push({ ...s, data: { ...s.data, id: `${s.data.id}-x${m}` } });
+      }
+    }
+    const t0 = performance.now();
+    for (let i = 0; i < 300; i++) sim.step(TICK_DT, emptyIntent(), null);
+    const msPerTick = (performance.now() - t0) / 300;
+    // A generous ceiling: this is a regression guard, not a benchmark.
+    expect(msPerTick).toBeLessThan(6);
+  });
+});

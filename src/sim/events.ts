@@ -16,6 +16,8 @@ export interface SafetraceMessage {
 export interface SimEvents extends Record<string, unknown> {
   'safetrace:message': SafetraceMessage;
   'sensor:offline': { sensorId: string; label: string };
+  /** A camera has just acquired the player, close enough and slow enough to hear. */
+  'sensor:noticed': { sensorId: string; pos: Vec2 };
   'sensor:misaligned': { sensorId: string; label: string };
   'evidence:created': { evidence: Evidence };
   'evidence:resolved': { evidence: Evidence; linked: boolean; candidateCount: number };

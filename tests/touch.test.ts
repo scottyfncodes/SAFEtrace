@@ -279,14 +279,13 @@ describe('vision', () => {
     expect(i.firePressed).toBe(false);
   });
 
-  it('suppresses pushing, but leaves steering so the player does not crash', () => {
+  it('keeps reporting the thumbs; what looking costs is the simulation to decide', () => {
     drag(engine, 1, [PAD, { x: PAD.x + 40, y: PAD.y - 40 }]);
     expect(engine.sample().push).toBe(true);
     engine.handle('down', at(ACTION, 2, clock));
     engine.handle('down', at({ x: ACTION.x + 40, y: ACTION.y }, 3, clock));
     const i = engine.sample();
     expect(i.vision).toBe(true);
-    expect(i.push).toBe(false);
     expect(Math.abs(i.steer)).toBeGreaterThan(0);
   });
 

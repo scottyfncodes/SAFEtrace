@@ -21,6 +21,7 @@ import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
 import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
+import { HINTS } from './content/copy';
 import { dist } from './core/math';
 
 /** How close the player must be to reach into a node, in metres. */
@@ -70,6 +71,7 @@ class Game {
       audio: this.audio,
       renderer: this.renderer,
       playReprise: () => this.playReprise(),
+      hint: this.touchPrimary ? HINTS.touch : HINTS.keyboard,
     });
 
     // Touch is another adapter, not a different game. Keyboard and mouse stay
@@ -261,6 +263,7 @@ class Game {
       // routed to intercept you. It is never altered.
       this.audio.motif(register === 'SYSTEM' ? 0.5 : 0.35);
     });
+    bus.on('sensor:noticed', () => this.audio.servo());
     bus.on('hack:started', () => this.audio.hackTick());
     bus.on('hack:completed', () => this.audio.hackDone());
     bus.on('drone:destabilised', () => { this.audio.impactMetal(); this.renderer.kick(0.3); });

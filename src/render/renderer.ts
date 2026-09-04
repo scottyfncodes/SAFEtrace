@@ -441,10 +441,12 @@ export class Renderer {
   private drawAimAid(ctx: CanvasRenderingContext2D): void {
     const p = this.sim.player;
     if (!p.aiming) return;
-    const { angle, pitch } = this.sim.aim;
+    const { angle, pitch, sway } = this.sim.aim;
     const speed = 18 + p.draw * 16;
     const arc = predictArc(p.pos, angle, pitch, speed);
-    const conf = clamp01(p.draw);
+    // Draw fills the reticle in; sway opens it back up. What the player sees is
+    // the spread the projectile will actually be fired into.
+    const conf = clamp01(p.draw) * (1 - clamp01(sway / 0.09) * 0.55);
 
     ctx.save();
     ctx.setLineDash([4, 5]);

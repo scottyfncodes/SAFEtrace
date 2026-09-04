@@ -5,7 +5,7 @@
  * a real outcome of the honest attribution rule below, which is why the story
  * beat is protected by a regression test.
  */
-import { type Vec2, clamp01, dist, lerpV } from '../../core/math';
+import { clamp01, lerpV } from '../../core/math';
 import type { Rng } from '../../core/rng';
 import type { Observation, Subject, Track } from './types';
 
@@ -134,20 +134,4 @@ function pushHistory(track: Track, subject: Subject, tick: number, _quality: num
     offRoad: 0,
   });
   if (track.history.length > HISTORY_LENGTH / 4) track.history.shift();
-}
-
-/** How far the system's estimate is from the truth, in metres. */
-export const estimateError = (track: Track, subject: Subject): number =>
-  dist(track.estimate, subject.pos);
-
-/** Is SAFEtrace currently holding this subject? */
-export const isTracked = (track: Track): boolean => track.confidence > 0.28;
-
-export function displacementOver(track: Track, ticks: number, tick: number): number {
-  const cutoff = tick - ticks;
-  let oldest: Vec2 | null = null;
-  for (const s of track.history) { if (s.tick >= cutoff) { oldest = s.pos; break; } }
-  if (!oldest) return Infinity;
-  const latest = track.history[track.history.length - 1];
-  return latest ? dist(oldest, latest.pos) : Infinity;
 }

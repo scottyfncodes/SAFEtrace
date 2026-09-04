@@ -21,6 +21,9 @@ export function place(sim: Sim, p: Vec2, vel: Vec2 = { x: 0, y: 0 }): void {
   sim.player.pos = { x: p.x, y: p.y };
   sim.player.vel = { x: vel.x, y: vel.y };
   sim.player.speed = Math.hypot(vel.x, vel.y);
+  // Point the board where it is travelling. Without this the next landing is a
+  // bail, because the board is sideways to the direction of travel.
+  if (sim.player.speed > 0.1) sim.player.heading = Math.atan2(vel.y, vel.x);
   sim.playerSubject.pos = sim.player.pos;
   sim.playerSubject.vel = sim.player.vel;
   sim.playerSubject.speed = sim.player.speed;

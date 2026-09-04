@@ -302,14 +302,12 @@ export class TouchEngine {
       this.pendingOllie = false;
     }
 
-    // Seeing the machine costs you the ability to act on it.
+    // The second finger ends the aim gesture — that is gesture disambiguation,
+    // not a rule. What holding VISION costs the player is decided once, in the
+    // simulation, so it cannot drift between input devices.
     if (vision) {
       i.vision = true;
-      i.push = false;
-      i.pushPressed = false;
       i.aim = false;
-      i.olliePressed = false;
-      i.ollieReleased = false;
     } else {
       const action = this.actionTrack;
       if (action) {

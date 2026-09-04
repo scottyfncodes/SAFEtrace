@@ -15,7 +15,10 @@ per-act and never by adding hardware. The dispatch ladder is fully present in
 minute one; a player who behaves outrageously in Act I can reach INTERVENTION
 immediately. What changes across acts is the player's comprehension and the
 system's accumulated history of *them*. The camera count is constant from the
-first frame to the last, and this is verified by a content test.
+first frame to the last, and this is verified by a test that plays eighty
+seconds of the actual story — through the incident and the intervention — and
+asserts that no sensor, drone or patrol was ever added
+(`tests/hardening.test.ts`).
 
 ---
 

@@ -4,7 +4,7 @@
  * scarcity is the design.
  */
 import {
-  type Vec2, angleToward, clamp01, dist, fromAngle, norm, remap, wrapAngle,
+  type Vec2, angleToward, clamp01, dist, fromAngle, remap, wrapAngle,
 } from '../core/math';
 import type { World } from './world';
 import type { Task } from './surveillance/types';
@@ -157,10 +157,3 @@ export function droneSees(d: Drone, world: World, p: Vec2): boolean {
   if (dist(d.pos, p) > coneRadius(d)) return false;
   return world.underCover(p) === null;
 }
-
-/** A drone's shadow arrives before it does. On a sunny afternoon that is the tell. */
-export function shadowPos(d: Drone, sun: Vec2): Vec2 {
-  return { x: d.pos.x + sun.x * d.z, y: d.pos.y + sun.y * d.z };
-}
-
-export const droneDir = (d: Drone): Vec2 => norm(fromAngle(d.heading));

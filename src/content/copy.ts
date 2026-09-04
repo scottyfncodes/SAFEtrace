@@ -57,6 +57,8 @@ export const SYSTEM = {
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
   identityUnresolved: 'IDENTITY UNRESOLVED',
   holdStill: 'COME TO A STOP TO INTERFERE',
+  visionAvailable: 'SAFEtrace VISION — AVAILABLE',
+  queryAvailable: 'QUERY AND TRACE AVAILABLE',
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
 };
@@ -104,6 +106,12 @@ export const AD_REPRISE_ANNOTATIONS: Record<number, string> = {
 };
 
 /** Dialogue. Kept short: the strongest moments in this game are notifications. */
+/** How a verb is reached, phrased for the device in the player's hands. */
+export const HINTS = {
+  keyboard: { vision: 'HOLD Q', inspect: 'PRESS E' },
+  touch: { vision: 'TWO FINGERS', inspect: 'TAP THE NODE' },
+};
+
 export const DIALOGUE = {
   devonOpening: [
     "Devon: took you long enough.",

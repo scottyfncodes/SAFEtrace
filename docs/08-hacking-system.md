@@ -74,6 +74,14 @@ The false-positive investigation is played entirely through the graph:
 No villain explains anything. The player reads six database records and
 assembles the argument themselves. This is the tone the whole game wants.
 
+**Status.** The capability is complete: services are real nodes carrying these
+records, `TRACE` reveals them, and a revealed service can be read from anywhere
+because a record has no location. What is *authored* in the slice is the first
+link of the chain — reach `CM-207`, `QUERY` it, and the pipeline that produced
+98.7% is reported. Walking the player through all six records is Phase 8
+content work, not architecture work, and it is the first thing Phase 8 should
+build.
+
 ## 6. What hacking cannot do
 
 It cannot delete records, cannot destroy the network, cannot "shut it all down".

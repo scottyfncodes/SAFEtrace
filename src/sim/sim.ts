@@ -14,7 +14,7 @@ import {
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
 import type { SimEvents } from './events';
-import { makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
+import { aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
   collectBearings, type DroppedBearing, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
@@ -36,6 +36,12 @@ import { SYSTEM, CARE } from '../content/copy';
 
 /** How far the player can reach into the network without walking to it. */
 export const SELECT_RANGE = 16;
+
+/**
+ * You only hear a camera's servo if you are close and moving slowly, which is
+ * what makes noticing one a moment rather than a constant.
+ */
+const SERVO_AUDIBLE_SPEED = 3.2;
 
 export interface HackAction {
   verb: HackVerb;
@@ -218,6 +224,12 @@ export class Sim {
     this.tick++;
     this.time += dt;
 
+    // Seeing the machine costs you the ability to act on it. The touch layer
+    // enforced this for thumbs; it belongs here, so it holds for every device
+    // and cannot drift between them.
+    const looking = this.visionUnlocked && intent.vision;
+    if (looking) intent = suppressWhileLooking(intent);
+
     // 1-2. Input and movement.
     this.updateAim(intent, pointerWorld);
     updatePlayer(this.player, intent, this.world, dt);
@@ -259,6 +271,7 @@ export class Sim {
     this.updateAssets(dt);
 
     // 13. Hacking, network integrity, vision blend.
+    if (looking && this.hack) this.cancelHack();
     this.updateHack(intent, dt);
     this.updateNetwork();
     this.updateVision(intent, dt);
@@ -341,7 +354,9 @@ export class Sim {
     void intent;
   }
 
-  get aim(): { angle: number; pitch: number } { return { angle: this.aimAngle, pitch: this.aimPitch }; }
+  get aim(): { angle: number; pitch: number; sway: number } {
+    return { angle: this.aimAngle, pitch: this.aimPitch, sway: aimSway(this.player) };
+  }
 
   ballisticTargets(): BallisticTarget[] {
     const out: BallisticTarget[] = [];
@@ -371,7 +386,12 @@ export class Sim {
   private updateProjectiles(dt: number, intent: Intent): void {
     if (intent.firePressed && this.player.aiming && this.player.bearings > 0 && this.player.draw > 0.12) {
       this.player.bearings--;
-      const proj = fire(this.player.pos, this.aimAngle, this.player.draw, this.aimPitch, this.rng);
+      // Sway is the documented reward for skating well, and it belongs on the
+      // shot rather than only on the reticle: the reticle must not promise
+      // accuracy the projectile does not have.
+      const sway = aimSway(this.player);
+      const angle = this.aimAngle + this.rng.gauss() * sway;
+      const proj = fire(this.player.pos, angle, this.player.draw, this.aimPitch, this.rng);
       this.projectiles.push(proj);
       this.player.draw = 0;
       this.bus.emit('player:fire', { pos: this.player.pos, draw: this.player.draw });
@@ -541,7 +561,13 @@ export class Sim {
         arr.push(o);
         if (subj.kind === 'player') sawPlayer = true;
       }
+      // The first time a player hears a camera turn to follow them is a
+      // designed moment. dwell was being counted and thrown away.
+      const wasHolding = s.dwell > 0;
       s.dwell = sawPlayer ? s.dwell + 1 : 0;
+      if (sawPlayer && !wasHolding && this.player.speed < SERVO_AUDIBLE_SPEED) {
+        this.bus.emit('sensor:noticed', { sensorId: s.data.id, pos: s.data.pos });
+      }
     }
 
     // Drones observe through the same pipeline; overhead cover defeats them.
@@ -775,7 +801,7 @@ export class Sim {
   updateFocus(): void {
     if (this.selectedNodeId) {
       const chosen = this.network.get(this.selectedNodeId);
-      if (chosen && dist(chosen.pos, this.player.pos) <= SELECT_RANGE) {
+      if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
         this.focusNode = chosen;
         return;
       }
@@ -786,16 +812,34 @@ export class Sim {
     this.focusNode = this.network.nearest(this.player.pos, 14) ?? null;
   }
 
-  /** Reach for a specific node, or let go of the one being held. */
+  /**
+   * Reach for a specific node, or let go of the one being held.
+   *
+   * A service has no location: it is a record, reached by following an edge to
+   * it rather than by standing next to it. So a discovered service can be held
+   * from wherever the player traced it.
+   */
   selectNode(id: string | null): void {
     if (id === null) {
       this.selectedNodeId = null;
       return;
     }
     const node = this.network.get(id);
-    if (!node || dist(node.pos, this.player.pos) > SELECT_RANGE) return;
+    if (!node) return;
+    if (node.kind !== 'SERVICE' && dist(node.pos, this.player.pos) > SELECT_RANGE) return;
+    if (node.kind === 'SERVICE' && !this.discoveredNodes.has(id)) return;
     this.selectedNodeId = id;
     this.focusNode = node;
+  }
+
+  /** Services this player has followed an edge to, and may now read. */
+  reachableServices(): NetworkNode[] {
+    const out: NetworkNode[] = [];
+    for (const id of this.discoveredNodes) {
+      const n = this.network.get(id);
+      if (n && n.kind === 'SERVICE') out.push(n);
+    }
+    return out;
   }
 
   canHack(verb: HackVerb): boolean {
@@ -984,6 +1028,21 @@ export class Sim {
   }
 
   boundsOf(poly: Vec2[]) { return polyBounds(poly); }
+}
+
+/**
+ * What a player may still do while the world is peeled open: keep their line,
+ * and stop. Not push, not aim, not fire, not reach into anything.
+ */
+function suppressWhileLooking(intent: Intent): Intent {
+  return {
+    ...intent,
+    push: false, pushPressed: false,
+    aim: false, fire: false, firePressed: false,
+    olliePressed: false, ollieReleased: false, ollieHeld: false,
+    interact: false, interactPressed: false,
+    drawAmount: null, aimVector: null, pointerActive: false,
+  };
 }
 
 const COMPASS = ['EAST', 'SOUTHEAST', 'SOUTH', 'SOUTHWEST', 'WEST', 'NORTHWEST', 'NORTH', 'NORTHEAST'];

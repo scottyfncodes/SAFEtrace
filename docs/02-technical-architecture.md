@@ -48,6 +48,11 @@ lint rule and by a test. It exists so that:
   `Math.random` is banned in `src/sim` by lint.
 - All time is `sim.tick` (integer) or `sim.time` (derived seconds). `Date.now()`
   is banned in `src/sim`.
+- Authored sequences schedule through `StoryContext.after(seconds, fn)`, which
+  is measured in simulation ticks. Wall-clock timers are banned in story
+  content for the same reason they are banned in the simulation: a beat that
+  drifts away from the world when a tab is throttled cannot be reproduced, and
+  cannot be trusted in a replay.
 
 Determinism is not a feature for players. It is a tool: it makes surveillance
 bugs reproducible, which matters enormously for a system this emergent.
@@ -142,9 +147,26 @@ reachable, no building may overlap a road centreline.
 ## 7. Performance posture
 
 - Static veneer geometry composites once into tiled offscreen canvases.
-- Spatial hash (8 m cells) for sensor/subject/occluder queries.
-- Sensor visibility is the only O(n·m) risk; it is bounded by querying the hash
-  for subjects within sensor range first, typically 0–3 candidates.
+- Spatial hash (8 m cells) for surface, occluder, building, prop and road
+  queries. Subjects and sensors are **not** indexed.
+- Sensor visibility is therefore genuinely O(sensors × subjects), bounded only
+  by a cheap distance cull before the cone and occlusion tests.
+
+Measured, rather than assumed (2026-09-04, `tests/hardening.test.ts`):
+
+| Scale | Sensors | Subjects | ms/tick | Share of a 60 Hz frame |
+|---|---|---|---|---|
+| Shipped slice | 42 | 20 | 0.33 | 2.0% |
+| 2× / 2× | 84 | 40 | 0.38 | 2.3% |
+| 4× / 3× | 168 | 60 | 0.67 | 4.0% |
+| 6× / 4× | 252 | 80 | 1.19 | 7.1% |
+
+Six times the sensors and four times the residents still costs a fifteenth of a
+frame, so indexing subjects would be a speculative optimisation today. A
+regression test holds the line; if a future district pushes past it, the fix is
+a per-tick subject hash rebuilt in `gatherObservations`, and nothing above that
+function needs to change.
+
 - Target 60 fps at 1080p on integrated graphics. Measured, not assumed.
 
 No optimisation beyond this until a profile says otherwise.
