@@ -122,6 +122,14 @@ export interface PlayerState {
   lean: number;
   /** 0..1 through a push stride; drives the pushing leg. */
   pushPhase: number;
+  /** Seconds left of absorbing a landing. */
+  landTimer: number;
+  /**
+   * Compression, -1..1. Negative is crouched before a pop and on landing;
+   * positive is the extension at the top of it. The renderer reads this rather
+   * than guessing from height, so a pop looks like a pop rather than a hop.
+   */
+  crouch: number;
   bailTimer: number;
   onBoard: boolean;
   /** Ammunition. A physical count, not an economy. */
@@ -162,6 +170,8 @@ export function makePlayer(spawn: Vec2): PlayerState {
     turnRate: 0,
     lean: 0,
     pushPhase: 0,
+    landTimer: 0,
+    crouch: 0,
     bailTimer: 0,
     onBoard: true,
     bearings: 12,
@@ -276,6 +286,18 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   // 0 at the start of a stride, 1 at the end. The renderer reads this rather
   // than a looping clock, so the leg only moves when a push is happening.
   p.pushPhase = p.pushTimer > 0 ? 1 - p.pushTimer / TUNE.pushDuration : 0;
+
+  /*
+   * The shape of a pop: knees fold as it is loaded, the body extends through
+   * the rise, and the landing is absorbed rather than bounced. Driven from the
+   * board's actual vertical state, so it cannot drift out of sync with it.
+   */
+  let wantCrouch = 0;
+  if (p.ollieLoad >= 0) wantCrouch = -1;
+  else if (p.stance === 'AIR') wantCrouch = p.vz > 0 ? clamp01(p.vz / 3) : -clamp01(-p.vz / 4) * 0.5;
+  else if (p.landTimer > 0) wantCrouch = -clamp01(p.landTimer / 0.22);
+  p.crouch = damp(p.crouch, wantCrouch, 0.045, dt);
+  p.landTimer = Math.max(0, p.landTimer - dt);
   p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
   if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL' && !p.aiming) {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
@@ -415,6 +437,7 @@ function integrate(p: PlayerState, world: World, dt: number): void {
       p.vz = 0;
       p.stance = 'ROLL';
       p.landedThisTick = true;
+      p.landTimer = 0.22;
       // A landing badly out of line with travel is a bail.
       const travel = angleOf(p.vel);
       const off = Math.abs(wrapAngle(travel - p.heading));

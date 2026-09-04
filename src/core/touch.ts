@@ -150,14 +150,18 @@ export class TouchEngine {
     const { w, h, safe } = this.viewport;
     const r = this.tuning.buttonRadius;
     const gap = this.tuning.buttonGap;
-    const x = w - safe.right - r - 22;
+    // Clear of the bearings column, which lives against the right edge.
+    const x = w - safe.right - r - 46;
     const y = h - safe.bottom - r - 26;
+    // A row along the bottom right, with the sling nearest the bearings it
+    // spends: POP, VISION, SLING, then the pocket. Reading right to left is
+    // reading outward from the thing you are about to use.
     const out: ControlButton[] = [
-      { id: 'ollie', pos: { x, y }, radius: r, pressed: false, enabled: true },
-      { id: 'sling', pos: { x, y: y - gap }, radius: r, pressed: false, enabled: this.canSling },
+      { id: 'sling', pos: { x, y }, radius: r, pressed: false, enabled: this.canSling },
+      { id: 'ollie', pos: { x: x - gap * (this.canVision ? 2 : 1), y }, radius: r, pressed: false, enabled: true },
     ];
     if (this.canVision) {
-      out.push({ id: 'vision', pos: { x: x - gap * 0.86, y: y - gap * 0.34 }, radius: r * 0.86, pressed: false, enabled: true });
+      out.push({ id: 'vision', pos: { x: x - gap, y }, radius: r * 0.9, pressed: false, enabled: true });
     }
     return out;
   }

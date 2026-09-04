@@ -82,7 +82,7 @@ export interface BallisticTarget {
   pos: Vec2;
   z: number;
   radius: number;
-  kind: 'camera' | 'drone' | 'light' | 'junction' | 'prop';
+  kind: 'camera' | 'drone' | 'light' | 'junction' | 'prop' | 'person';
 }
 
 export interface StepContext {

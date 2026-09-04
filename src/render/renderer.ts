@@ -264,7 +264,7 @@ export class Renderer {
     for (let i = 0; i < sim.player.maxBearings; i++) {
       ctx.globalAlpha = i < sim.player.bearings ? 0.85 : 0.22;
       ctx.beginPath();
-      ctx.arc(this.w / 2 - sim.player.maxBearings * 3.5 + i * 7, this.h - 46, 2, 0, Math.PI * 2);
+      ctx.arc(this.w - 22, this.h - 44 - i * 9, 2.4, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;

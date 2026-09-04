@@ -79,3 +79,73 @@ It is not a 3D game. There is no z-buffer, no lighting model, no textures, no
 mesh pipeline, no new assets. It is the same flat-colour vector world, projected
 through a pinhole instead of flattened. Painter's order by depth, one clip
 plane, and a distance cull. That is the whole cost.
+
+---
+## Pass 2 — layering, framing, stance, and shooting people
+
+### The depth bug, and why it was not a player hack
+
+The rider kept disappearing under grass and grass grew over the road. The cause
+was not the player: **every face was sorted by average camera depth, and ground
+surfaces are all coplanar at z = 0.** Sorting coplanar polygons by centroid
+distance is meaningless — a large lawn whose centre happens to be nearer than
+the rider paints straight over them.
+
+The fix is a depth *strategy*, not a special case. Faces now sort in two
+classes: the ground plane is painted first in the authored `priority` order the
+flat renderer has always used (grass 0, pavement 1, carriageway 2, driveways 3,
+plazas 4 …), then everything that stands up is sorted back to front by depth.
+The rider is not forced above anything and still goes behind walls, props and
+trees. The contact shadow is painted onto the ground plane, because it is a mark
+on the road rather than an object standing on it.
+
+### Stance
+
+The pushing foot used to flip with the lean, so the rider swapped stance
+mid-carve. It is locked: **left foot forward on the deck, right foot pushes.**
+
+### The board rolls
+
+The deck used to stay flat while the rider rotated around it — the clearest
+possible tell that a thing is a vehicle. The whole deck now banks on its long
+axis, the wheels bank with it, the front foot rides the tilted edge, and the
+body leans over it. Turn input → board angle → rider → camera, in that order.
+
+### The pop
+
+Driven from the simulation's own vertical state (`crouch`, `landTimer`) rather
+than guessed from height, so it cannot drift out of time with the board: knees
+fold as it loads, the body extends through the rise, the tail snaps down and the
+nose comes up, and the landing is absorbed.
+
+## Shooting people
+
+**The slingshot can hit a person, and can never hurt one.** Making people
+unhittable is a lie a player catches in ten seconds. Making them damageable
+turns a disruption tool into a weapon, and the whole design says it is not one.
+
+So the bearing lands, and nothing happens to them. What happens is that a person
+in a town full of cameras has just had something thrown at them:
+
+- **They stop and look at you** for three seconds, then leave, quickly, away
+  from you. They do not resume their walk.
+- **Everyone within 26 m with line of sight turns round too**, and the message
+  names how many.
+- **`PERSON_STRUCK` evidence** is written, weighted 46 — the heaviest kind in
+  the game, and it does no damage at all.
+- **An incident opens where it happened, and stays open.** Risk is recomputed
+  from the world every tick, so a number added to the track would be gone by the
+  next frame; the pressure has to come from something that persists. An open
+  incident is a place that is now dangerous.
+- **On camera is worse than off it.** A frame lets fusion attribute the incident
+  to a name, and an incident with your name on it is a different thing from an
+  incident near you. That difference is the whole mechanic, and it is tested.
+- **A unit is routed**, for forty seconds of attention.
+
+No morality meter, no rebuke, no karma. The player is never told this was wrong.
+The town simply becomes harder to move through, which is a more interesting
+sentence. The question the slingshot asks about a person is *can I get away with
+this*, and the answer is usually no.
+
+The same slingshot, the same projectile physics, the same first-person mode.
+Only the world's response differs by what was hit.

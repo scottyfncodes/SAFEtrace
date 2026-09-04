@@ -93,7 +93,10 @@ export interface Track {
   maskedUntil: number;
 }
 
-export type IncidentKind = 'BURGLARY' | 'VANDALISM' | 'TRESPASS' | 'ANOMALY' | 'DEVICE_FAULT';
+export type IncidentKind =
+  | 'BURGLARY' | 'VANDALISM' | 'TRESPASS' | 'ANOMALY' | 'DEVICE_FAULT'
+  /** Something was thrown at somebody. Nobody was hurt; a report was made. */
+  | 'PUBLIC_ORDER';
 
 export interface Incident {
   id: string;
@@ -108,7 +111,13 @@ export interface Incident {
 }
 
 export type EvidenceKind =
-  | 'PROJECTILE_IMPACT' | 'NODE_OFFLINE' | 'NODE_TAMPER' | 'NOISE' | 'DRONE_INTERFERENCE';
+  | 'PROJECTILE_IMPACT' | 'NODE_OFFLINE' | 'NODE_TAMPER' | 'NOISE' | 'DRONE_INTERFERENCE'
+  /**
+   * A bearing that hit a person. Nobody is hurt by one — that is the whole
+   * design — but of everything the player can do with a slingshot, this is the
+   * one the system takes most seriously, because a person reported it.
+   */
+  | 'PERSON_STRUCK';
 
 export type EvidenceStage = 'NEW' | 'ANALYSING' | 'RESOLVED';
 

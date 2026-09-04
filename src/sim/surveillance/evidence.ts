@@ -17,6 +17,8 @@ export const EVIDENCE_WEIGHT: Record<EvidenceKind, number> = {
   NODE_TAMPER: 24,
   NOISE: 3,
   DRONE_INTERFERENCE: 38,
+  // The heaviest thing in the list, and it does no damage at all.
+  PERSON_STRUCK: 46,
 };
 
 let counter = 0;

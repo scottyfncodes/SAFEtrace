@@ -137,11 +137,19 @@ export class ControlsRenderer {
     ctx.strokeStyle = ctx.fillStyle as string;
     ctx.beginPath();
     if (id === 'ollie') {
-      // A board tipping up, with the ground under it.
-      ctx.moveTo(x - s, y + s * 0.7);
-      ctx.lineTo(x + s, y - s * 0.5);
-      ctx.moveTo(x - s * 1.1, y + s * 1.1);
-      ctx.lineTo(x + s * 1.1, y + s * 1.1);
+      // POP: a board with its tail snapped down and its nose coming up, and two
+      // short marks for the ground it has just left. The word is on the button.
+      ctx.moveTo(x - s * 0.95, y + s * 0.45);
+      ctx.lineTo(x + s * 0.95, y - s * 0.55);
+      ctx.stroke();
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x - s * 1.15, y + s * 1.05); ctx.lineTo(x - s * 0.25, y + s * 1.05);
+      ctx.moveTo(x + s * 0.25, y + s * 1.05); ctx.lineTo(x + s * 1.15, y + s * 1.05);
+      ctx.stroke();
+      ctx.font = `700 ${Math.round(s * 0.72)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('POP', x, y - s * 1.15);
+      return;
     } else if (id === 'sling') {
       // An actual slingshot, drawn upright: a forked handle, two prongs, the
       // band slack between them, and the pouch drawn back with a ball in it.

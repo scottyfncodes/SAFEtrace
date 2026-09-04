@@ -21,7 +21,7 @@ import {
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
-import { type Npc, makeNpcs, updateNpc } from './npc';
+import { type Npc, makeNpcs, startle, updateNpc } from './npc';
 import { makeSensor, observe, updateSensor, type Sensor } from './surveillance/sensors';
 import { fuse, makeTrack } from './surveillance/fusion';
 import { classify, resetBehaviourMemory } from './surveillance/behavior';
@@ -483,6 +483,27 @@ export class Sim {
       if (dist(n.pos, this.player.pos) > 70) continue;
       out.push({ id: n.id, pos: n.pos, z: 1.6, radius: 0.55, kind: 'junction' });
     }
+    /*
+     * People. You can hit them, and hitting them can never hurt them.
+     *
+     * The slingshot is a tool for interacting with a town, and the town
+     * includes the people in it. Making them unhittable would be a lie the
+     * player would immediately catch; making them damageable would turn a
+     * disruption tool into a weapon. So the bearing lands, it bounces off, and
+     * everything that happens next happens to *you*.
+     */
+    for (const n of this.npcs) {
+      if (dist(n.pos, this.player.pos) > 70) continue;
+      out.push({ id: n.id, pos: n.pos, z: 1.15, radius: 0.5, kind: 'person' });
+    }
+    for (const p of this.patrols) {
+      if (dist(p.pos, this.player.pos) > 70) continue;
+      out.push({ id: p.id, pos: p.pos, z: 1.15, radius: 0.5, kind: 'person' });
+    }
+    if (!this.devonStopped && dist(this.devonPos, this.player.pos) < 70) {
+      out.push({ id: 'DEVON', pos: this.devonPos, z: 1.15, radius: 0.5, kind: 'person' });
+    }
+
     for (const p of this.world.propsNear(this.player.pos, 70)) {
       if (!p.hittable || p.knocked) continue;
       const z = p.kind === 'pole' || p.kind === 'sign' ? 3.2 : 0.7;
@@ -613,6 +634,11 @@ export class Sim {
       return;
     }
 
+    if (kind === 'person' && targetId) {
+      this.strikePerson(targetId, pos, observedBy);
+      return;
+    }
+
     if (kind === 'prop' && targetId) {
       const prop = this.world.data.props.find((p) => p.id === targetId);
       if (!prop) return;
@@ -626,6 +652,60 @@ export class Sim {
       this.addEvidence('NOISE', pos, label, null, observedBy);
       return;
     }
+  }
+
+  /**
+   * A bearing hit somebody.
+   *
+   * Nothing happens to them: no damage, no health, no injury, nothing that
+   * persists in their body. What happens is that a person in a town full of
+   * cameras just had something thrown at them, and every system that exists to
+   * notice things notices at once. They stop and look at you. So does everyone
+   * near enough to have seen it. The lenses that had line of sight now hold a
+   * frame of you doing it, and that frame is the heaviest piece of evidence in
+   * the game. A unit is routed. The route you were going to take is now the
+   * route somebody is standing in.
+   *
+   * The player is never told this was wrong. The town simply becomes harder,
+   * which is a more interesting sentence than a morality meter.
+   */
+  private strikePerson(targetId: string, pos: Vec2, observedBy: string[]): void {
+    const struck = this.npcs.find((n) => n.id === targetId);
+    if (struck) startle(struck, this.player.pos, 60 * 3);
+
+    // Everyone close enough to have seen it turns round too.
+    let witnesses = 0;
+    for (const n of this.npcs) {
+      if (n.id === targetId) continue;
+      if (dist(n.pos, pos) > 26) continue;
+      if (this.world.blocked(n.pos, pos, 1.5)) continue;
+      startle(n, this.player.pos, 60 * 2);
+      witnesses++;
+    }
+
+    this.bus.emit('person:struck', { targetId, pos, witnesses, seen: observedBy.length > 0 });
+    this.message('SYSTEM', [SYSTEM.personStruck, SYSTEM.witnessed(witnesses)], 4.4, 'strong', 'critical');
+
+    // The system does not care that nobody was hurt. It cares that it happened.
+    this.addEvidence('PERSON_STRUCK', pos, SYSTEM.incidentPerson, null, observedBy);
+    this.dispatcher.flagAnomaly(pos, this.tick, SYSTEM.incidentPerson, 60 * 40);
+
+    /*
+     * An incident is opened where it happened, and it stays open. Risk is
+     * recomputed from the world every tick, so a one-off number added to the
+     * track would be gone by the next frame — the pressure has to come from
+     * something that persists. An open incident is a place that is now
+     * dangerous, which is the mechanically honest version of "the route you
+     * were going to take is now the route somebody is standing in".
+     *
+     * Being on camera for it is worse than not, and it is worse in the way the
+     * rest of the game already works: a frame lets fusion attribute the
+     * incident to a name, and an incident with your name on it is a different
+     * thing from an incident near you.
+     */
+    const incident = this.openIncident('PUBLIC_ORDER', pos, SYSTEM.incidentPerson, this.world.districtAt(pos)?.id ?? 'bellhaven');
+    if (observedBy.length > 0) incident.associated.push(this.playerTrack.attributedIdentity);
+    this.playerSubject.priorContacts += 1;
   }
 
   private sensorsObserving(p: Vec2): string[] {

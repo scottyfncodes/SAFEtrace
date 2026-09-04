@@ -128,7 +128,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   it('does not draw VISION before the story has given it to the player', () => {
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id)).toEqual(['ollie', 'sling']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['ollie', 'sling']);
     fresh.setVisionAvailable(true);
     expect(fresh.buttonLayout().map((b) => b.id)).toContain('vision');
   });

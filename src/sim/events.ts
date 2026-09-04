@@ -46,6 +46,8 @@ export interface SimEvents extends Record<string, unknown> {
   'match:false-positive': { identity: string; confidence: number; incidentId: string };
   'aim:entered': Record<string, never>;
   'aim:exited': Record<string, never>;
+  /** A bearing bounced off a person. Nobody is hurt; everybody saw. */
+  'person:struck': { targetId: string; pos: Vec2; witnesses: number; seen: boolean };
   'player:bail': { pos: Vec2 };
   'player:land': { pos: Vec2; speed: number };
   'player:push': { pos: Vec2; speed: number };

@@ -61,6 +61,16 @@ export const SYSTEM = {
   queryAvailable: 'QUERY AND TRACE AVAILABLE',
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
+  /*
+   * A bearing hit somebody. SAFEtrace does not say "you hurt them", because
+   * nobody was hurt and the system would not care if they had been. It logs an
+   * incident against a subject, which is the only language it has.
+   */
+  personStruck: 'INCIDENT — OBJECT THROWN AT A PERSON',
+  witnessed: (n: number) => n > 0
+    ? `${n} WITNESS${n === 1 ? '' : 'ES'} IN RANGE. STATEMENTS REQUESTED.`
+    : 'NO WITNESS STATEMENTS. FOOTAGE UNDER REVIEW.',
+  incidentPerson: 'PUBLIC ORDER — PROJECTILE, PERSON',
 };
 
 /** The consumer register. Same company. The game never comments on the gap. */

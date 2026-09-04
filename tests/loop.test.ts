@@ -103,14 +103,101 @@ describe('the slingshot loop', () => {
     expect(tasked).toBe(true);
   });
 
-  it('declines to shoot a person', () => {
+  /*
+   * This replaces a test asserting that people were never ballistic targets.
+   * They are now, deliberately: making them unhittable is a lie a player
+   * catches in ten seconds, and making them damageable turns a disruption tool
+   * into a weapon. So the bearing lands, nobody is hurt, and every consequence
+   * lands on the person who threw it.
+   */
+  it('lets a person be aimed at, but never the player themselves', () => {
     const sim = makeUnlockedSim();
     const targets = sim.ballisticTargets();
-    // No subject of any kind is ever a ballistic target.
-    const people = new Set([
-      sim.playerSubject.id, sim.devon.id, ...sim.npcs.map((n) => n.id), ...sim.patrols.map((p) => p.id),
-    ]);
-    expect(targets.filter((t) => people.has(t.id))).toEqual([]);
+    expect(targets.some((t) => t.kind === 'person')).toBe(true);
+    expect(targets.some((t) => t.id === sim.playerSubject.id)).toBe(false);
+  });
+
+  it('hits a person without harming them, and makes it everyone else’s business', () => {
+    const sim = makeUnlockedSim();
+    const npc = sim.npcs[0];
+    npc.route = [{ ...npc.pos }];
+    npc.routeIndex = 0;
+    place(sim, { x: npc.pos.x - 9, y: npc.pos.y });
+    step(sim, 0.2);
+    const before = { pos: { ...npc.pos }, risk: sim.playerTrack.risk.total };
+
+    let struck: { witnesses: number; seen: boolean } | null = null;
+    sim.bus.on('person:struck', (e) => { struck = e; });
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    sim.bus.flush();
+
+    // It connected, and the person is entirely unharmed: no health, no damage,
+    // no state on them that says otherwise. They are simply startled.
+    expect(struck).not.toBeNull();
+    expect(npc.startled).toBeGreaterThan(0);
+    expect(Object.keys(npc)).not.toContain('health');
+
+    // And the whole system turned round.
+    expect([...sim.evidence.values()].some((e) => e.kind === 'PERSON_STRUCK')).toBe(true);
+    expect(sim.playerTrack.risk.total).toBeGreaterThan(before.risk);
+    expect(sim.dispatcher.activeAnomalies.length).toBeGreaterThan(0);
+    void before.pos;
+  });
+
+  it('is worse on camera than off it: a frame puts your name on the incident', () => {
+    // Staged where a lens definitely has line of sight — in front of CM-207.
+    const run = (seen: boolean) => {
+      const sim = makeUnlockedSim();
+      const npc = sim.npcs[0];
+      npc.pos = { x: 145, y: 70 };
+      npc.route = [{ ...npc.pos }];
+      npc.routeIndex = 0;
+      if (!seen) for (const s of sim.sensors) { s.state = 'OFFLINE'; s.stateUntil = 1e9; }
+      place(sim, { x: 136, y: 70 });
+      step(sim, 0.2);
+      shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+      const inc = sim.incidents.find((i) => i.kind === 'PUBLIC_ORDER');
+      const ev = [...sim.evidence.values()].find((e) => e.kind === 'PERSON_STRUCK');
+      return { associated: inc?.associated.length ?? 0, watched: ev?.observedBy.length ?? 0 };
+    };
+    const on = run(true);
+    const off = run(false);
+    expect(on.watched).toBeGreaterThan(0);
+    expect(off.watched).toBe(0);
+    // Off camera it is an incident near you. On camera it is your incident.
+    expect(on.associated).toBeGreaterThan(off.associated);
+  });
+
+  it('startles the people who watched it happen, not only the one it hit', () => {
+    const sim = makeUnlockedSim();
+    const npc = sim.npcs[0];
+    npc.route = [{ ...npc.pos }];
+    npc.routeIndex = 0;
+    // A bystander, close enough to see.
+    const near = sim.npcs[1];
+    near.route = [{ x: npc.pos.x + 6, y: npc.pos.y + 2 }];
+    near.routeIndex = 0;
+    near.pos = { x: npc.pos.x + 6, y: npc.pos.y + 2 };
+    place(sim, { x: npc.pos.x - 9, y: npc.pos.y });
+    step(sim, 0.2);
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    expect(near.startled).toBeGreaterThan(0);
+  });
+
+  it('sends them away afterwards rather than back to their walk', () => {
+    const sim = makeUnlockedSim();
+    const npc = sim.npcs[0];
+    npc.route = [{ ...npc.pos }];
+    npc.routeIndex = 0;
+    place(sim, { x: npc.pos.x - 9, y: npc.pos.y });
+    step(sim, 0.2);
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    const at = { ...npc.pos };
+    step(sim, 6);
+    expect(Math.hypot(npc.pos.x - at.x, npc.pos.y - at.y)).toBeGreaterThan(2);
+    // And away from the person who did it, not toward them.
+    expect(Math.hypot(npc.pos.x - sim.player.pos.x, npc.pos.y - sim.player.pos.y))
+      .toBeGreaterThan(Math.hypot(at.x - sim.player.pos.x, at.y - sim.player.pos.y));
   });
 });
 

@@ -74,7 +74,33 @@ function clipNear(poly: CP[]): CP[] {
   return out;
 }
 
-interface Face { pts: CP[]; depth: number; fill: string; stroke?: string; wide?: number }
+/**
+ * Faces sort in two classes, and that distinction is the fix for the worst
+ * visual bug this build had.
+ *
+ * Ground surfaces are all coplanar at z = 0. Sorting coplanar polygons by their
+ * average distance is meaningless — a large lawn whose centroid happens to be
+ * nearer than the rider will paint straight over them, which is exactly how the
+ * skater kept disappearing under the grass and how grass grew over the road.
+ *
+ * So the ground plane is painted first, in the authored `priority` order the
+ * flat renderer has always used (grass 0, pavement 1, carriageway 2, driveways
+ * 3, plazas 4 …), and only then is everything that stands up sorted back to
+ * front by depth. The rider is not special-cased and still goes behind walls,
+ * props and trees exactly as it should.
+ */
+const enum Layer { Ground = 0, Standing = 1 }
+
+interface Face {
+  pts: CP[];
+  depth: number;
+  layer: Layer;
+  /** Authored paint order within the ground plane. */
+  order: number;
+  fill: string;
+  stroke?: string;
+  wide?: number;
+}
 type P3 = { x: number; y: number; z: number };
 
 /**
@@ -87,8 +113,8 @@ type P3 = { x: number; y: number; z: number };
  */
 export class ChaseCamera {
   yaw = 0;
-  private dist = 5.4;
-  private height = 2.7;
+  private dist = 6.8;
+  private height = 3.4;
   /** Negative is downward: the rig looks down at the rider from behind. */
   private pitch = -0.30;
   private look: Vec2 = { x: 0, y: 0 };
@@ -113,8 +139,10 @@ export class ChaseCamera {
     this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2)));
 
     // Farther back and flatter at speed: more road, more sense of pace.
-    this.dist = damp(this.dist, lerp(4.9, 7.8, t), 0.24, dt);
-    this.height = damp(this.height, lerp(2.5, 3.2, t), 0.24, dt);
+    // A quarter farther out than the first framing: the rider is still clearly
+    // readable and there is meaningfully more road to anticipate with.
+    this.dist = damp(this.dist, lerp(6.1, 9.8, t), 0.24, dt);
+    this.height = damp(this.height, lerp(3.1, 4.0, t), 0.24, dt);
     // Flatter at speed, so more of the road ahead comes into frame.
     this.pitch = damp(this.pitch, lerp(-0.36, -0.24, t), 0.3, dt);
 
@@ -167,7 +195,11 @@ export class PerspectiveRenderer {
     this.collectActors(sim, cam);
     if (!firstPerson) this.collectRider(sim, cam);
 
-    this.faces.sort((a, b) => b.depth - a.depth);
+    this.faces.sort((a, b) => {
+      if (a.layer !== b.layer) return a.layer - b.layer;
+      if (a.layer === Layer.Ground) return a.order - b.order || b.depth - a.depth;
+      return b.depth - a.depth;
+    });
     for (const f of this.faces) {
       if (f.pts.length < 3) continue;
       ctx.beginPath();
@@ -201,7 +233,10 @@ export class PerspectiveRenderer {
     ctx.fillRect(0, horizon - 26, cam.w, 60);
   }
 
-  private push(cam: Cam, world: P3[], fill: string, stroke?: string, wide?: number): void {
+  private push(
+    cam: Cam, world: P3[], fill: string, stroke?: string, wide?: number,
+    layer: Layer = Layer.Standing, order = 0,
+  ): void {
     let minZ = Infinity;
     let sum = 0;
     const pts: CP[] = [];
@@ -214,7 +249,7 @@ export class PerspectiveRenderer {
     if (minZ > FAR) return;
     const clipped = clipNear(pts);
     if (clipped.length < 3) return;
-    this.faces.push({ pts: clipped, depth: sum / world.length, fill, stroke, wide });
+    this.faces.push({ pts: clipped, depth: sum / world.length, layer, order, fill, stroke, wide });
   }
 
   private collectSurfaces(sim: Sim, cam: Cam): void {
@@ -222,7 +257,11 @@ export class PerspectiveRenderer {
       let near = Infinity;
       for (const p of s.poly) near = Math.min(near, Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y));
       if (near > FAR) continue;
-      this.push(cam, s.poly.map((p) => ({ x: p.x, y: p.y, z: 0 })), SURFACE_COLOUR[s.kind] ?? VENEER.grass);
+      this.push(
+        cam, s.poly.map((p) => ({ x: p.x, y: p.y, z: 0 })),
+        SURFACE_COLOUR[s.kind] ?? VENEER.grass, undefined, undefined,
+        Layer.Ground, s.priority,
+      );
     }
   }
 
@@ -333,7 +372,7 @@ export class PerspectiveRenderer {
     for (const d of sim.drones) {
       if (d.state === 'DESTABILISED') continue;
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
-      this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));
+      this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
     for (const pr of sim.projectiles) this.card(cam, pr.pos, pr.z, 0.1, 0.1, '#2E3944');
   }
@@ -357,65 +396,82 @@ export class PerspectiveRenderer {
     const p = sim.player;
     const h = p.heading;
     const fx = Math.cos(h), fy = Math.sin(h);
-    const rx = -fy, ry = fx;
+    const rx = -fy, ry = fx;              // the rider's right hand
     const z = p.z;
     const lean = p.lean;
-    const side = lean >= 0 ? 1 : -1;
     const at = (f: number, r: number): Vec2 => ({ x: p.pos.x + fx * f + rx * r, y: p.pos.y + fy * f + ry * r });
 
-    // Shadow, always: it is how height reads at all.
+    // Contact shadow, painted onto the ground plane rather than sorted against
+    // the world: it is a mark on the road, not an object standing on it.
     const sh = at(0, 0);
     this.push(cam, [
       { x: sh.x + fx * 0.95, y: sh.y + fy * 0.95, z: 0.01 },
       { x: sh.x + rx * 0.34, y: sh.y + ry * 0.34, z: 0.01 },
       { x: sh.x - fx * 0.95, y: sh.y - fy * 0.95, z: 0.01 },
       { x: sh.x - rx * 0.34, y: sh.y - ry * 0.34, z: 0.01 },
-    ], alpha('#3A4C6B', 0.22 - clamp01(z / 1.2) * 0.1));
+    ], alpha('#3A4C6B', 0.22 - clamp01(z / 1.2) * 0.1), undefined, undefined, Layer.Ground, 99);
+
+    /*
+     * The board rolls into the turn.
+     *
+     * The deck used to stay flat while the rider rotated around it, which is
+     * the single clearest tell that a thing is a vehicle rather than a board.
+     * The whole deck now banks on its long axis — the toe edge drops going one
+     * way, the heel edge the other — and the rider follows it rather than the
+     * other way round.
+     */
+    const roll = lean * 0.30;
+    /*
+     * A pop, not a hop. The knees fold as it loads, the body extends through
+     * the rise, the tail snaps down and the nose comes up, and the landing is
+     * absorbed. `crouch` comes from the simulation's own vertical state, so
+     * none of it can drift out of time with the board.
+     */
+    const crouch = -p.crouch * 0.22;
+    const rising = p.stance === 'AIR' && p.vz > 0;
+    const tail = p.stance === 'AIR' ? (rising ? 0.30 : 0.10) : Math.max(0, -p.crouch) * 0.12;
 
     if (p.onBoard) {
-      // Deck: a flat quad on the ground, tilted with the lean.
-      const tilt = lean * 0.12;
       const deckZ = z + 0.09;
       const c1 = at(0.92, 0.20), c2 = at(0.92, -0.20), c3 = at(-0.92, -0.20), c4 = at(-0.92, 0.20);
       this.push(cam, [
-        { x: c1.x, y: c1.y, z: deckZ + tilt },
-        { x: c2.x, y: c2.y, z: deckZ - tilt },
-        { x: c3.x, y: c3.y, z: deckZ - tilt },
-        { x: c4.x, y: c4.y, z: deckZ + tilt },
+        { x: c1.x, y: c1.y, z: deckZ + roll + tail * 0.35 },
+        { x: c2.x, y: c2.y, z: deckZ - roll + tail * 0.35 },
+        { x: c3.x, y: c3.y, z: deckZ - roll + tail },
+        { x: c4.x, y: c4.y, z: deckZ + roll + tail },
       ], VENEER.player, alpha('#2E3944', 0.45), 1.4);
-      // Wheels, so the thing reads as rolling rather than floating.
       for (const [f, r] of [[0.66, 0.22], [0.66, -0.22], [-0.66, 0.22], [-0.66, -0.22]] as Array<[number, number]>) {
         const w = at(f, r);
-        this.card(cam, w, z + 0.045, 0.07, 0.045, '#2A3038');
+        this.card(cam, w, z + 0.045 + roll * Math.sign(r) + (f < 0 ? tail : tail * 0.35), 0.07, 0.045, '#2A3038');
       }
     }
 
-    // Legs. The front foot stays across the deck; the back one comes off and
-    // reaches for the road while a push is actually happening.
+    /*
+     * One pushing leg, and it is always the right one.
+     *
+     * Which foot pushes used to flip with the lean, so the rider swapped stance
+     * mid-carve. A skater has a stance and keeps it: left foot forward on the
+     * deck, right foot off the tail and down to the road.
+     */
     const reach = p.pushPhase > 0 && p.stance !== 'AIR' ? Math.sin(p.pushPhase * Math.PI) : 0;
-    const crouch = p.stance === 'AIR' ? 0.16 : 0;
     const legTop = z + 0.72 - crouch;
     const legCol = shade(VENEER.player, -0.6);
 
-    /*
-     * Legs are quads whose width is laid out horizontally, so a leg that is
-     * more horizontal than vertical draws as a slab lying on the grass — which
-     * is exactly what a long push stride did. The stride is kept inside about
-     * fifty degrees off vertical, which is also what a real push looks like
-     * from behind: the foot goes down and back, not out sideways.
-     */
-    const frontFoot = at(0.40, -0.15 * side);
-    this.limb(cam, frontFoot, z + 0.12, at(0.12, -0.07 * side), legTop, 0.075, legCol);
+    // Left foot: forward on the deck, always, riding the roll.
+    const leftFoot = at(0.40, -0.15);
+    this.limb(cam, leftFoot, z + 0.12 + roll * -1 + tail * 0.35, at(0.12, -0.07), legTop, 0.075, legCol);
 
-    const backFoot = reach > 0.02
-      ? at(-0.44 - reach * 0.30, (0.24 + reach * 0.30) * side)
-      : at(-0.46, 0.15 * side);
-    this.limb(cam, backFoot, reach > 0.02 ? 0.03 : z + 0.12, at(-0.1, 0.07 * side), legTop, 0.075, legCol);
-    // A foot on the end, so the leg terminates in something.
-    this.card(cam, backFoot, reach > 0.02 ? 0.05 : z + 0.14, 0.11, 0.05, shade(VENEER.player, -0.7));
+    // Right foot: on the tail, or off it and pushing.
+    const rightFoot = reach > 0.02
+      ? at(-0.44 - reach * 0.30, 0.24 + reach * 0.30)
+      : at(-0.46, 0.15);
+    const rightZ = reach > 0.02 ? 0.03 : z + 0.12 + roll + tail;
+    this.limb(cam, rightFoot, rightZ, at(-0.1, 0.07), legTop, 0.075, legCol);
+    this.card(cam, rightFoot, rightZ + 0.02, 0.11, 0.05, shade(VENEER.player, -0.7));
 
-    // Torso and head, shifted forward over the pushing foot and leaned.
-    const bodyAt = at(reach * 0.22, lean * 0.16);
+    // The rider follows the board: leaned over its banked edge, and shifted
+    // forward over the pushing foot.
+    const bodyAt = at(reach * 0.22, lean * 0.20);
     this.card(cam, bodyAt, legTop + 0.34 - crouch, 0.24, 0.34, shade(VENEER.player, -0.42));
     this.card(cam, bodyAt, legTop + 0.78 - crouch, 0.15, 0.15, '#F2D3B8');
   }
