@@ -138,3 +138,17 @@ export const DIALOGUE = {
     "Devon: it thinks you're still on the road.",
   ],
 };
+
+/**
+ * The phone widget's own words.
+ *
+ * "Community Safety Score" is what SAFEtrace would call it, and the first human
+ * to play read it as a statistic about the neighbourhood rather than a verdict
+ * about them — which is a usability failure and also, accidentally, lets the
+ * brand off the hook. One possessive fixes both: it is a score the town keeps
+ * about you, and the widget now says so.
+ */
+export const PHONE = {
+  scoreLabel: 'Your Community Safety Score',
+  subject: 'Registered to',
+};

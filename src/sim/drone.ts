@@ -23,7 +23,13 @@ export const DRONE = {
   investigateDwell: 60 * 12,
   rebootMin: 60 * 20,
   rebootMax: 60 * 45,
-  hitRadius: 0.9,
+  /**
+   * The drone is drawn as a 1.4 x 1.0 m body with rotors reaching 1.27 m from
+   * its centre. At 0.9 m the hitbox was smaller than the thing on screen, so a
+   * bearing could pass visibly through a rotor and count as a miss. Never make
+   * the target smaller than its picture.
+   */
+  hitRadius: 1.3,
 };
 
 export interface Drone {

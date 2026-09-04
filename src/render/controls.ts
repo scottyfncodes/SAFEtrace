@@ -16,21 +16,61 @@ export class ControlsRenderer {
   private padFade = 0;
   private slingFade = 0;
   private visionFade = 0;
+  private homeFade = 0;
+  private pulse = 0;
 
   constructor(private settings: Settings) {}
 
-  update(v: ControlVisual, dt: number): void {
+  /**
+   * `showHome` is true only until the player has actually travelled. A first
+   * touch is the hardest moment in the game and there was nothing on screen to
+   * aim it at; after that the pad goes back to existing only under a thumb.
+   */
+  update(v: ControlVisual, dt: number, showHome = false): void {
     const to = (cur: number, on: boolean, rate: number) =>
       clamp01(cur + (on ? rate : -rate * 0.7) * dt);
     this.padFade = to(this.padFade, v.pad.active, 7);
     this.slingFade = to(this.slingFade, v.sling.active, 9);
     this.visionFade = to(this.visionFade, v.vision, 6);
+    this.homeFade = to(this.homeFade, showHome && !v.pad.active, 3.2);
+    this.pulse = (this.pulse + dt * (this.settings.reduceMotion ? 0 : 0.85)) % 1;
   }
 
   draw(ctx: CanvasRenderingContext2D, v: ControlVisual, w: number, h: number): void {
+    if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.padFade > 0.01) this.drawPad(ctx, v);
     if (this.slingFade > 0.01) this.drawSling(ctx, v);
     if (this.visionFade > 0.01) this.drawVisionHint(ctx, w, h);
+  }
+
+  /**
+   * The cold start, and nothing more than this: a ring where a thumb goes, and
+   * a slow breath outward so the eye finds it. No words, no arrows, no legend.
+   * Touching it moves you, which is the only thing that needs teaching.
+   */
+  private drawHome(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+    const a = smoothstep(this.homeFade);
+    const { x, y } = v.home;
+    const breathe = this.settings.reduceMotion ? 0.5 : (Math.sin(this.pulse * Math.PI * 2) * 0.5 + 0.5);
+
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = alpha('#FFFFFF', (0.16 + breathe * 0.10) * a);
+    ctx.beginPath();
+    ctx.arc(x, y, 34, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // The ring the thumb would make, expanding: an invitation to press.
+    ctx.strokeStyle = alpha('#FFFFFF', (0.22 - breathe * 0.20) * a);
+    ctx.beginPath();
+    ctx.arc(x, y, 21 + breathe * 16, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = alpha('#FFFFFF', 0.10 * a);
+    ctx.beginPath();
+    ctx.arc(x, y, 21, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawPad(ctx: CanvasRenderingContext2D, v: ControlVisual): void {

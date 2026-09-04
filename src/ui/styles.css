@@ -50,6 +50,29 @@ html, body {
 .note.leaving { animation: note-out 240ms var(--ease) forwards; }
 .note.strong { border-left-color: var(--st-warn); }
 
+/*
+ * Four tiers of attention, so a weather advert cannot look like a patrol being
+ * authorised. Size, weight, opacity and border all move together: the player
+ * should be able to rank a stack of these at a glance, before reading a word.
+ */
+.note.p-critical {
+  border-left-width: 5px;
+  border-left-color: var(--st-risk);
+  box-shadow: 0 10px 34px rgba(16, 23, 31, 0.30), 0 0 0 1px rgba(200, 74, 62, 0.28);
+}
+.note.p-critical .brand { color: var(--st-risk); }
+.note.p-important { border-left-width: 4px; border-left-color: var(--st-warn); }
+.note.p-important .brand { color: var(--st-warn); }
+.note.p-context { opacity: 0.94; }
+.note.p-ambient {
+  width: 82%;
+  padding: 8px 12px;
+  opacity: 0.72;
+  border-left-width: 2px;
+  box-shadow: 0 4px 14px rgba(16, 23, 31, 0.12);
+}
+.note.p-ambient .line { font-size: calc(11px * var(--text-scale)); }
+
 .note .brand {
   font-size: calc(9px * var(--text-scale));
   letter-spacing: 0.14em;
@@ -104,6 +127,15 @@ html, body {
 .score-value { font-size: calc(30px * var(--text-scale)); font-weight: 300; line-height: 1; }
 .meter { height: 3px; border-radius: 2px; background: rgba(16,23,31,0.10); margin-top: 9px; overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--st-teal); transition: width 320ms var(--ease), background 320ms var(--ease); }
+.score-state {
+  margin-top: 6px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: calc(10px * var(--text-scale));
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  color: var(--st-teal);
+  transition: color 320ms var(--ease);
+}
 
 .phone-rows { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
 .phone-row {

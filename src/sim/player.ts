@@ -24,6 +24,16 @@ export const TUNE = {
   carveLow: 3.4,
   carveHigh: 1.1,
   carveAimPenalty: 0.65,
+  /**
+   * Drawing the sling settles the board.
+   *
+   * The first human to play could partly see what the slingshot was for but
+   * could not land a shot, because aiming, steering and pushing were all being
+   * asked of two thumbs at once. Pulling the pouch back now coasts you to a
+   * stop over about a second, which separates EXPLORE from AIM without a mode
+   * switch, a menu, or taking the board away.
+   */
+  aimSettleDecel: 7.0,
   lateralGrip: 0.86,
   ollieImpulse: 3.6,
   ollieMaxLoad: 0.25,
@@ -164,11 +174,21 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   if (wantSlide && p.stance !== 'SLIDE') p.stance = 'SLIDE';
   else if (!wantSlide && p.stance === 'SLIDE') p.stance = 'ROLL';
 
+  // --- the board settles under a draw ------------------------------------
+  if (p.aiming && p.stance !== 'AIR') {
+    const sp = len(p.vel);
+    if (sp > 0.01) {
+      const drop = Math.min(sp, TUNE.aimSettleDecel * clamp01(p.draw + 0.35) * dt);
+      p.vel.x -= (p.vel.x / sp) * drop;
+      p.vel.y -= (p.vel.y / sp) * drop;
+    }
+  }
+
   // --- push -------------------------------------------------------------
   p.pushCooldown = Math.max(0, p.pushCooldown - dt);
   p.pushTimer = Math.max(0, p.pushTimer - dt);
   p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
-  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL') {
+  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL' && !p.aiming) {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
     const room = clamp01((cap - speed) / cap);
     const imp = TUNE.pushImpulse * room;

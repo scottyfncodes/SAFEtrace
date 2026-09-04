@@ -3,6 +3,25 @@ import type { Vec2 } from '../core/math';
 import type { EscalationLevel, Evidence, Incident, Track } from './surveillance/types';
 import type { ImpactKind } from './slingshot';
 
+/**
+ * How much of the player's attention this is allowed to take.
+ *
+ * Separate from `register`, which is brand voice, and from `emphasis`, which is
+ * typography. Before this existed the only axis was the brand, so a weather
+ * advert and an authorised intervention arrived as the same card in the same
+ * stack, and the first human to play could not tell which was which. If
+ * everything behaves like an emergency then nothing is one.
+ */
+export type MessagePriority =
+  /** Something is happening to you, now. Never suppressed, never queued behind. */
+  | 'critical'
+  /** Worth looking up for. Does not interrupt what you are doing. */
+  | 'important'
+  /** Useful, and it can wait. */
+  | 'context'
+  /** The town talking to itself. Texture, and the first thing to be dropped. */
+  | 'ambient';
+
 export interface SafetraceMessage {
   id: string;
   /** SYSTEM = all-caps clinical register. CARE = warm consumer register. */
@@ -11,6 +30,7 @@ export interface SafetraceMessage {
   /** Seconds on screen. */
   duration: number;
   emphasis?: 'normal' | 'strong';
+  priority: MessagePriority;
 }
 
 export interface SimEvents extends Record<string, unknown> {

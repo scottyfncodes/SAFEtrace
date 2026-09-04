@@ -44,6 +44,18 @@ export const TOUCH_TUNING = {
   /** Forward of the anchor by this much is a push; behind it is a brake. */
   throttleDead: 12,
   throttleFull: 46,
+  /**
+   * How far *behind* the landing point the steering anchor is dropped.
+   *
+   * A thumb placed on the screen and held still is the first thing anybody
+   * tries, and before this it did nothing at all: the anchor landed under the
+   * thumb, so neutral was exactly where the thumb already was, and the player
+   * had to somehow know to hold forward of a point they could not see. The
+   * anchor now sits behind the touch, so resting reads as a push and pulling
+   * back still brakes. It costs a little brake travel and buys the whole
+   * cold start.
+   */
+  throttleBias: 20,
   /** An ollie flick: this fast, this far, mostly upward, this recently. */
   ollieSpeed: 0.85,      // px per ms
   ollieDistance: 22,     // px of net upward travel
@@ -83,6 +95,8 @@ interface Track {
 /** What the renderer needs in order to draw the controls. */
 export interface ControlVisual {
   pad: { active: boolean; anchor: { x: number; y: number }; thumb: { x: number; y: number }; steer: number; throttle: number };
+  /** Where a left thumb is expected to land, for the cold-start affordance. */
+  home: { x: number; y: number };
   sling: { active: boolean; origin: { x: number; y: number }; thumb: { x: number; y: number }; draw: number; cancelling: boolean };
   vision: boolean;
 }
@@ -151,7 +165,7 @@ export class TouchEngine {
       id: s.id,
       role,
       start: { x: s.x, y: s.y, t: s.t },
-      anchor: { x: s.x, y: s.y },
+      anchor: { x: s.x, y: role === 'steer' ? s.y + this.tuning.throttleBias : s.y },
       cur: { x: s.x, y: s.y, t: s.t },
       prev: { x: s.x, y: s.y, t: s.t },
       moved: 0,
@@ -212,8 +226,9 @@ export class TouchEngine {
 
     this.pendingOllie = true;
     track.lastOllieT = s.t;
-    // Re-anchor so the flick does not read as a sustained push afterwards.
-    track.anchor.y = s.y;
+    // Re-anchor so the flick itself does not read as a huge push — but keep the
+    // resting bias, or landing an ollie would silently stop the board.
+    track.anchor.y = s.y + this.tuning.throttleBias;
   }
 
   private onRelease(track: Track, s: PointerSample, cancelled: boolean): void {
@@ -359,6 +374,7 @@ export class TouchEngine {
     }
 
     return {
+      home: this.homePoint(),
       pad: {
         active: !!steer,
         anchor: steer ? { x: steer.anchor.x, y: steer.anchor.y } : { x: 0, y: 0 },
@@ -374,6 +390,19 @@ export class TouchEngine {
         cancelling,
       },
       vision,
+    };
+  }
+
+  /**
+   * The natural resting place for a left thumb: inside the steering zone, a
+   * comfortable reach above the bottom safe area. Nothing is drawn here once
+   * the player has started moving.
+   */
+  homePoint(): { x: number; y: number } {
+    const { w, h, safe } = this.viewport;
+    return {
+      x: safe.left + (w - safe.left - safe.right) * 0.20,
+      y: h - safe.bottom - Math.min(150, h * 0.20),
     };
   }
 

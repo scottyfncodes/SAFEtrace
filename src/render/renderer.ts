@@ -24,6 +24,8 @@ export class Renderer {
   readonly controls: ControlsRenderer;
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
+  /** Draw the cold-start pad hint. True until the player has actually moved. */
+  showControlHome = false;
   private ctx: CanvasRenderingContext2D;
   w = 0; h = 0; dpr = 1;
   /** 0..1 wavefront progress, separate from sim.visionBlend so it can overshoot. */
@@ -126,7 +128,7 @@ export class Renderer {
     this.drawVignette(ctx);
 
     if (this.controlVisual) {
-      this.controls.update(this.controlVisual, dt);
+      this.controls.update(this.controlVisual, dt, this.showControlHome);
       this.controls.draw(ctx, this.controlVisual, this.w, this.h);
     }
   }
@@ -470,6 +472,47 @@ export class Renderer {
       ctx.beginPath();
       ctx.moveTo(s.x - r - 4, s.y); ctx.lineTo(s.x - r + 2, s.y);
       ctx.moveTo(s.x + r - 2, s.y); ctx.lineTo(s.x + r + 4, s.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    this.drawAimLock(ctx);
+  }
+
+  /**
+   * What the shot is actually going to hit.
+   *
+   * The character has always solved the arc for whatever is on the line — a
+   * drone at eleven metres up, a camera on a facade — the way somebody who has
+   * done this a thousand times would. It was solving it silently. A player
+   * dragging a thumb had a band under their finger, a dotted arc, and no way at
+   * all to know what the game had already decided they were pointing at, which
+   * is most of why the first human to try it could not hit a drone.
+   *
+   * Four corners, not a circle: a bracket reads as acquisition rather than as
+   * one more piece of world.
+   */
+  private drawAimLock(ctx: CanvasRenderingContext2D): void {
+    const t = this.sim.aimTarget;
+    if (!t) return;
+    const c = this.cam.toScreen({ x: t.pos.x, y: t.pos.y - t.z * ROOF_K }, this.w, this.h);
+    const r = Math.max(13, t.radius * this.cam.zoom * 1.5);
+    const arm = r * 0.42;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // A dark backing stroke, because the veneer is a bright sunny suburb and a
+    // thin light line disappears into a pavement on a phone held outdoors.
+    for (const [col, wid, off] of [['#1B2129', 3.4, 0.35], [VENEER.player, 1.8, 0.95]] as const) {
+      ctx.strokeStyle = alpha(col, off);
+      ctx.lineWidth = wid;
+      ctx.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as Array<[number, number]>) {
+        ctx.moveTo(c.x + sx * r, c.y + sy * r - sy * arm);
+        ctx.lineTo(c.x + sx * r, c.y + sy * r);
+        ctx.lineTo(c.x + sx * r - sx * arm, c.y + sy * r);
+      }
       ctx.stroke();
     }
     ctx.restore();

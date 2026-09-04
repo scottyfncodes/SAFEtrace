@@ -103,11 +103,42 @@ describe('throttle', () => {
     expect(engine.sample().pushPressed).toBe(true);
   });
 
-  it('does nothing while the thumb rests near the anchor', () => {
-    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y - 4 }]);
+  /*
+   * This replaces a test that asserted a resting thumb does nothing. That was
+   * the behaviour, it was deliberate, and the first human to pick the game up
+   * could not work out how to start moving because of it. Placing a thumb and
+   * holding it is the first thing anyone tries; it now goes.
+   */
+  it('pushes while the thumb simply rests, because that is what a first touch is', () => {
+    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y - 2 }]);
     const i = engine.sample();
-    expect(i.push).toBe(false);
+    expect(i.push).toBe(true);
     expect(i.brake).toBe(false);
+  });
+
+  it('pushes on a thumb that lands and never moves at all', () => {
+    engine.handle('down', { id: 1, x: PAD.x, y: PAD.y, t: 0 });
+    const i = engine.sample();
+    expect(i.push).toBe(true);
+    expect(i.pushPressed).toBe(true);
+  });
+
+  it('still brakes, but you have to mean it', () => {
+    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y + 44 }]);
+    const i = engine.sample();
+    expect(i.brake).toBe(true);
+    expect(i.push).toBe(false);
+  });
+
+  it('keeps pushing after an ollie instead of quietly stopping the board', () => {
+    engine.handle('down', { id: 1, x: PAD.x, y: PAD.y, t: 0 });
+    // Settle, then flick up hard enough to ollie.
+    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 2, t: 140 });
+    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 40, t: 180 });
+    expect(engine.sample().olliePressed).toBe(true);
+    // Thumb comes back to rest. The board must not have stopped.
+    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 40, t: 400 });
+    expect(engine.sample().push).toBe(true);
   });
 });
 

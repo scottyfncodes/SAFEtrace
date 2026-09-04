@@ -31,6 +31,7 @@ import { analyse, makeEvidence, resetEvidenceIds } from './surveillance/evidence
 import { Network, VERBS, permits, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
 import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
 import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track } from './surveillance/types';
+import type { MessagePriority } from './events';
 import type { RecordContext } from './worldTypes';
 import { levelFor } from './surveillance/types';
 import { SYSTEM, CARE } from '../content/copy';
@@ -220,8 +221,21 @@ export class Sim {
   get allTracks(): Track[] { return this._allTracks; }
   get allSubjects(): Subject[] { return this._allSubjects; }
 
-  message(register: 'SYSTEM' | 'CARE', lines: string[], duration = 4.2, emphasis: 'normal' | 'strong' = 'normal'): void {
-    this.bus.emit('safetrace:message', { id: `MSG-${++msgId}`, register, lines, duration, emphasis });
+  /**
+   * Priority defaults so the thirty-odd call sites do not each have to decide.
+   * A strongly emphasised line is something happening to the player; SAFEtrace
+   * CARE is the brand talking, which is texture; everything else is context.
+   * Sites that need something else say so.
+   */
+  message(
+    register: 'SYSTEM' | 'CARE', lines: string[], duration = 4.2,
+    emphasis: 'normal' | 'strong' = 'normal', priority?: MessagePriority,
+  ): void {
+    const p: MessagePriority = priority
+      ?? (emphasis === 'strong' ? 'critical' : register === 'CARE' ? 'ambient' : 'context');
+    this.bus.emit('safetrace:message', {
+      id: `MSG-${++msgId}`, register, lines, duration, emphasis, priority: p,
+    });
   }
 
   // ======================================================================
@@ -324,6 +338,11 @@ export class Sim {
 
   // ---------------------------------------------------------------- slingshot
 
+  /** What the ballistic solver has actually locked onto, if anything. */
+  aimTarget: BallisticTarget | null = null;
+  /** Where the shot is being aimed, in world space. Null when not aiming. */
+  aimWorld: Vec2 | null = null;
+
   private updateAim(intent: Intent, pointerWorld: Vec2 | null): void {
     if (pointerWorld) {
       this.aimAngle = angleOf({ x: pointerWorld.x - this.player.pos.x, y: pointerWorld.y - this.player.pos.y });
@@ -344,13 +363,36 @@ export class Sim {
       if (along < 2 || along > 70) continue;
       // Lateral tolerance widens with distance, so distant targets stay pickable.
       const lateral = Math.abs(rel.x * -dir.y + rel.y * dir.x);
-      if (lateral > Math.max(2.2, along * 0.11) + t.radius) continue;
+      // A thumb drag sets this angle, and it also sets the draw, so the two
+      // fight each other. The cone is generous on purpose; the lock indicator
+      // is what makes it honest rather than mysterious.
+      if (lateral > Math.max(2.6, along * 0.14) + t.radius) continue;
       if (along < bestAlong) { bestAlong = along; best = t; }
     }
 
+    this.aimTarget = best;
+    this.aimWorld = pointerWorld ? { x: pointerWorld.x, y: pointerWorld.y } : null;
+
     if (best) {
-      const solved = solvePitch(bestAlong, best.z - LAUNCH_Z, muzzle);
-      this.aimPitch = solved ?? Math.atan2(best.z - LAUNCH_Z, bestAlong);
+      /*
+       * Bearing as well as elevation.
+       *
+       * The character has always solved the *height* of the arc for whatever is
+       * on the line, and left the *direction* wherever the player's thumb
+       * happened to point. So the acquisition cone was wider than the shot was
+       * accurate: past about six degrees the reticle sat on a drone, the arc
+       * was solved to its altitude, and the bearing still went past it. Half a
+       * solution is worse than none, because it looks like a hit.
+       *
+       * Someone who has done this a thousand times points at the thing. Sway
+       * still decides whether they get it, so this buys a fair shot, not a
+       * free one.
+       */
+      const toTarget = { x: best.pos.x - this.player.pos.x, y: best.pos.y - this.player.pos.y };
+      this.aimAngle = angleOf(toTarget);
+      const flat = Math.hypot(toTarget.x, toTarget.y);
+      const solved = solvePitch(flat, best.z - LAUNCH_Z, muzzle);
+      this.aimPitch = solved ?? Math.atan2(best.z - LAUNCH_Z, flat);
     } else if (pointerWorld) {
       // No target on the line: put the bearing on the ground where they pointed.
       const d = dist(this.player.pos, pointerWorld);
@@ -501,7 +543,7 @@ export class Sim {
           sensor.stateUntil = this.tick + 60 * 90;
         }
       }
-      this.message('SYSTEM', [SYSTEM.segmentDegraded(n.segmentId)], 3.6);
+      this.message('SYSTEM', [SYSTEM.segmentDegraded(n.segmentId)], 3.6, 'normal', 'important');
       this.addEvidence('NODE_TAMPER', pos, `JUNCTION ${n.id} FAULT`, { vel, vz, z }, observedBy);
       return;
     }
@@ -677,7 +719,7 @@ export class Sim {
         : f === 'LOITERING' ? SYSTEM.loitering
         : f === 'RECKLESS_VELOCITY' ? SYSTEM.reckless
         : SYSTEM.proximity;
-      this.message('SYSTEM', [line, SYSTEM.risk(t.risk.total)], 3.6);
+      this.message('SYSTEM', [line, SYSTEM.risk(t.risk.total)], 3.6, 'normal', 'important');
     }
   }
 
@@ -728,12 +770,14 @@ export class Sim {
 
     for (const task of result.issued) {
       const d = this.drones.find((x) => x.id === task.assetId);
-      if (d) { assignTask(d, task); this.message('SYSTEM', [SYSTEM.droneDispatch], 3.2); continue; }
+      if (d) { assignTask(d, task); this.message('SYSTEM', [SYSTEM.droneDispatch], 3.2, 'normal', 'important'); continue; }
       const p = this.patrols.find((x) => x.id === task.assetId);
       if (p) {
         assignPatrolTask(p, task, this.world);
+        // Someone is now physically coming toward the player. This is the one
+        // kind of message that is allowed to take the screen.
         this.message('SYSTEM', [task.kind === 'TRACK' ? SYSTEM.intervention : SYSTEM.patrolDispatch], 3.4,
-          task.kind === 'TRACK' ? 'strong' : 'normal');
+          task.kind === 'TRACK' ? 'strong' : 'normal', 'critical');
       }
     }
     for (const task of result.cancelled) {
@@ -749,7 +793,7 @@ export class Sim {
         from: this.lastEscalation, to: this.escalation, risk: this.playerTrack.risk.total,
       });
       if (this.escalation === 'MONITORING' && this.lastEscalation === 'PASSIVE') {
-        this.message('SYSTEM', [SYSTEM.subjectMonitoring, SYSTEM.risk(this.playerTrack.risk.total)], 3.8);
+        this.message('SYSTEM', [SYSTEM.subjectMonitoring, SYSTEM.risk(this.playerTrack.risk.total)], 3.8, 'normal', 'important');
       }
       this.lastEscalation = this.escalation;
     }
@@ -948,7 +992,7 @@ export class Sim {
       case 'MASK': {
         this.playerTrack.maskedUntil = this.tick + 60 * 30;
         this.playerTrack.attributedIdentity = 'UNKNOWN';
-        this.message('SYSTEM', [SYSTEM.maskActive], 3.4);
+        this.message('SYSTEM', [SYSTEM.maskActive], 3.4, 'normal', 'important');
         this.addEvidence('NODE_TAMPER', node.pos, `IDENTITY SERVICE ANOMALY — ${nodeId}`, null, this.sensorsObserving(node.pos));
         break;
       }

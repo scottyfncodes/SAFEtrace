@@ -340,6 +340,9 @@ class Game {
   private render(dt: number): void {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
+    // The hint retires itself the moment the player has travelled a board's
+    // length or two under their own power. Nobody needs to be told twice.
+    this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;
     this.renderer.render(dt);
     this.hud.update(dt);
 
