@@ -225,17 +225,27 @@ export class TownBuilder {
 
     const dd = (opts.drivewayDir ?? 90) * DEG;
     const dx = Math.cos(dd), dy = Math.sin(dd);
-    const drivewayCentre = P(opts.at.x + dx * (d / 2 + 5.5), opts.at.y + dy * (d / 2 + 5.5));
+    // How far the facade is from the centre along the direction we are facing.
+    // A house is not square, so using the depth for a frontage that faces along
+    // the width puts the camera and the driveway inside the building.
+    const reach = halfExtent(w, d, rot, dd);
+    const drivewayCentre = P(opts.at.x + dx * (reach + 5.5), opts.at.y + dy * (reach + 5.5));
     this.surface(rectPoly(drivewayCentre, 4.2, 12, dd), 'smoothConcrete', 3, true);
 
     if (opts.garage) {
-      const gp = rectPoly(P(opts.at.x + dx * (d / 2 + 2.6), opts.at.y + dy * (d / 2 + 2.6)), 6, 5.5, rot);
+      const gp = rectPoly(P(opts.at.x + dx * (reach + 2.6), opts.at.y + dy * (reach + 2.6)), 6, 5.5, rot);
       this.building('garage', gp, { height: 3.2, wall: opts.wall, roof: opts.roof });
       this.covers.push({ id: this.id('CV'), poly: gp, height: 3.2, kind: 'carport' });
     }
 
     if (opts.camera) {
-      const camPos = P(opts.at.x + dx * (d / 2 - 0.4), opts.at.y + dy * (d / 2 - 0.4));
+      // On the facade, not behind it — and beside the garage door rather than
+      // behind it, which is where a porch actually is.
+      const lateral = opts.garage ? Math.min(w, d) * 0.34 : 0;
+      const camPos = P(
+        opts.at.x + dx * (reach - 0.35) - dy * lateral,
+        opts.at.y + dy * (reach - 0.35) + dx * lateral,
+      );
       this.camera({
         pos: camPos, facing: opts.camera.facing, kind: 'porch',
         fov: opts.camera.fov ?? 74, range: opts.camera.range ?? 24,
@@ -245,14 +255,14 @@ export class TownBuilder {
       b.nodeIds.push(this.nodes[this.nodes.length - 1].id);
     }
 
-    this.prop('mailbox', P(opts.at.x + dx * (d / 2 + 11), opts.at.y + dy * (d / 2 + 11)), dd);
+    this.prop('mailbox', P(opts.at.x + dx * (reach + 11), opts.at.y + dy * (reach + 11)), dd);
     return b;
   }
 
   camera(opts: {
     pos: Vec2; facing: number; kind?: SensorKind; fov?: number; range?: number;
     sweep?: number; sweepPeriod?: number; sweepPhase?: number; height?: number;
-    bias?: number; label?: string; id?: string;
+    bias?: number; label?: string; id?: string; interior?: boolean;
   }): SensorData {
     const node = this.addNode('CAMERA', opts.pos, opts.label ?? 'CAMERA', opts.id, [
       `FEED: NOMINAL`,
@@ -274,6 +284,7 @@ export class TownBuilder {
       recognitionBias: opts.bias ?? 0.92,
       district: this.currentDistrict,
       label: opts.label ?? node.id,
+      interior: opts.interior,
     };
     this.sensors.push(s);
     return s;
@@ -416,6 +427,15 @@ export class TownBuilder {
       patrolRoutes: opts.patrolRoutes,
     };
   }
+}
+
+/**
+ * Half-extent of a rotated rectangle along a world direction: the distance from
+ * its centre to the facade you would walk up to from that side.
+ */
+function halfExtent(w: number, d: number, rot: number, dir: number): number {
+  const c = Math.cos(dir - rot), s = Math.sin(dir - rot);
+  return Math.abs((w / 2) * c) + Math.abs((d / 2) * s);
 }
 
 export const pt = P;

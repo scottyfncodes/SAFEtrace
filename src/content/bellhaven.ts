@@ -235,7 +235,7 @@ export function buildBellhaven(): WorldData {
   b.prop('car', pt(486, 88), 0, { tint: '#6FA36B' });
   b.prop('car', pt(486, 108), 0, { tint: '#8C6BB1' });
   b.prop('car', pt(518, 88), Math.PI, { tint: '#E0A83D' });
-  b.camera({ pos: pt(472, 128), facing: 20, kind: 'facility', fov: 60, range: 22, height: 3.2, bias: 0.7, label: 'PARKING — DECK 2 SW' });
+  b.camera({ pos: pt(472, 128), facing: 20, kind: 'facility', fov: 60, range: 22, height: 3.2, bias: 0.7, interior: true, label: 'PARKING — DECK 2 SW' });
   b.trees([pt(252, 100), pt(252, 62), pt(478, 100), pt(478, 62)]);
   b.prop('bin', pt(345, 55), 0);
   b.prop('bin', pt(462, 55), 0);

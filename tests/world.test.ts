@@ -11,6 +11,14 @@ describe('Bellhaven content validation', () => {
     expect(errors.map((e) => e.message)).toEqual([]);
   });
 
+  it('mounts every camera on a facade rather than inside a wall', () => {
+    // Warnings are real findings, not noise: this one caught porch cameras
+    // being placed with the wrong half-extent on non-square houses.
+    const warnings = validateWorld(data).filter((i) => i.severity === 'warning');
+    expect(warnings.filter((w) => w.message.includes('inside building'))
+      .map((w) => w.message)).toEqual([]);
+  });
+
   it('meets the density targets in the world design doc', () => {
     expect(data.buildings.length).toBeGreaterThanOrEqual(40);
     expect(data.sensors.length).toBeGreaterThanOrEqual(25);

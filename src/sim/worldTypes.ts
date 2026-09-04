@@ -138,6 +138,12 @@ export interface SensorData {
   recognitionBias: number;
   district: string;
   label: string;
+  /**
+   * Mounted inside a structure rather than on its facade — a parking deck, a
+   * lobby. Without this the validator cannot tell a deliberate interior camera
+   * from one accidentally buried in a wall.
+   */
+  interior?: boolean;
 }
 
 export type NetworkNodeKind =

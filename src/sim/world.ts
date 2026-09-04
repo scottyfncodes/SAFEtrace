@@ -351,8 +351,10 @@ export function validateWorld(data: WorldData): ValidationIssue[] {
     }
   }
 
-  // Cameras must not be inside a building footprint.
+  // Cameras must sit on a facade, not buried in a wall. Cameras declared
+  // interior are mounted inside a structure on purpose.
   for (const s of data.sensors) {
+    if (s.interior) continue;
     for (const b of data.buildings) {
       if (pointInPoly(b.poly, s.pos)) {
         // Wall-mounted cameras sit on the facade; a small inset is fine, deep is a bug.
@@ -361,7 +363,7 @@ export function validateWorld(data: WorldData): ValidationIssue[] {
           s.pos.x - bounds.x, bounds.x + bounds.w - s.pos.x,
           s.pos.y - bounds.y, bounds.y + bounds.h - s.pos.y,
         );
-        if (inset > 1.6) warn(`sensor ${s.id} is ${inset.toFixed(1)}m inside building ${b.id}`);
+        if (inset > 0.9) warn(`sensor ${s.id} is ${inset.toFixed(1)}m inside building ${b.id}`);
         break;
       }
     }
