@@ -272,6 +272,8 @@ channel 58, relay 1 — identical to their pre-slice counts.
 - Northgate still has no interiors and no NPC schedules.
 - `TX-2` still serves both Northgate and Relay 12, and that consequence is still
   latent: uplinks are not ballistic targets. Relay 12 work, out of scope.
+  *Resolved in `20-relay-12.md`: TX-2 became the shared file rather than a
+  target, and stays non-degradable.*
 
 ## Gate results
 

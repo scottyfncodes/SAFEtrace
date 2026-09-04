@@ -24,6 +24,7 @@ before implementation and is the authority for what the game is trying to be.
 | 17 | [Brief Contradictions & Resolutions](17-contradictions.md) | Conflicts found in the brief and how they were settled |
 | 18 | [Phase 8 Readiness Gate](18-phase-8-readiness.md) | The audit, the risks, and the GO decision |
 | 19 | [Phase 8 Slice 01: Northgate](19-northgate-slice-01.md) | The first production slice, and what it proved |
+| 20 | [Phase 8 Slice 02: Relay 12](20-relay-12.md) | TX-2 as the shared file, and why it is not a target |
 
 ## The one-sentence pitch
 

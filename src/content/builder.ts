@@ -477,23 +477,26 @@ export function uplinkRecords(
     const carried = new Set<string>();
     for (const seg of segments) for (const id of seg.nodeIds) carried.add(id);
 
-    const lines = [...preamble];
-    lines.push(`CARRYING: ${segments.map((s) => s.id).join(', ')}`);
-    lines.push(`NODES ON THIS UPLINK: ${carried.size}`);
-    lines.push('--- FRAME DELIVERY ---');
-    lines.push(...archived);
-
-    const log: Array<{ tick: number; line: string }> = [];
+    const live: string[] = [];
     for (const e of ctx.evidence) {
       for (const id of e.observedBy) {
         if (!carried.has(id)) continue;
-        log.push({ tick: e.tick, line: `${stampOf(e.tick)}  ${id}  DELIVERED  ${e.label}` });
+        live.push(`${stampOf(e.tick)}  ${id}  DELIVERED  ${e.label}`);
       }
     }
-    log.sort((a, b) => a.tick - b.tick || (a.line < b.line ? -1 : 1));
-    for (const l of log.slice(-6)) lines.push(l.line);
+    // One log, one morning. The archived lines and the ones the player has just
+    // written go in the same list in the same order, because that is what being
+    // in the file means: nothing distinguishes your frames from anyone else's.
+    live.sort();
+    const shown = [...archived, ...live.slice(-6)].sort();
 
-    lines.push('NO FRAMES HELD. NO FRAMES DROPPED. NO FRAMES READ HERE.');
-    return lines;
+    return [
+      ...preamble,
+      `CARRYING: ${segments.map((s) => s.id).join(', ')}`,
+      `NODES ON THIS UPLINK: ${carried.size}`,
+      '--- FRAME DELIVERY, THIS SHIFT ---',
+      ...shown,
+      'NO FRAMES HELD. NO FRAMES DROPPED. NO FRAMES READ HERE.',
+    ];
   };
 }

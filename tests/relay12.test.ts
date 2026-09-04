@@ -182,6 +182,24 @@ describe('TX-2 reports what it actually carried', () => {
     expect(resolveRecords(sim.network.get('TX-2')!.records, ctx()).join('\n')).not.toMatch(/CM-R07/);
   });
 
+  it('files the player’s own frames in the same list as the one that stopped Devon', () => {
+    const sim = makeSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: cam.data.pos.x - 10, y: cam.data.pos.y + 8 });
+    step(sim, 0.2);
+    shoot(sim, cam.data.pos);
+
+    const log = resolveRecords(sim.network.get('TX-2')!.records, sim.recordContext());
+    const delivered = log.filter((l) => l.includes('DELIVERED'));
+    expect(delivered.length).toBeGreaterThan(1);
+    // One chronology, and the morning's match is in it under the same heading
+    // and in the same shape as everything the player has just done.
+    expect([...delivered].sort()).toEqual(delivered);
+    expect(delivered.some((l) => l.includes('0441-07'))).toBe(true);
+    const shape = /^\d\d:\d\d:\d\d {2}[A-Z0-9-]+ {2}DELIVERED {2}.+$/;
+    for (const l of delivered) expect({ l, ok: shape.test(l) }).toEqual({ l, ok: true });
+  });
+
   it('counts the segments hanging off it rather than quoting a number', () => {
     const provisioned = data.network.segments.filter((s) => s.uplinkId === 'TX-2').length;
     expect(recordsOf('MT-R12')).toContain(`SEGMENTS PROVISIONED TODAY: ${provisioned}`);
