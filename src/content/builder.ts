@@ -9,7 +9,7 @@
 import { type Vec2, DEG, norm, perp, rectPoly, sub } from '../core/math';
 import type {
   Building, BuildingKind, Cover, District, NetworkNodeData, NetworkNodeKind,
-  NetworkSegmentData, Prop, PropKind, RoadEdge, RoadNode, SensorData, SensorKind,
+  NetworkSegmentData, NodeRecords, Prop, PropKind, RoadEdge, RoadNode, SensorData, SensorKind,
   SkateFeature, SurfaceKind, SurfacePatch, WorldData, FeatureKind,
 } from '../sim/worldTypes';
 
@@ -47,8 +47,8 @@ export class TownBuilder {
 
   in(districtId: string): this { this.currentDistrict = districtId; return this; }
 
-  uplink(id: string, pos: Vec2, label: string): this {
-    this.nodes.push({ id, kind: 'UPLINK', pos, segmentId: id, label, edges: [], records: [] });
+  uplink(id: string, pos: Vec2, label: string, records: NodeRecords = []): this {
+    this.nodes.push({ id, kind: 'UPLINK', pos, segmentId: id, label, edges: [], records });
     return this;
   }
 
@@ -61,7 +61,7 @@ export class TownBuilder {
   useSegment(id: string): this { this.currentSegment = id; return this; }
 
   private addNode(
-    kind: NetworkNodeKind, pos: Vec2, label: string, idOverride?: string, records: string[] = [],
+    kind: NetworkNodeKind, pos: Vec2, label: string, idOverride?: string, records: NodeRecords = [],
   ): NetworkNodeData {
     const prefix = kind === 'CAMERA' ? 'CM' : kind === 'JUNCTION' ? 'JX'
       : kind === 'PLATE_READER' ? 'PR' : kind === 'SPEAKER' ? 'SP'
@@ -77,7 +77,7 @@ export class TownBuilder {
     return node;
   }
 
-  service(id: string, label: string, pos: Vec2, records: string[]): this {
+  service(id: string, label: string, pos: Vec2, records: NodeRecords): this {
     this.nodes.push({ id, kind: 'SERVICE', pos, segmentId: 'SVC', label, edges: [], records });
     return this;
   }
@@ -264,7 +264,7 @@ export class TownBuilder {
     sweep?: number; sweepPeriod?: number; sweepPhase?: number; height?: number;
     bias?: number; label?: string; id?: string; interior?: boolean;
     /** What this node says when it is read. Defaults to an ordinary camera's. */
-    records?: string[];
+    records?: NodeRecords;
   }): SensorData {
     const node = this.addNode('CAMERA', opts.pos, opts.label ?? 'CAMERA', opts.id, opts.records ?? [
       `FEED: NOMINAL`,
@@ -292,7 +292,7 @@ export class TownBuilder {
     return s;
   }
 
-  junction(pos: Vec2, label: string, id?: string, records?: string[]): NetworkNodeData {
+  junction(pos: Vec2, label: string, id?: string, records?: NodeRecords): NetworkNodeData {
     return this.addNode('JUNCTION', pos, label, id, records ?? ['SEGMENT RELAY', 'SELF-HEAL: 90S']);
   }
 

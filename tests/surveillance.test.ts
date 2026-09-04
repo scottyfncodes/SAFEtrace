@@ -11,6 +11,7 @@ import { analyse, makeEvidence, solveRange } from '../src/sim/surveillance/evide
 import { fire, solvePitch, stepProjectile } from '../src/sim/slingshot';
 import { THRESHOLDS } from '../src/sim/surveillance/behavior';
 import { DEG } from '../src/core/math';
+import { resolveRecords } from '../src/sim/worldTypes';
 
 const subject = (over: Partial<Subject> = {}): Subject => ({
   id: 'S-TEST', kind: 'resident', identity: 'TEST, A.', displayName: 'TEST, A.',
@@ -425,12 +426,13 @@ describe('records the player can reach', () => {
     step(sim, 0.2);
     sim.selectNode('SVC-VISION');
     expect(sim.focusNode?.id).toBe('SVC-VISION');
-    expect(sim.focusNode?.records?.length).toBeGreaterThan(0);
+    expect(resolveRecords(sim.focusNode?.records, sim.recordContext()).length).toBeGreaterThan(0);
   });
 
   it('holds the six records the investigation is written around', () => {
     const sim = makeSim();
-    const joined = (id: string) => (sim.network.get(id)!.records ?? []).join(' | ');
+    const joined = (id: string) =>
+      resolveRecords(sim.network.get(id)!.records, sim.recordContext()).join(' | ');
     expect(joined('SVC-VISION')).toMatch(/ENROLLED MINORS/);
     expect(joined('SVC-VISION')).toMatch(/CONSENT BASIS/);
     expect(joined('SVC-VISION')).toMatch(/THRESHOLD/);

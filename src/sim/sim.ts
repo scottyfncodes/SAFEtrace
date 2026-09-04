@@ -31,6 +31,7 @@ import { analyse, makeEvidence, resetEvidenceIds } from './surveillance/evidence
 import { Network, VERBS, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
 import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
 import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track } from './surveillance/types';
+import type { RecordContext } from './worldTypes';
 import { levelFor } from './surveillance/types';
 import { SYSTEM, CARE } from '../content/copy';
 
@@ -1020,6 +1021,19 @@ export class Sim {
   }
 
   // ---------------------------------------------------------------- queries
+
+  /**
+   * What a dynamic record may look at. The one path by which authored content
+   * can report on what the machine has actually received.
+   */
+  recordContext(): RecordContext {
+    return {
+      tick: this.tick,
+      evidence: [...this.evidence.values()],
+      network: this.world.data.network,
+      playerIdentity: this.playerTrack.attributedIdentity,
+    };
+  }
 
   /** True while any active sensor can currently see the player. */
   get playerObserved(): boolean {

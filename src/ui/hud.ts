@@ -26,6 +26,7 @@ const TOUCH_PROMPTS = [
   '<span>flick up to ollie</span>',
 ].join('');
 import { riskLabel } from '../sim/surveillance/risk';
+import { resolveRecords } from '../sim/worldTypes';
 import { SYSTEM } from '../content/copy';
 
 const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
@@ -204,9 +205,7 @@ export class Hud {
       `<div class="node-id">${escapeHtml(node.id)}</div>` +
       `<div>${escapeHtml(node.label)}</div>` +
       `<div class="rec">SEGMENT ${escapeHtml(node.segmentId)} · ${escapeHtml(node.state)}</div>` +
-      (node.discovered && node.records?.length
-        ? node.records.map((r) => `<div class="rec">${escapeHtml(r)}</div>`).join('')
-        : '') +
+      (node.discovered ? this.recordsOf(node) : '') +
       (node.discovered && node.edges.length
         ? `<div class="rec">EDGES: ${node.edges.map(escapeHtml).join(', ')}</div>`
         : '') +
@@ -245,6 +244,12 @@ export class Hud {
     }</div>`;
   }
 
+  /** A node's records, whether authored as text or written at read time. */
+  private recordsOf(node: NetworkNode): string {
+    return resolveRecords(node.records, this.sim.recordContext())
+      .map((r) => `<div class="rec">${escapeHtml(r)}</div>`).join('');
+  }
+
   private updateBearings(): void {
     const kids = this.bearings.children;
     for (let i = 0; i < kids.length; i++) {
@@ -275,12 +280,17 @@ export class Hud {
   }
 }
 
+/**
+ * An uplink is a sealed carrier cabinet: you can read it and follow it, and
+ * that is all. Splicing happens at junctions, which is where SUPPRESS and MASK
+ * now live. Nothing the player can do makes an uplink a switch.
+ */
 export function availableVerbs(node: NetworkNode): HackVerb[] {
   const out: HackVerb[] = ['QUERY', 'TRACE'];
+  if (node.kind === 'UPLINK') return out;
   if (node.kind === 'CAMERA') out.push('LOOP');
   out.push('REROUTE');
-  if (node.kind === 'UPLINK' || node.kind === 'JUNCTION') out.push('SUPPRESS');
-  if (node.kind === 'UPLINK') out.push('MASK');
+  if (node.kind === 'JUNCTION') { out.push('SUPPRESS'); out.push('MASK'); }
   return out;
 }
 

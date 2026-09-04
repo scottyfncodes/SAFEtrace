@@ -1,5 +1,6 @@
 /** The town, as data. Every field here is something the machine renderer can read. */
 import type { Vec2 } from '../core/math';
+import type { Evidence } from './surveillance/types';
 
 export type SurfaceKind =
   | 'asphalt' | 'smoothConcrete' | 'roughConcrete' | 'grass' | 'gravel' | 'dirt' | 'water' | 'tile';
@@ -149,6 +150,27 @@ export interface SensorData {
 export type NetworkNodeKind =
   | 'CAMERA' | 'JUNCTION' | 'UPLINK' | 'PLATE_READER' | 'SIGN' | 'SPEAKER' | 'DOOR' | 'SERVICE';
 
+/**
+ * What a record may look at when it is written at read time rather than at
+ * authoring time.
+ *
+ * Deliberately four fields and no more. A record needs to say true things about
+ * what the machine has actually received; it does not need a content engine.
+ */
+export interface RecordContext {
+  tick: number;
+  evidence: readonly Evidence[];
+  network: NetworkData;
+  /** The identity the system currently attributes to the player. */
+  playerIdentity: string;
+}
+
+/**
+ * A node's records. Static text for anything fixed; a function for the few
+ * nodes whose whole point is to report what has happened.
+ */
+export type NodeRecords = string[] | ((ctx: RecordContext) => string[]);
+
 export interface NetworkNodeData {
   id: string;
   kind: NetworkNodeKind;
@@ -157,7 +179,13 @@ export interface NetworkNodeData {
   label: string;
   edges: string[];
   /** Records revealed by QUERY. */
-  records?: string[];
+  records?: NodeRecords;
+}
+
+/** Read a node's records, whether they are text or a report. */
+export function resolveRecords(records: NodeRecords | undefined, ctx: RecordContext): string[] {
+  if (!records) return [];
+  return typeof records === 'function' ? records(ctx) : records;
 }
 
 export interface NetworkSegmentData {

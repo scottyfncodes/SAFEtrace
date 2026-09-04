@@ -6,9 +6,15 @@ import { RECORD_CHAIN } from '../src/content/story';
 import { SABLE_GAP_X, SABLE_LANE_Y } from '../src/content/northgate';
 import { observe } from '../src/sim/surveillance/sensors';
 import { Rng } from '../src/core/rng';
+import { resolveRecords, type RecordContext } from '../src/sim/worldTypes';
 
 const data = buildBellhaven();
 const world = new World(data);
+const staticCtx = (): RecordContext =>
+  ({ tick: 0, evidence: [], network: data.network, playerIdentity: 'REYES, D.' });
+const recordsOf = (id: string) =>
+  resolveRecords(data.network.nodes.find((n) => n.id === id)!.records, staticCtx());
+
 const northgate = {
   buildings: data.buildings.filter((b) => b.district === 'northgate'),
   sensors: data.sensors.filter((s) => s.district === 'northgate'),
@@ -139,14 +145,13 @@ describe('Sable Lane is the route the model cannot follow', () => {
 describe('the six-record chain', () => {
   it('is six distinct records, each saying something the last did not', () => {
     expect(RECORD_CHAIN.length).toBe(6);
-    const texts = RECORD_CHAIN.map((id) =>
-      (data.network.nodes.find((n) => n.id === id)!.records ?? []).join(' | '));
+    const texts = RECORD_CHAIN.map((id) => recordsOf(id).join(' | '));
     expect(new Set(texts).size).toBe(6);
     for (const t of texts) expect(t.length).toBeGreaterThan(30);
   });
 
   it('forms a causal chain: the camera worked, and the harm happened anyway', () => {
-    const rec = (id: string) => (data.network.nodes.find((n) => n.id === id)!.records ?? []).join(' | ');
+    const rec = (id: string) => recordsOf(id).join(' | ');
     expect(rec('CM-207')).toMatch(/NO FAULT/);
     expect(rec('JX-207')).toMatch(/NO RETRANSMISSION|NO LOSS/);
     expect(rec('SVC-VISION')).toMatch(/ENROLLED MINORS/);
