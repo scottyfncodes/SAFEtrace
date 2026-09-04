@@ -16,7 +16,7 @@ import { buildBellhaven } from './content/bellhaven';
 import { validateWorld } from './sim/world';
 import { Sim } from './sim/sim';
 import { Renderer } from './render/renderer';
-import { FirstPersonRenderer } from './render/firstPerson';
+import { PerspectiveRenderer } from './render/perspective';
 import { Audio } from './audio/audio';
 import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
@@ -322,15 +322,34 @@ class Game {
       // screen, which is what makes the shot predictable.
       const look = this.touch.takeLook();
       this.aimYaw += look.yaw;
-      this.sim.lookPitch = FirstPersonRenderer.clampPitch(this.sim.lookPitch + look.pitch);
+      this.sim.lookPitch = PerspectiveRenderer.clampPitch(this.sim.lookPitch + look.pitch);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
       this.story.update();
       return;
     }
 
     if (tap) this.resolveTap(tap);
+    this.orientMove();
     this.sim.step(dt, this.intent, this.aimPoint());
     this.story.update();
+  }
+
+  /**
+   * Turn the thumb's screen direction into a world direction.
+   *
+   * With a camera bolted overhead these were the same thing. Behind a rider who
+   * turns, they are not: pushing the stick up has to mean "the way I am facing"
+   * or the control fights the camera every time the road bends. The rotation
+   * lives here, in the composition root, because it is a fact about the camera
+   * and the simulation must not know cameras exist.
+   */
+  private orientMove(): void {
+    const mv = this.intent.moveVector;
+    if (!mv) return;
+    // Screen-up is -y; the camera's forward is its yaw.
+    const yaw = this.renderer.chase.yaw + Math.PI / 2;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    this.intent.moveVector = { x: mv.x * c - mv.y * s, y: mv.x * s + mv.y * c };
   }
 
   /**

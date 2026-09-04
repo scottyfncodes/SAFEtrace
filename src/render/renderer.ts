@@ -13,7 +13,7 @@ import type { Sim } from '../sim/sim';
 import { predictArc } from '../sim/slingshot';
 import { ViewCamera } from './camera';
 import { ControlsRenderer } from './controls';
-import { FirstPersonRenderer } from './firstPerson';
+import { ChaseCamera, EYE_Z, PerspectiveRenderer } from './perspective';
 import { MachineRenderer } from './machine';
 import { VeneerRenderer, ROOF_K, roundRect } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
@@ -25,7 +25,8 @@ export class Renderer {
   readonly controls: ControlsRenderer;
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
-  private readonly fp = new FirstPersonRenderer();
+  private readonly perspective = new PerspectiveRenderer();
+  readonly chase = new ChaseCamera();
   private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
   showControlHome = false;
@@ -108,6 +109,30 @@ export class Renderer {
       if (sim.aimMode) return;
     }
 
+    /*
+     * Two views, and which one you are in means something.
+     *
+     * Third person is your body: you, the board, the pavement, and the camera
+     * on the wall that is pointing at you. The plan view is the machine's
+     * picture of you — coverage, edges, forecast, evidence — and it is drawn
+     * against the flat camera because that is where those things are legible.
+     * Holding VISION crosses from one to the other, which is what the peel has
+     * always been for.
+     */
+    this.chase.update(sim, dt);
+    if (sim.visionBlend < 0.999) {
+      this.perspective.draw(ctx, sim, this.chase.state(sim), this.w, this.h, false);
+      this.drawSkateHud(ctx);
+    }
+    if (sim.visionBlend <= 0.001) {
+      if (this.controlVisual) {
+        this.controls.update(this.controlVisual, dt, this.showControlHome);
+        this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+      }
+      return;
+    }
+    ctx.globalAlpha = sim.visionBlend;
+
     this.cam.follow(
       sim.player.pos, sim.player.vel, sim.player.speed, sim.playerMaxSpeed, dt,
       this.settings.cameraShake,
@@ -138,9 +163,39 @@ export class Renderer {
     this.drawRipples(ctx, dt);
     this.drawVignette(ctx);
 
+    ctx.globalAlpha = 1;
+
     if (this.controlVisual) {
       this.controls.update(this.controlVisual, dt, this.showControlHome);
       this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+    }
+  }
+
+  /**
+   * What the skating view needs on top of it, and nothing more: a speed read,
+   * and a warning when something is actually looking at you. Coverage geometry
+   * belongs in the plan view, where it can be read.
+   */
+  private drawSkateHud(ctx: CanvasRenderingContext2D): void {
+    const sim = this.sim;
+    const t = clamp01(sim.player.speed / Math.max(1, sim.playerMaxSpeed));
+    // Speed, as a short bar low on the left. Never a number.
+    const x = 26, y = this.h - 96, len = 74;
+    ctx.strokeStyle = alpha('#12181F', 0.34);
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y); ctx.stroke();
+    ctx.strokeStyle = alpha(sim.player.flow > 0.4 ? VENEER.warning : '#F6F4EE', 0.85);
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len * t, y); ctx.stroke();
+
+    if (sim.playerObserved) {
+      // The edge of the frame warms when a lens has you. Deliberately not a
+      // meter: you are being looked at, not scored.
+      const g = ctx.createLinearGradient(0, 0, 0, this.h);
+      g.addColorStop(0, alpha(VENEER.player, 0.16));
+      g.addColorStop(0.3, alpha(VENEER.player, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, this.w, this.h);
     }
   }
 
@@ -152,7 +207,12 @@ export class Renderer {
   private renderAiming(ctx: CanvasRenderingContext2D, dt: number): void {
     const sim = this.sim;
     void dt;
-    this.fp.draw(ctx, sim, this.w, this.h);
+    const eye = {
+      pos: { x: (sim.aimAnchor ?? sim.player.pos).x, y: (sim.aimAnchor ?? sim.player.pos).y, z: EYE_Z },
+      yaw: sim.aim.angle,
+      pitch: sim.lookPitch,
+    };
+    this.perspective.draw(ctx, sim, eye, this.w, this.h, true);
 
     const cx = this.w / 2, cy = this.h / 2;
     const draw = clamp01(sim.player.draw);
@@ -160,7 +220,7 @@ export class Renderer {
     // The lock, on the thing itself, so the player aims at the world and not at
     // a crosshair floating in front of it.
     const t = sim.aimTarget;
-    const lock = t ? this.fp.screenOf(sim, t.pos, t.z, this.w, this.h) : null;
+    const lock = t ? this.perspective.screenOf(eye, t.pos, t.z, this.w, this.h) : null;
     if (lock) {
       const r = Math.max(22, 620 / Math.max(4, Math.hypot(t!.pos.x - sim.player.pos.x, t!.pos.y - sim.player.pos.y)));
       const arm = r * 0.4;
@@ -219,10 +279,79 @@ export class Renderer {
       ctx.textAlign = 'left';
     }
 
+    this.drawSlingInHands(ctx, draw);
+
     // A frame, so it is obvious this is a state and not the world.
     ctx.strokeStyle = alpha('#12181F', 0.5);
     ctx.lineWidth = 3;
     ctx.strokeRect(1.5, 1.5, this.w - 3, this.h - 3);
+  }
+
+  /**
+   * The slingshot, held. Two hands, the fork, and elastic that visibly stretches
+   * as the band loads with a bearing sitting in the pouch.
+   *
+   * Drawn in screen space at the bottom of the view rather than as world
+   * geometry: it is held against the eye, so it does not belong in the
+   * projection, and this way it costs nothing and never clips into a wall.
+   */
+  private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
+    const cx = this.w / 2;
+    const base = this.h + 18;
+    // The fork sits below and left of centre, the way a right-hander holds it.
+    const fx = cx - this.w * 0.20;
+    const forkY = this.h * 0.70;
+    const span = Math.min(46, this.w * 0.115);
+    const prong = Math.min(54, this.h * 0.085);
+    const skin = '#E8BE9B';
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Forward hand and arm, holding the fork out.
+    ctx.strokeStyle = shade(VENEER.player, -0.34);
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(fx - 46, base);
+    ctx.lineTo(fx, forkY + prong * 0.9);
+    ctx.stroke();
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.72, 13, 0, Math.PI * 2); ctx.fill();
+
+    // The fork itself.
+    ctx.strokeStyle = '#8A6A4A';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(fx, forkY + prong * 0.9);
+    ctx.lineTo(fx, forkY);
+    ctx.moveTo(fx, forkY); ctx.lineTo(fx - span, forkY - prong);
+    ctx.moveTo(fx, forkY); ctx.lineTo(fx + span, forkY - prong);
+    ctx.stroke();
+
+    // The band, pulled back toward the drawing hand. Its reach is the draw.
+    const pullX = fx + 26 + draw * 74;
+    const pullY = forkY - prong * 0.1 + draw * 26;
+    ctx.strokeStyle = '#3B4149';
+    ctx.lineWidth = Math.max(2, 5 - draw * 2.2);
+    ctx.beginPath();
+    ctx.moveTo(fx - span, forkY - prong);
+    ctx.lineTo(pullX, pullY);
+    ctx.lineTo(fx + span, forkY - prong);
+    ctx.stroke();
+
+    // The bearing sitting in the pouch, and the hand around it.
+    ctx.fillStyle = '#C9CDD2';
+    ctx.beginPath(); ctx.arc(pullX, pullY, 6.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = shade(VENEER.player, -0.34);
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(this.w * 0.5 + 60, base);
+    ctx.lineTo(pullX + 10, pullY + 16);
+    ctx.stroke();
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(pullX + 8, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   // ------------------------------------------------------------------ layers
