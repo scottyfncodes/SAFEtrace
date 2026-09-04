@@ -72,8 +72,30 @@ export class Dispatcher {
     // 1. Track-driven tasking, strongest first.
     const ordered = [...tracks].sort((a, b) => b.risk.total - a.risk.total);
     for (const t of ordered) {
-      const lvl = levelFor(t.risk.total);
-      if (lvl === 'PASSIVE' || lvl === 'MONITORING') continue;
+      /*
+       * Watched is not hunted.
+       *
+       * Tasking used to key off the risk score alone, and a score is something
+       * an ordinary afternoon can raise: skate quickly, cut off the road, be
+       * out at the wrong hour, and a drone was launched at you for existing
+       * energetically. That made the whole game a chase and left no room to
+       * simply be in the town.
+       *
+       * A unit now goes after somebody the system has something *on* — see
+       * Track.wantedUntil. The score still climbs, the notifications still
+       * arrive, the cameras still hold you. Nobody comes until you have given
+       * them a reason.
+       */
+      if (tick > t.wantedUntil) continue;
+      /*
+       * The score no longer decides *whether* anybody comes. It decides who,
+       * and how hard: a drone goes to have a look at somebody the system has
+       * something on, and a score at dispatch level is what turns that into a
+       * patrol standing in the road.
+       */
+      const scored = levelFor(t.risk.total);
+      const lvl: EscalationLevel =
+        scored === 'PASSIVE' || scored === 'MONITORING' ? 'DRONE_DISPATCH' : scored;
       const last = this.lastTaskTick.get(t.id) ?? -9999;
       if (tick - last < RETASK_COOLDOWN) continue;
       // One asset per track. Attention is finite, and committing the whole

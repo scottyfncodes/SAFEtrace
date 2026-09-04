@@ -88,6 +88,18 @@ export interface Track {
   risk: RiskBreakdown;
   /** Evidence ids linked to this track. */
   linkedEvidence: string[];
+  /**
+   * Until when this subject is actually being pursued, as a tick.
+   *
+   * Being watched and being hunted are different things, and the game is much
+   * better when it says so. A high score means the town has noticed you; it is
+   * not on its own a reason for anybody to come. A unit is only sent after
+   * somebody who has actually done something — evidence that links to them, an
+   * incident with their name on it, or a sustained score at intervention
+   * level. Everything else is a suburb looking at a teenager, which is the
+   * whole atmosphere.
+   */
+  wantedUntil: number;
   /** Ticks during which the track is invisible to sensors (LOOP/MASK). */
   suppressedUntil: number;
   maskedUntil: number;

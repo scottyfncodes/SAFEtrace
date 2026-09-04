@@ -9,7 +9,7 @@
 import { EventBus } from '../core/events';
 import type { Intent } from '../core/input';
 import {
-  type Vec2, angleOf, clamp, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds, wrapAngle,
+  type Vec2, angleOf, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds,
 } from '../core/math';
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
@@ -40,10 +40,19 @@ import { SYSTEM, CARE, SHOT } from '../content/copy';
 export const SELECT_RANGE = 16;
 
 /**
- * The most a shot will be bent toward something the player is nearly pointing
- * at. Six degrees is a nudge; anything more starts aiming for them.
+ * How far out the reticle sits when it is on nothing at all — sky, or a
+ * street that runs further than a bearing can be thrown. The shot is arced to
+ * that point, so pointing at nothing still throws for distance.
  */
-const MAGNET_MAX = (6 * Math.PI) / 180;
+const SIGHT_RANGE = 34;
+
+/**
+ * How long the system keeps somebody on its list once it has a reason.
+ *
+ * Two minutes of actually being pursued, after which — if nothing else
+ * happens — it goes back to merely watching you, which it never stopped doing.
+ */
+const WANTED_TICKS = 60 * 120;
 
 /**
  * You only hear a camera's servo if you are close and moving slowly, which is
@@ -126,6 +135,10 @@ export class Sim {
 
   private observationBuffer = new Map<string, Observation[]>();
   private assets: Asset[] = [];
+  /** Read-only view of asset tasking, so who is being sent where is testable. */
+  get tasking(): ReadonlyArray<{ id: string; kind: Asset['kind']; task: Asset['task'] }> {
+    return this.assets;
+  }
   private lastEscalation: EscalationLevel = 'PASSIVE';
   private aimAngle = 0;
   private aimPitch = 0.18;
@@ -414,74 +427,72 @@ export class Sim {
       this.aimAngle = angleOf(this.player.vel);
     }
 
-    // Elevation is implicit. The player points at a thing; the character works
-    // out the arc, the way someone who has done this a thousand times would.
+    /*
+     * The player aims. Nothing here aims for them.
+     *
+     * This used to search a cone for a target and then bend the shot toward
+     * whatever it found. It was called magnetism rather than snapping, and six
+     * degrees is a small number, but the substance was the same: point roughly
+     * at a drone and the game closed the gap. A player cannot feel their own
+     * skill improving through a system that is quietly covering for them, and
+     * they cannot trust a miss either, because they never know whose miss it
+     * was. The bearing below is exactly the direction the thumb chose, from
+     * the moment aiming starts to the moment the band is released.
+     *
+     * What the character still does is *range*. They can see how far away the
+     * thing under the sight is, and somebody who has thrown a thousand of
+     * these knows the arc that reaches it. So the reticle is cast into the
+     * world, whatever it lands on sets the distance, and the elevation is the
+     * arc to that point. Put the sight on a drone and the bearing gets there.
+     * Put it two metres to the left of one and the bearing goes two metres to
+     * the left of it, at the right height, and that is the player's miss.
+     */
     const muzzle = MUZZLE_MIN + clamp01(this.player.draw) * (MUZZLE_MAX - MUZZLE_MIN);
     const dir = fromAngle(this.aimAngle);
+    const slope = Math.tan(this.lookPitch);
+
+    // What the sight is actually on. A target counts only when the line of
+    // sight passes through it — its own silhouette, not a cone around it.
     let best: BallisticTarget | null = null;
     let bestAlong = Infinity;
-
     for (const t of this.ballisticTargets()) {
       const rel = { x: t.pos.x - this.player.pos.x, y: t.pos.y - this.player.pos.y };
       const along = rel.x * dir.x + rel.y * dir.y;
-      if (along < 2 || along > 70) continue;
-      // Lateral tolerance widens with distance, so distant targets stay pickable.
+      if (along < 2 || along > 70 || along >= bestAlong) continue;
       const lateral = Math.abs(rel.x * -dir.y + rel.y * dir.x);
-      // A thumb drag sets this angle, and it also sets the draw, so the two
-      // fight each other. The cone is generous on purpose; the lock indicator
-      // is what makes it honest rather than mysterious.
-      // The cone is exactly what magnetism can reach: sin(MAGNET_MAX) of the
-      // distance, plus the target's own size. Show a lock, land the shot.
-      if (lateral > Math.sin(MAGNET_MAX) * along + t.radius) continue;
-      if (along < bestAlong) { bestAlong = along; best = t; }
+      const vertical = LAUNCH_Z + slope * along - t.z;
+      if (Math.hypot(lateral, vertical) > t.radius) continue;
+      bestAlong = along; best = t;
     }
 
     this.aimTarget = best;
     this.aimWorld = pointerWorld ? { x: pointerWorld.x, y: pointerWorld.y } : null;
 
+    // Range and height of the point under the sight.
+    let range: number;
+    let height: number;
     if (best) {
-      /*
-       * Bearing as well as elevation.
-       *
-       * The character has always solved the *height* of the arc for whatever is
-       * on the line, and left the *direction* wherever the player's thumb
-       * happened to point. So the acquisition cone was wider than the shot was
-       * accurate: past about six degrees the reticle sat on a drone, the arc
-       * was solved to its altitude, and the bearing still went past it. Half a
-       * solution is worse than none, because it looks like a hit.
-       *
-       * Someone who has done this a thousand times points at the thing. Sway
-       * still decides whether they get it, so this buys a fair shot, not a
-       * free one.
-       */
-      /*
-       * Magnetism, not a snap.
-       *
-       * The shot used to be rotated straight onto whatever the solver had
-       * found, from as much as sixteen degrees away. That is target snapping:
-       * the player points vaguely and the game does the aiming, and it takes
-       * the skill out of a thumb. The bearing now bends toward a target by at
-       * most MAGNET_MAX, and the acquisition cone is narrowed to match — so the
-       * bracket appears exactly when magnetism can close the gap, and never
-       * promises a hit it cannot deliver.
-       *
-       * The camera is never touched. Nothing here rotates the view.
-       */
-      const toTarget = { x: best.pos.x - this.player.pos.x, y: best.pos.y - this.player.pos.y };
-      const want = angleOf(toTarget);
-      const off = wrapAngle(want - this.aimAngle);
-      this.aimAngle = wrapAngle(this.aimAngle + clamp(off, -MAGNET_MAX, MAGNET_MAX));
-      const flat = Math.hypot(toTarget.x, toTarget.y);
-      const solved = solvePitch(flat, best.z - LAUNCH_Z, muzzle);
-      this.aimPitch = solved ?? Math.atan2(best.z - LAUNCH_Z, flat);
+      range = bestAlong;
+      height = best.z;
+    } else if (slope < -0.02 && LAUNCH_Z / -slope < SIGHT_RANGE * 2) {
+      // Looking down: the line meets the ground, and that is the point.
+      range = LAUNCH_Z / -slope;
+      height = 0;
+    } else if (this.aimMode) {
+      range = SIGHT_RANGE;
+      height = LAUNCH_Z + slope * SIGHT_RANGE;
     } else if (pointerWorld) {
-      // No target on the line: put the bearing on the ground where they pointed.
-      const d = dist(this.player.pos, pointerWorld);
-      const solved = d > 2 ? solvePitch(d, -LAUNCH_Z, muzzle) : null;
-      this.aimPitch = solved ?? 0.1;
+      // No look angle, only a named place: throw to the place.
+      range = dist(this.player.pos, pointerWorld);
+      height = 0;
     } else {
       this.aimPitch = 0.14;
+      void intent;
+      return;
     }
+
+    const solved = range > 1.5 ? solvePitch(range, height - LAUNCH_Z, muzzle) : null;
+    this.aimPitch = solved ?? Math.atan2(height - LAUNCH_Z, Math.max(range, 0.5));
     void intent;
   }
 
@@ -727,7 +738,11 @@ export class Sim {
      * thing from an incident near you.
      */
     const incident = this.openIncident('PUBLIC_ORDER', pos, SYSTEM.incidentPerson, this.world.districtAt(pos)?.id ?? 'bellhaven');
-    if (observedBy.length > 0) incident.associated.push(this.playerTrack.attributedIdentity);
+    if (observedBy.length > 0) {
+      incident.associated.push(this.playerTrack.attributedIdentity);
+      // Seen doing it: now they come.
+      this.playerTrack.wantedUntil = Math.max(this.playerTrack.wantedUntil, this.tick + WANTED_TICKS);
+    }
     this.playerSubject.priorContacts += 1;
   }
 
@@ -914,6 +929,9 @@ export class Sim {
       if (outcome.linked && e.linkedTrackId) {
         const t = this.allTracks.find((x) => x.id === e.linkedTrackId);
         if (t && !t.linkedEvidence.includes(e.id)) t.linkedEvidence.push(e.id);
+        // Evidence that lands on a name is the moment somebody is sent. Not a
+        // score, not a camera holding you: a thing they can point at.
+        if (t) t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
         this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
       } else if (e.kind !== 'NOISE') {
         this.message('SYSTEM', [SYSTEM.originIndeterminate], 3.4);
@@ -923,7 +941,29 @@ export class Sim {
 
   // ---------------------------------------------------------------- dispatch
 
+  /**
+   * The third way onto the list: not one thing, but everything.
+   *
+   * A player who sits at intervention level long enough has earned attention
+   * without any single event doing it. Ten seconds, so it is a pattern rather
+   * than a spike from clipping a kerb.
+   */
+  private updateWanted(): void {
+    const t = this.playerTrack;
+    if (levelFor(t.risk.total) === 'INTERVENTION') {
+      this.interventionTicks++;
+      if (this.interventionTicks > 60 * 10) {
+        t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
+      }
+    } else {
+      this.interventionTicks = Math.max(0, this.interventionTicks - 2);
+    }
+  }
+
+  private interventionTicks = 0;
+
   private updateDispatch(): void {
+    this.updateWanted();
     for (const a of this.assets) {
       const d = this.drones.find((x) => x.id === a.id);
       if (d) { a.pos = d.pos; continue; }

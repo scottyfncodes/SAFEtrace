@@ -7,6 +7,7 @@ import { Sim } from '../src/sim/sim';
 import { emptyIntent, type Intent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
+import { LAUNCH_Z } from '../src/sim/slingshot';
 
 export function makeSim(seed = 0x5afe7ace): Sim {
   return new Sim(buildBellhaven(), { seed });
@@ -40,6 +41,49 @@ export function place(sim: Sim, p: Vec2, vel: Vec2 = { x: 0, y: 0 }): void {
   sim.playerSubject.pos = sim.player.pos;
   sim.playerSubject.vel = sim.player.vel;
   sim.playerSubject.speed = sim.player.speed;
+}
+
+/** A fixed point, or a live one: a drone does not wait to be aimed at. */
+type Aim = Vec2 | (() => Vec2);
+type Height = number | (() => number);
+
+/**
+ * Put the sight on a point in the world.
+ *
+ * Aiming is entirely manual: the sim bends nothing toward anything. A bearing
+ * goes where the player is looking, and where they are looking is a direction
+ * *and* an elevation — so a test that only names an XY on the ground is not
+ * aiming at a camera four metres up, it is aiming at the pavement below it.
+ * This sets the elevation and returns the point the pointer path wants.
+ */
+export function look(sim: Sim, at: Aim, z: Height = 0, offsetDeg = 0): Vec2 {
+  const p = typeof at === 'function' ? at() : at;
+  const h = typeof z === 'function' ? z() : z;
+  const rel = { x: p.x - sim.player.pos.x, y: p.y - sim.player.pos.y };
+  const flat = Math.max(Math.hypot(rel.x, rel.y), 0.5);
+  const yaw = Math.atan2(rel.y, rel.x) + (offsetDeg * Math.PI) / 180;
+  sim.lookPitch = Math.atan2(h - LAUNCH_Z, flat);
+  return { x: sim.player.pos.x + Math.cos(yaw) * flat, y: sim.player.pos.y + Math.sin(yaw) * flat };
+}
+
+/** Aim at a point at a given height, draw fully, release, and let it land. */
+export function shootAt(sim: Sim, at: Aim, z: Height = 0, offsetDeg = 0, draw = 1): void {
+  for (let i = 0; i < 40; i++) {
+    const it = emptyIntent();
+    it.aim = true;
+    if (draw < 1) it.drawAmount = draw;
+    sim.step(TICK_DT, it, look(sim, at, z, offsetDeg));
+  }
+  const f = emptyIntent();
+  f.aim = true;
+  f.fire = true;
+  f.firePressed = true;
+  if (draw < 1) f.drawAmount = draw;
+  sim.step(TICK_DT, f, look(sim, at, z, offsetDeg));
+  for (let i = 0; i < 300 && sim.projectiles.length > 0; i++) {
+    sim.step(TICK_DT, emptyIntent(), null);
+  }
+  sim.lookPitch = 0.06;
 }
 
 /** Drive the player straight, as if holding push. */

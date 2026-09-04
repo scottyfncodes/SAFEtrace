@@ -1,27 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { makeUnlockedSim, place, step } from './harness';
+import { makeUnlockedSim, place, shootAt, step } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
 import type { Sim } from '../src/sim/sim';
 
-/** Aim at a point and release a fully drawn shot. */
-function shoot(sim: Sim, at: Vec2): void {
-  // Hold aim long enough to reach full draw.
-  for (let i = 0; i < 40; i++) {
-    const it = emptyIntent();
-    it.aim = true;
-    sim.step(TICK_DT, it, at);
-  }
-  const fireIntent = emptyIntent();
-  fireIntent.aim = true;
-  fireIntent.fire = true;
-  fireIntent.firePressed = true;
-  sim.step(TICK_DT, fireIntent, at);
-  // Let the projectile fly.
-  for (let i = 0; i < 200 && sim.projectiles.length > 0; i++) {
-    sim.step(TICK_DT, emptyIntent(), null);
-  }
+/** Chest height on a person, which is what the sling is pointed at. */
+const PERSON_Z = 1.15;
+
+/** Aim at a point at a given height and release a fully drawn shot. */
+function shoot(sim: Sim, at: Vec2 | (() => Vec2), z: number | (() => number) = 0): void {
+  shootAt(sim, at, z);
 }
 
 describe('the slingshot loop', () => {
@@ -32,7 +21,7 @@ describe('the slingshot loop', () => {
     place(sim, { x: 145, y: 62 });
     const before = sim.player.bearings;
 
-    shoot(sim, cam.data.pos);
+    shoot(sim, cam.data.pos, cam.data.height);
 
     expect(sim.player.bearings).toBe(before - 1);
     expect(['OFFLINE', 'MISALIGNED', 'FROZEN']).toContain(cam.state);
@@ -42,7 +31,7 @@ describe('the slingshot loop', () => {
     const sim = makeUnlockedSim();
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: 145, y: 62 });
-    shoot(sim, cam.data.pos);
+    shoot(sim, cam.data.pos, cam.data.height);
 
     expect(sim.evidence.size).toBeGreaterThan(0);
     const e = [...sim.evidence.values()][0];
@@ -62,7 +51,7 @@ describe('the slingshot loop', () => {
       place(sim, { x: 145, y: 62 });
       // Let the system acquire the player first when we want a link.
       if (stay) step(sim, 3);
-      shoot(sim, cam.data.pos);
+      shoot(sim, cam.data.pos, cam.data.height);
       if (!stay) {
         // Break contact entirely: the far side of town, inside the Channel.
         place(sim, { x: 300, y: 442 });
@@ -128,7 +117,7 @@ describe('the slingshot loop', () => {
 
     let struck: { witnesses: number; seen: boolean } | null = null;
     sim.bus.on('person:struck', (e) => { struck = e; });
-    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y }, PERSON_Z);
     sim.bus.flush();
 
     // It connected, and the person is entirely unharmed: no health, no damage,
@@ -155,7 +144,7 @@ describe('the slingshot loop', () => {
       if (!seen) for (const s of sim.sensors) { s.state = 'OFFLINE'; s.stateUntil = 1e9; }
       place(sim, { x: 136, y: 70 });
       step(sim, 0.2);
-      shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+      shoot(sim, { x: npc.pos.x, y: npc.pos.y }, PERSON_Z);
       const inc = sim.incidents.find((i) => i.kind === 'PUBLIC_ORDER');
       const ev = [...sim.evidence.values()].find((e) => e.kind === 'PERSON_STRUCK');
       return { associated: inc?.associated.length ?? 0, watched: ev?.observedBy.length ?? 0 };
@@ -180,7 +169,7 @@ describe('the slingshot loop', () => {
     near.pos = { x: npc.pos.x + 6, y: npc.pos.y + 2 };
     place(sim, { x: npc.pos.x - 9, y: npc.pos.y });
     step(sim, 0.2);
-    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y }, PERSON_Z);
     expect(near.startled).toBeGreaterThan(0);
   });
 
@@ -191,7 +180,7 @@ describe('the slingshot loop', () => {
     npc.routeIndex = 0;
     place(sim, { x: npc.pos.x - 9, y: npc.pos.y });
     step(sim, 0.2);
-    shoot(sim, { x: npc.pos.x, y: npc.pos.y });
+    shoot(sim, { x: npc.pos.x, y: npc.pos.y }, PERSON_Z);
     const at = { ...npc.pos };
     step(sim, 6);
     expect(Math.hypot(npc.pos.x - at.x, npc.pos.y - at.y)).toBeGreaterThan(2);
@@ -287,7 +276,7 @@ describe('drones', () => {
     drone.pos = { x: 145, y: 50 };
     drone.z = 11;
     place(sim, { x: 145, y: 62 });
-    shoot(sim, drone.pos);
+    shoot(sim, () => drone.pos, () => drone.z);
 
     expect(drone.state).toBe('DESTABILISED');
     expect(drone.task).toBeNull();

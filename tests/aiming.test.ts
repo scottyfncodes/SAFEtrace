@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { makeSim, place, step } from './harness';
+import { look, makeSim, place, shootAt, step } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
+import { wrapAngle, type Vec2 } from '../src/core/math';
 import { DRONE } from '../src/sim/drone';
 import type { Sim } from '../src/sim/sim';
 
@@ -9,32 +10,21 @@ import type { Sim } from '../src/sim/sim';
  * The mobile aiming path, end to end.
  *
  * A first human could see what the slingshot was for and could not land a shot
- * on a drone. These tests reproduce the touch path exactly — a drag direction
- * and a draw amount, no mouse anywhere — and assert the property that was
- * missing: if the game has shown you a lock, the shot goes there.
+ * on a drone. These tests reproduce the touch path exactly — a look direction,
+ * a look elevation and a draw amount, no mouse anywhere — and assert the
+ * property the whole mode rests on: the bearing goes where the sight is, and
+ * nowhere else. Nothing in the simulation moves the shot toward a target.
  */
 
-/** main.ts projects a drag direction 320 screen px out; at zoom ~10 that is 32 m. */
-const AIM_PROJECTION_M = 32;
-
-function dragShoot(sim: Sim, angle: number, draw = 1): void {
-  const v = { x: Math.cos(angle), y: Math.sin(angle) };
-  const at = () => ({
-    x: sim.player.pos.x + v.x * AIM_PROJECTION_M,
-    y: sim.player.pos.y + v.y * AIM_PROJECTION_M,
-  });
-  for (let i = 0; i < 50; i++) {
-    const it = emptyIntent();
-    it.aim = true; it.drawAmount = draw; it.aimVector = v;
-    sim.step(TICK_DT, it, at());
-  }
-  const f = emptyIntent();
-  f.aim = true; f.drawAmount = draw; f.aimVector = v;
-  f.fire = true; f.firePressed = true;
-  sim.step(TICK_DT, f, at());
-  for (let i = 0; i < 300 && sim.projectiles.length > 0; i++) {
-    sim.step(TICK_DT, emptyIntent(), null);
-  }
+/** Look at a thing, draw, release. Degrees are the player's own error. */
+function aimShoot(
+  sim: Sim,
+  at: Vec2 | (() => Vec2),
+  z: number | (() => number),
+  offsetDeg = 0,
+  draw = 1,
+): void {
+  shootAt(sim, at, z, offsetDeg, draw);
 }
 
 /** Park a drone where the test wants it, then let its altitude settle. */
@@ -48,9 +38,6 @@ function parkedDrone(sim: Sim, at = { x: 145, y: 50 }, range = 14) {
   return d;
 }
 
-const toward = (sim: Sim, p: { x: number; y: number }, offsetDeg = 0) =>
-  Math.atan2(p.y - sim.player.pos.y, p.x - sim.player.pos.x) + (offsetDeg * Math.PI) / 180;
-
 describe('a drone is hittable where a player expects it to be', () => {
   it('is never smaller than its own picture', () => {
     // Drawn as a 1.4 x 1.0 m body with rotors reaching 1.27 m from centre.
@@ -60,7 +47,7 @@ describe('a drone is hittable where a player expects it to be', () => {
   it('goes down to a thumb drag from the front', () => {
     const sim = makeSim();
     const d = parkedDrone(sim);
-    dragShoot(sim, toward(sim, d.pos));
+    aimShoot(sim, () => d.pos, () => d.z);
     expect(d.state).toBe('DESTABILISED');
   });
 
@@ -68,7 +55,7 @@ describe('a drone is hittable where a player expects it to be', () => {
     for (const range of [8, 14, 22, 30, 38]) {
       const sim = makeSim();
       const d = parkedDrone(sim, { x: 145, y: 50 }, range);
-      dragShoot(sim, toward(sim, d.pos));
+      aimShoot(sim, () => d.pos, () => d.z);
       expect({ range, state: d.state }).toEqual({ range, state: 'DESTABILISED' });
     }
   });
@@ -78,7 +65,7 @@ describe('a drone is hittable where a player expects it to be', () => {
       const sim = makeSim();
       const d = parkedDrone(sim);
       d.z = z;
-      dragShoot(sim, toward(sim, d.pos));
+      aimShoot(sim, () => d.pos, () => d.z);
       expect({ z, state: d.state }).toEqual({ z, state: 'DESTABILISED' });
     }
   });
@@ -86,64 +73,91 @@ describe('a drone is hittable where a player expects it to be', () => {
   it('works on a half-drawn shot, not only a perfect one', () => {
     const sim = makeSim();
     const d = parkedDrone(sim);
-    dragShoot(sim, toward(sim, d.pos), 0.5);
+    aimShoot(sim, () => d.pos, () => d.z, 0, 0.5);
     expect(d.state).toBe('DESTABILISED');
   });
 });
 
-describe('the lock tells the truth', () => {
+describe('the player aims, and nothing aims for them', () => {
   /*
-   * The defect this replaces: the character solved the *height* of the arc for
-   * whatever was on the line and left the *bearing* wherever the thumb pointed.
-   * The acquisition cone was therefore wider than the shot was accurate — past
-   * about six degrees the reticle sat on the drone and the bearing went past
-   * it. A lock that appears and then misses is worse than no lock.
+   * Two defects preceded this contract, and both were the same mistake twice.
+   *
+   * First the character solved the *height* of the arc for whatever was on the
+   * line and left the *bearing* wherever the thumb pointed, so the reticle sat
+   * on a drone and the shot went past it. Then the bearing was bent onto the
+   * target instead — sixteen degrees at first, six after that — which fixed
+   * the miss by taking the aiming away from the player. A slingshot that
+   * quietly closes the gap cannot teach anybody to shoot, and it makes every
+   * miss ambiguous: the player never learns whether it was theirs.
+   *
+   * What survives is ranging, which is not aiming. Somebody who has thrown a
+   * thousand of these knows the arc that reaches the thing they are looking
+   * at. The direction is entirely the player's, at every distance, forever.
    */
-  /*
-   * The contract changed when the hard snap was replaced by bounded magnetism.
-   * The shot used to be rotated straight onto a target from as much as sixteen
-   * degrees away, which is the game aiming rather than the player. It now bends
-   * by at most six, and the acquisition cone was narrowed to match — so the
-   * bracket appears less often, and still never promises a hit it cannot make.
-   */
-  it('hits at every angle at which it offers a lock', () => {
-    for (const deg of [0, 3, 6, 9]) {
+  it('hits what the sight is actually on', () => {
+    // Inside the drone's own silhouette: 1.3 m of rotor at fourteen metres is
+    // a little over five degrees wide, so three is still on it.
+    for (const deg of [0, 3]) {
       const sim = makeSim();
       const d = parkedDrone(sim);
-      dragShoot(sim, toward(sim, d.pos, deg));
-      expect({ deg, lock: sim.aimTarget?.id, state: d.state })
-        .toEqual({ deg, lock: 'UAV-01', state: 'DESTABILISED' });
+      aimShoot(sim, () => d.pos, () => d.z, deg);
+      expect({ deg, state: d.state }).toEqual({ deg, state: 'DESTABILISED' });
     }
   });
 
-  it('stops offering one once the player is further off than a nudge', () => {
-    // Six degrees of bend plus the drone's own metre and a bit of width; past
-    // that the cone does not claim it, so there is no bracket and no hit.
-    for (const deg of [16, 24]) {
+  it('misses when the player misses, and never corrects for them', () => {
+    for (const deg of [8, 16, 24]) {
       const sim = makeSim();
       const d = parkedDrone(sim);
-      dragShoot(sim, toward(sim, d.pos, deg));
-      expect({ deg, lock: sim.aimTarget?.id ?? null }).toEqual({ deg, lock: null });
+      aimShoot(sim, () => d.pos, () => d.z, deg);
+      expect({ deg, state: d.state }).toEqual({ deg, state: 'PATROL' });
     }
   });
 
-  it('does not claim the drone when the drag is nowhere near it', () => {
+  it('sends the bearing along the line it was pointed down, not toward a target', () => {
+    /*
+     * The direct assertion. A drone is parked dead ahead and the sight is put
+     * eight degrees to the side of it. The shot must leave on the bearing the
+     * player chose — no bend, no partial bend — so the angle between the
+     * launch and the aim is nothing but the character's own unsteadiness.
+     */
     const sim = makeSim();
     const d = parkedDrone(sim);
-    dragShoot(sim, toward(sim, d.pos, 30));
-    // It may well have found something else out that way — Bellhaven is full of
-    // things. What it must not do is show the drone and then miss it.
-    expect(sim.aimTarget?.id).not.toBe('UAV-01');
-    expect(d.state).not.toBe('DESTABILISED');
+    const off = (8 * Math.PI) / 180;
+    for (let i = 0; i < 40; i++) {
+      const it = emptyIntent();
+      it.aim = true;
+      sim.step(TICK_DT, it, look(sim, d.pos, d.z, 8));
+    }
+    const wanted = Math.atan2(d.pos.y - sim.player.pos.y, d.pos.x - sim.player.pos.x) + off;
+    expect(Math.abs(wrapAngle(sim.aim.angle - wanted))).toBeLessThan(1e-6);
+
+    const f = emptyIntent();
+    f.aim = true; f.fire = true; f.firePressed = true;
+    sim.step(TICK_DT, f, look(sim, d.pos, d.z, 8));
+    const p = sim.projectiles[0];
+    const flew = Math.atan2(p.vel.y, p.vel.x);
+    // Sway is the only thing between the aim and the shot, and it is small.
+    expect(Math.abs(wrapAngle(flew - wanted))).toBeLessThan(0.05);
   });
 
-  it('names whatever is really in the way, so a stolen lock is visible', () => {
+  it('names only what the sight is really on, so the bracket cannot lie', () => {
     const sim = makeSim();
-    const d = parkedDrone(sim, { x: 145, y: 50 }, 46);
-    dragShoot(sim, toward(sim, d.pos));
-    // Something nearer on the line takes it. The bracket is on that thing.
-    expect(sim.aimTarget).not.toBeNull();
-    expect(sim.aimTarget!.id).not.toBe('UAV-01');
+    const d = parkedDrone(sim);
+    // On it: the bracket is on it.
+    for (let i = 0; i < 10; i++) {
+      const it = emptyIntent();
+      it.aim = true;
+      sim.step(TICK_DT, it, look(sim, d.pos, d.z));
+    }
+    expect(sim.aimTarget?.id).toBe('UAV-01');
+    // A drone's width off it: nothing is claimed, and nothing is nudged.
+    for (let i = 0; i < 10; i++) {
+      const it = emptyIntent();
+      it.aim = true;
+      sim.step(TICK_DT, it, look(sim, d.pos, d.z, 12));
+    }
+    expect(sim.aimTarget?.id).not.toBe('UAV-01');
   });
 });
 
@@ -210,7 +224,7 @@ describe('notifications are ranked before they are reduced', () => {
     const sim = makeSim();
     const { seen, flush } = capture(sim);
     const d = parkedDrone(sim);
-    dragShoot(sim, toward(sim, d.pos));
+    aimShoot(sim, () => d.pos, () => d.z);
     flush();
     const priorities = new Set(seen.map((s) => s.priority));
     // The shot itself is context; it is not an emergency that a bearing landed.
@@ -226,7 +240,7 @@ describe('notifications are ranked before they are reduced', () => {
     step(sim, 0.3);
     let shots = 0;
     while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) {
-      dragShoot(sim, toward(sim, jx.pos));
+      aimShoot(sim, jx.pos, 1.6);
       shots++;
     }
     flush();
@@ -306,7 +320,7 @@ describe('the stationary aiming mode', () => {
     const sim = makeSim();
     const d = parkedDrone(sim);
     enter(sim);
-    dragShoot(sim, toward(sim, d.pos));
+    aimShoot(sim, () => d.pos, () => d.z);
     expect(sim.lastShot).not.toBeNull();
     expect(sim.lastShot!.hit).toBe(true);
     expect(sim.lastShot!.label).toBe('UAV-01');

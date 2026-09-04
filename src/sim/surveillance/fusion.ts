@@ -30,6 +30,7 @@ export function makeTrack(subject: Subject): Track {
     predictionError: 0,
     risk: { behaviour: 0, evidence: 0, incident: 0, anomaly: 0, history: 0, decay: 0, total: 0 },
     linkedEvidence: [],
+    wantedUntil: -1,
     suppressedUntil: 0,
     maskedUntil: 0,
   };

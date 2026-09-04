@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeSim, place, skate, step } from './harness';
+import { makeSim, makeUnlockedSim, place, shootAt, skate, step } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import { Rng } from '../src/core/rng';
@@ -439,5 +439,71 @@ describe('records the player can reach', () => {
     expect(joined('SVC-PREDICT')).toMatch(/ASSOCIATION IS NOT AN ACCUSATION/);
     expect(joined('SVC-RECORD')).toMatch(/RETENTION: INDEFINITE/);
     expect(joined('SVC-RECORD')).toMatch(/RECORD IMMUTABLE/);
+  });
+});
+
+describe('being watched is not being hunted', () => {
+  /*
+   * The first human to play was chased around Bellhaven for skating. Tasking
+   * keyed off the risk score alone, and a score is something an ordinary
+   * afternoon raises: move quickly, cut across a road, be out at the wrong
+   * hour, and a drone was launched at somebody who had done nothing. That is a
+   * different game — it makes the town a chase, and it makes the surveillance
+   * an enemy rather than a climate.
+   *
+   * The score still climbs. The cameras still turn, the notifications still
+   * arrive, the file still fills up. Nobody is *sent* until the system has
+   * something it can point at.
+   */
+  const chasing = (sim: ReturnType<typeof makeSim>) =>
+    sim.tasking.some((a) => a.task?.trackId === sim.playerTrack.id);
+
+  it('sends nobody after a player who is only skating, however hard', () => {
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < 12; i++) {
+      skate(sim, 4, i % 2 === 0 ? 0.6 : -0.6);
+      expect(chasing(sim)).toBe(false);
+    }
+    // And it is not because nothing noticed: the file is open either way.
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+  });
+
+  it('sends nobody after a player standing still under a camera', () => {
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    sim.playerTrack.risk.total = 92;
+    step(sim, 8);
+    expect(levelFor(sim.playerTrack.risk.total)).toBe('INTERVENTION');
+    expect(chasing(sim)).toBe(false);
+  });
+
+  it('sends somebody once there is evidence with a name on it', () => {
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    step(sim, 12);
+    expect(sim.playerTrack.wantedUntil).toBeGreaterThan(sim.tick);
+    expect(chasing(sim)).toBe(true);
+  });
+
+  it('goes back to merely watching once the reason has aged out', () => {
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    sim.playerTrack.wantedUntil = sim.tick - 1;
+    sim.playerTrack.risk.total = 95;
+    step(sim, 6);
+    expect(chasing(sim)).toBe(false);
+  });
+
+  it('still investigates a place, because a noise is not a person', () => {
+    // The decoy has to keep working: tasking an asset to a thump three streets
+    // away is what the slingshot is for, and that was never about the player.
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    sim.dispatcher.flagAnomaly({ x: 300, y: 300 }, sim.tick + 1, 'TEST ANOMALY');
+    step(sim, 1);
+    expect(sim.tasking.some((a) => a.task !== null)).toBe(true);
   });
 });

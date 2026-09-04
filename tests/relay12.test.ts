@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { validateWorld, World } from '../src/sim/world';
-import { makeSim, place, step } from './harness';
-import { emptyIntent } from '../src/core/input';
-import { TICK_DT } from '../src/core/loop';
+import { makeSim, place, shootAt, step } from './harness';
 import { Rng } from '../src/core/rng';
 import { resolveRecords, type RecordContext } from '../src/sim/worldTypes';
 import { makeSensor, observe } from '../src/sim/surveillance/sensors';
@@ -49,21 +47,12 @@ function watchers(p: Vec2): string[] {
   return [...out];
 }
 
-/** Aim at a point and release a fully drawn shot. */
-function shoot(sim: Sim, at: Vec2): void {
-  for (let i = 0; i < 40; i++) {
-    const it = emptyIntent();
-    it.aim = true;
-    sim.step(TICK_DT, it, at);
-  }
-  const fire = emptyIntent();
-  fire.aim = true;
-  fire.fire = true;
-  fire.firePressed = true;
-  sim.step(TICK_DT, fire, at);
-  for (let i = 0; i < 200 && sim.projectiles.length > 0; i++) {
-    sim.step(TICK_DT, emptyIntent(), null);
-  }
+/** The height a junction box sits at on its post. */
+const JUNCTION_Z = 1.6;
+
+/** Aim at a point at a given height and release a fully drawn shot. */
+function shoot(sim: Sim, at: Vec2, z = 0): void {
+  shootAt(sim, at, z);
 }
 
 describe('Relay 12 is a working yard, not a set', () => {
@@ -156,7 +145,7 @@ describe('TX-2 reports what it actually carried', () => {
     // A real action in Northgate: take out the camera that produced the match.
     place(sim, { x: cam.data.pos.x - 10, y: cam.data.pos.y + 8 });
     step(sim, 0.2);
-    shoot(sim, cam.data.pos);
+    shoot(sim, cam.data.pos, cam.data.height);
     expect(cam.state).not.toBe('ONLINE');
 
     const observed = [...sim.evidence.values()].flatMap((e) => e.observedBy);
@@ -187,7 +176,7 @@ describe('TX-2 reports what it actually carried', () => {
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: cam.data.pos.x - 10, y: cam.data.pos.y + 8 });
     step(sim, 0.2);
-    shoot(sim, cam.data.pos);
+    shoot(sim, cam.data.pos, cam.data.height);
 
     const log = resolveRecords(sim.network.get('TX-2')!.records, sim.recordContext());
     const delivered = log.filter((l) => l.includes('DELIVERED'));
@@ -260,7 +249,7 @@ describe('a segment is the blast radius, and the player can aim at it', () => {
     place(sim, { x: 495, y: 266 });
     step(sim, 0.3);
     let shots = 0;
-    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos); shots++; }
+    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos, JUNCTION_Z); shots++; }
     expect(sim.network.get('JX-R12')!.state).toBe('DEGRADED');
 
     const st = (id: string) => sim.sensorById.get(id)!.state;
@@ -286,7 +275,7 @@ describe('a segment is the blast radius, and the player can aim at it', () => {
     place(sim, { x: 495, y: 266 });
     step(sim, 0.3);
     let shots = 0;
-    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos); shots++; }
+    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos, JUNCTION_Z); shots++; }
     const ev = [...sim.evidence.values()];
     expect(ev.some((e) => e.label.includes('JX-R12'))).toBe(true);
     expect(ev.flatMap((e) => e.observedBy).length).toBeGreaterThan(0);
