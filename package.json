@@ -1,0 +1,21 @@
+{
+  "name": "safetrace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SAFETRACE - a game about a kid on a skateboard in a town that is already watching.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "tsc --noEmit && vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}

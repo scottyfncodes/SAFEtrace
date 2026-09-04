@@ -1,0 +1,43 @@
+/** The events the simulation publishes. The only channel to ui and audio. */
+import type { Vec2 } from '../core/math';
+import type { EscalationLevel, Evidence, Incident, Track } from './surveillance/types';
+import type { ImpactKind } from './slingshot';
+
+export interface SafetraceMessage {
+  id: string;
+  /** SYSTEM = all-caps clinical register. CARE = warm consumer register. */
+  register: 'SYSTEM' | 'CARE';
+  lines: string[];
+  /** Seconds on screen. */
+  duration: number;
+  emphasis?: 'normal' | 'strong';
+}
+
+export interface SimEvents extends Record<string, unknown> {
+  'safetrace:message': SafetraceMessage;
+  'sensor:offline': { sensorId: string; label: string };
+  'sensor:misaligned': { sensorId: string; label: string };
+  'evidence:created': { evidence: Evidence };
+  'evidence:resolved': { evidence: Evidence; linked: boolean; candidateCount: number };
+  'escalation:changed': { from: EscalationLevel; to: EscalationLevel; risk: number };
+  'incident:opened': { incident: Incident };
+  'match:false-positive': { identity: string; confidence: number; incidentId: string };
+  'player:bail': { pos: Vec2 };
+  'player:land': { pos: Vec2; speed: number };
+  'player:push': { pos: Vec2; speed: number };
+  'player:pop': { pos: Vec2 };
+  'player:fire': { pos: Vec2; draw: number };
+  'player:collect': { count: number };
+  'projectile:impact': { kind: ImpactKind; pos: Vec2; targetId?: string };
+  'noise:event': { pos: Vec2; label: string };
+  'hack:started': { verb: string; nodeId: string; seconds: number };
+  'hack:completed': { verb: string; nodeId: string };
+  'hack:cancelled': { verb: string; nodeId: string };
+  'drone:destabilised': { droneId: string };
+  'drone:spotlight': { droneId: string; on: boolean };
+  'patrol:contact': { patrolId: string };
+  'vision:unlocked': Record<string, never>;
+  'veneer:crack': { seconds: number };
+  'story:beat': { id: string; label: string };
+  'track:updated': { track: Track };
+}
