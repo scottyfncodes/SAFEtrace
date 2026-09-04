@@ -34,7 +34,7 @@ import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track }
 import type { MessagePriority } from './events';
 import type { RecordContext } from './worldTypes';
 import { levelFor } from './surveillance/types';
-import { SYSTEM, CARE } from '../content/copy';
+import { SYSTEM, CARE, SHOT } from '../content/copy';
 
 /** How far the player can reach into the network without walking to it. */
 export const SELECT_RANGE = 16;
@@ -252,9 +252,19 @@ export class Sim {
     const looking = this.visionUnlocked && intent.vision;
     if (looking) intent = suppressWhileLooking(intent);
 
+    if (intent.aimModePressed) {
+      if (this.aimMode) this.exitAimMode(); else this.enterAimMode();
+    }
+    if (this.aimMode) {
+      // Out of bearings is the one thing that ends the mode by itself.
+      if (this.player.bearings <= 0 && this.projectiles.length === 0) this.exitAimMode();
+      else intent = holdStillToAim(intent);
+    }
+
     // 1-2. Input and movement.
     this.updateAim(intent, pointerWorld);
     updatePlayer(this.player, intent, this.world, dt);
+    this.holdAimAnchor();
     this.emitPlayerFeedback();
 
     this.playerSubject.pos = this.player.pos;
@@ -338,10 +348,58 @@ export class Sim {
 
   // ---------------------------------------------------------------- slingshot
 
+  /**
+   * Stationary aiming.
+   *
+   * Exploring and shooting were being asked of the same two thumbs at the same
+   * time, and a human could see what the slingshot was for and still not land a
+   * shot. They are now separate states: select the sling, the board stops, the
+   * view drops to the character's own eyeline, you aim, you fire, you are back.
+   *
+   * The character does not move an inch while this is true. That is the point,
+   * and it is asserted rather than hoped for.
+   */
+  aimMode = false;
+  /** Where the character was standing when aiming began. Never changes. */
+  aimAnchor: Vec2 | null = null;
+  /** Vertical look, radians. Positive is up. Set by the aiming layer. */
+  lookPitch = 0.06;
+  /** The last shot's outcome, for hit/miss feedback in the aiming view. */
+  lastShot: { tick: number; hit: boolean; label: string } | null = null;
+
+  enterAimMode(): void {
+    if (this.aimMode || this.player.bearings <= 0) return;
+    this.aimMode = true;
+    this.aimAnchor = { x: this.player.pos.x, y: this.player.pos.y };
+    this.player.vel = { x: 0, y: 0 };
+    this.player.speed = 0;
+    this.player.stance = 'ROLL';
+    this.lastShot = null;
+    this.bus.emit('aim:entered', {});
+  }
+
+  exitAimMode(): void {
+    if (!this.aimMode) return;
+    this.aimMode = false;
+    this.aimAnchor = null;
+    this.player.draw = 0;
+    this.bus.emit('aim:exited', {});
+  }
+
   /** What the ballistic solver has actually locked onto, if anything. */
   aimTarget: BallisticTarget | null = null;
   /** Where the shot is being aimed, in world space. Null when not aiming. */
   aimWorld: Vec2 | null = null;
+
+  /** Pin the character to the spot they chose to shoot from. */
+  private holdAimAnchor(): void {
+    if (!this.aimMode || !this.aimAnchor) return;
+    this.player.pos.x = this.aimAnchor.x;
+    this.player.pos.y = this.aimAnchor.y;
+    this.player.vel.x = 0;
+    this.player.vel.y = 0;
+    this.player.speed = 0;
+  }
 
   private updateAim(intent: Intent, pointerWorld: Vec2 | null): void {
     if (pointerWorld) {
@@ -459,10 +517,17 @@ export class Sim {
     for (const proj of this.projectiles) {
       const impact = stepProjectile(proj, ctx, dt);
       if (impact) {
+        // Told plainly, because a shot you cannot read the result of is a shot
+        // you cannot learn from.
+        this.lastShot = impact.targetId
+          ? { tick: this.tick, hit: true, label: impact.targetId }
+          : { tick: this.tick, hit: false, label: SHOT.ground };
+        // Hitting the pavement is a miss with a sound, not a result.
         this.resolveImpact(impact.kind, impact.pos, impact.vel, impact.vz, impact.z, impact.targetId);
         continue;
       }
       if (proj.life > 0) keep.push(proj);
+      else this.lastShot = { tick: this.tick, hit: false, label: SHOT.miss };
     }
     this.projectiles = keep;
 
@@ -849,8 +914,37 @@ export class Sim {
 
   // ---------------------------------------------------------------- hacking
 
-  /** The node the player could act on right now. */
+  /**
+   * A node the player has waved away. Proximity alone will not put it back.
+   */
+  private dismissedNodeId: string | null = null;
+
+  dismissFocus(): void {
+    this.dismissedNodeId = this.focusNode?.id ?? null;
+    this.selectedNodeId = null;
+    this.focusNode = null;
+    if (this.hack) this.cancelHack();
+  }
+
+  /**
+   * The node the player could act on right now.
+   *
+   * Gated on VISION being unlocked, and that is a usability fix rather than a
+   * design change. The panel used to open on proximity from the first minute of
+   * play: the spawn is forty-four metres from JX-M1, so the first thing a new
+   * player met was a box reading "JX-M1 / SEGMENT S-M1 / NOMINAL" and five verb
+   * buttons, before the story had said the word node. A human hit exactly that
+   * and could not tell whether it was danger, an objective, or furniture.
+   *
+   * Until Devon is stopped, Bellhaven is a nice place with nothing to inspect,
+   * which is the whole opening move of the game.
+   */
   updateFocus(): void {
+    if (!this.visionUnlocked) {
+      this.focusNode = null;
+      this.selectedNodeId = null;
+      return;
+    }
     if (this.selectedNodeId) {
       const chosen = this.network.get(this.selectedNodeId);
       if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
@@ -862,7 +956,13 @@ export class Sim {
       this.selectedNodeId = null;
       if (this.hack) this.cancelHack();
     }
-    this.focusNode = this.network.nearest(this.player.pos, 14) ?? null;
+    const near = this.network.nearest(this.player.pos, 14) ?? null;
+    // Walking away from a dismissed node clears the dismissal, so it is a
+    // "not now", not a permanent mute.
+    if (this.dismissedNodeId && (!near || near.id !== this.dismissedNodeId)) {
+      this.dismissedNodeId = null;
+    }
+    this.focusNode = near && near.id === this.dismissedNodeId ? null : near;
     if (this.focusNode?.discovered) this.readNodes.add(this.focusNode.id);
   }
 
@@ -882,6 +982,7 @@ export class Sim {
     if (!node) return;
     if (node.kind !== 'SERVICE' && dist(node.pos, this.player.pos) > SELECT_RANGE) return;
     if (node.kind === 'SERVICE' && !node.discovered) return;
+    if (this.dismissedNodeId === id) this.dismissedNodeId = null;
     this.selectedNodeId = id;
     this.focusNode = node;
   }
@@ -1119,6 +1220,23 @@ function suppressWhileLooking(intent: Intent): Intent {
     olliePressed: false, ollieReleased: false, ollieHeld: false,
     interact: false, interactPressed: false,
     drawAmount: null, aimVector: null, pointerActive: false,
+  };
+}
+
+/**
+ * What a player may still do while they are lining up a shot: aim it and take
+ * it. Not roll, not carve, not ollie, not reach into the network. Stopping is
+ * the price of a steady shot, and it is charged here so it holds on every
+ * device rather than being a property of one input adapter.
+ */
+function holdStillToAim(intent: Intent): Intent {
+  return {
+    ...intent,
+    steer: 0, push: false, pushPressed: false, brake: false,
+    moveVector: null,
+    olliePressed: false, ollieReleased: false, ollieHeld: false,
+    toggleStance: false, interact: false, interactPressed: false,
+    aim: true,
   };
 }
 

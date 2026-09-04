@@ -44,6 +44,8 @@ export interface SimEvents extends Record<string, unknown> {
   'escalation:changed': { from: EscalationLevel; to: EscalationLevel; risk: number };
   'incident:opened': { incident: Incident };
   'match:false-positive': { identity: string; confidence: number; incidentId: string };
+  'aim:entered': Record<string, never>;
+  'aim:exited': Record<string, never>;
   'player:bail': { pos: Vec2 };
   'player:land': { pos: Vec2; speed: number };
   'player:push': { pos: Vec2; speed: number };

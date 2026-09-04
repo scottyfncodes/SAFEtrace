@@ -152,3 +152,36 @@ export const PHONE = {
   scoreLabel: 'Your Community Safety Score',
   subject: 'Registered to',
 };
+
+/**
+ * The inspect panel's own framing.
+ *
+ * A human met this panel forty-four metres from the spawn and could not tell
+ * whether it was danger, an objective, or scenery. The fields were never the
+ * problem — a player does not need to know what a segment is on first sight.
+ * What was missing was the category. One line above the identifier says what
+ * kind of thing they are looking at, and the panel says plainly that reading is
+ * free, which is the only thing they need to know to start.
+ */
+export const INSPECT = {
+  heading: 'SAFEtrace NETWORK',
+  kind: {
+    CAMERA: 'Camera',
+    JUNCTION: 'Segment relay',
+    UPLINK: 'District uplink',
+    SERVICE: 'Record',
+    PLATE_READER: 'Plate reader',
+    SPEAKER: 'Public address',
+    SIGN: 'Sign',
+    DOOR: 'Door',
+  } as Record<string, string>,
+  dismiss: 'Close',
+};
+
+/** What a shot did. One word, in the aiming view, then gone. */
+export const SHOT = {
+  /** It landed, on nothing in particular. */
+  ground: 'SHORT',
+  /** It never landed at all. */
+  miss: 'MISS',
+};

@@ -13,6 +13,7 @@ import type { Sim } from '../sim/sim';
 import { predictArc } from '../sim/slingshot';
 import { ViewCamera } from './camera';
 import { ControlsRenderer } from './controls';
+import { FirstPersonRenderer } from './firstPerson';
 import { MachineRenderer } from './machine';
 import { VeneerRenderer, ROOF_K, roundRect } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
@@ -24,6 +25,8 @@ export class Renderer {
   readonly controls: ControlsRenderer;
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
+  private readonly fp = new FirstPersonRenderer();
+  private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
   showControlHome = false;
   private ctx: CanvasRenderingContext2D;
@@ -97,6 +100,14 @@ export class Renderer {
     const sim = this.sim;
     const ctx = this.ctx;
 
+    // Aiming is a place the player goes, not a layer on top of the world.
+    this.aimFade += (sim.aimMode ? 1 : -1) * dt * 5.5;
+    this.aimFade = clamp01(this.aimFade);
+    if (sim.aimMode || this.aimFade > 0.01) {
+      this.renderAiming(ctx, dt);
+      if (sim.aimMode) return;
+    }
+
     this.cam.follow(
       sim.player.pos, sim.player.vel, sim.player.speed, sim.playerMaxSpeed, dt,
       this.settings.cameraShake,
@@ -131,6 +142,87 @@ export class Renderer {
       this.controls.update(this.controlVisual, dt, this.showControlHome);
       this.controls.draw(ctx, this.controlVisual, this.w, this.h);
     }
+  }
+
+  /**
+   * The stationary aiming view: the world from the character's own eyeline,
+   * a reticle, whatever the shot has locked onto, and how many bearings are
+   * left. Nothing else. The player is doing one thing here.
+   */
+  private renderAiming(ctx: CanvasRenderingContext2D, dt: number): void {
+    const sim = this.sim;
+    void dt;
+    this.fp.draw(ctx, sim, this.w, this.h);
+
+    const cx = this.w / 2, cy = this.h / 2;
+    const draw = clamp01(sim.player.draw);
+
+    // The lock, on the thing itself, so the player aims at the world and not at
+    // a crosshair floating in front of it.
+    const t = sim.aimTarget;
+    const lock = t ? this.fp.screenOf(sim, t.pos, t.z, this.w, this.h) : null;
+    if (lock) {
+      const r = Math.max(22, 620 / Math.max(4, Math.hypot(t!.pos.x - sim.player.pos.x, t!.pos.y - sim.player.pos.y)));
+      const arm = r * 0.4;
+      for (const [col, wid] of [['#12181F', 4], [VENEER.player, 2]] as const) {
+        ctx.strokeStyle = col; ctx.lineWidth = wid; ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as Array<[number, number]>) {
+          ctx.moveTo(lock.x + sx * r, lock.y + sy * r - sy * arm);
+          ctx.lineTo(lock.x + sx * r, lock.y + sy * r);
+          ctx.lineTo(lock.x + sx * r - sx * arm, lock.y + sy * r);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // The reticle: a ring that closes as the band loads. Empty means not ready.
+    const rr = 26 - draw * 11;
+    ctx.strokeStyle = alpha('#12181F', 0.55);
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = alpha(lock ? VENEER.player : '#F6F4EE', 0.9);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - rr - 9, cy); ctx.lineTo(cx - rr - 3, cy);
+    ctx.moveTo(cx + rr + 3, cy); ctx.lineTo(cx + rr + 9, cy);
+    ctx.moveTo(cx, cy - rr - 9); ctx.lineTo(cx, cy - rr - 3);
+    ctx.stroke();
+
+    // Draw strength, as an arc filling around the reticle.
+    if (draw > 0.02) {
+      ctx.strokeStyle = alpha(VENEER.player, 0.95);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr + 8, -Math.PI / 2, -Math.PI / 2 + draw * Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Bearings left, and the outcome of the last shot.
+    ctx.fillStyle = alpha('#F6F4EE', 0.85);
+    for (let i = 0; i < sim.player.maxBearings; i++) {
+      ctx.globalAlpha = i < sim.player.bearings ? 0.85 : 0.22;
+      ctx.beginPath();
+      ctx.arc(this.w / 2 - sim.player.maxBearings * 6 + i * 12, this.h - 46, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const shot = sim.lastShot;
+    if (shot && sim.tick - shot.tick < 110) {
+      const a = 1 - (sim.tick - shot.tick) / 110;
+      ctx.fillStyle = alpha(shot.hit ? VENEER.player : '#9AA3A9', a);
+      ctx.font = '600 13px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(shot.label, cx, cy - 52);
+      ctx.textAlign = 'left';
+    }
+
+    // A frame, so it is obvious this is a state and not the world.
+    ctx.strokeStyle = alpha('#12181F', 0.5);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, this.w - 3, this.h - 3);
   }
 
   // ------------------------------------------------------------------ layers

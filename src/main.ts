@@ -16,6 +16,7 @@ import { buildBellhaven } from './content/bellhaven';
 import { validateWorld } from './sim/world';
 import { Sim } from './sim/sim';
 import { Renderer } from './render/renderer';
+import { FirstPersonRenderer } from './render/firstPerson';
 import { Audio } from './audio/audio';
 import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
@@ -40,6 +41,8 @@ class Game {
   private input = new InputManager();
   private touch = new TouchEngine();
   private touchAdapter = new TouchAdapter(this.touch);
+  /** Where the character is looking while stood still, in world radians. */
+  private aimYaw = 0;
   private loop: Loop;
   private touchPrimary = isTouchPrimary();
   private phase: Phase = 'prefs';
@@ -279,6 +282,16 @@ class Game {
     bus.on('drone:destabilised', () => { this.audio.impactMetal(); this.renderer.kick(0.3); });
     bus.on('veneer:crack', () => { this.audio.peelIn(); this.renderer.kick(0.25); });
     bus.on('vision:unlocked', () => this.audio.motif(0.8));
+    bus.on('aim:entered', () => {
+      // Start looking where the character already faces, so the transition
+      // never spins the world.
+      this.aimYaw = this.sim.player.speed > 0.4
+        ? Math.atan2(this.sim.player.vel.y, this.sim.player.vel.x)
+        : this.sim.player.heading;
+      this.sim.lookPitch = 0.06;
+      this.audio.hackTick();
+    });
+    bus.on('aim:exited', () => this.audio.hackTick());
     bus.on('patrol:contact', () => this.renderer.kick(0.2));
     bus.on('escalation:changed', ({ to }) => {
       if (to === 'INTERVENTION') this.renderer.kick(0.18);
@@ -299,9 +312,35 @@ class Game {
       return;
     }
 
+    // Aiming has its own vocabulary, so the engine is told which one is live.
+    this.touch.setAiming(this.sim.aimMode);
+    this.touch.setSlingAvailable(this.sim.player.bearings > 0 && !this.sim.hack);
+
+    if (this.sim.aimMode) {
+      // Dragging swings the view. The reticle stays in the middle of the
+      // screen, which is what makes the shot predictable.
+      const look = this.touch.takeLook();
+      this.aimYaw += look.yaw;
+      this.sim.lookPitch = FirstPersonRenderer.clampPitch(this.sim.lookPitch + look.pitch);
+      this.sim.step(dt, this.intent, this.aimTargetPoint());
+      this.story.update();
+      return;
+    }
+
     if (tap) this.resolveTap(tap);
     this.sim.step(dt, this.intent, this.aimPoint());
     this.story.update();
+  }
+
+  /**
+   * Where the character is pointing while stood still: straight out along the
+   * look, far enough that the ballistic solver can find whatever is on that
+   * line. The reticle is fixed to the middle of the view, so this is simply
+   * "in front of me".
+   */
+  private aimTargetPoint(): { x: number; y: number } {
+    const p = this.sim.aimAnchor ?? this.sim.player.pos;
+    return { x: p.x + Math.cos(this.aimYaw) * 34, y: p.y + Math.sin(this.aimYaw) * 34 };
   }
 
   /**

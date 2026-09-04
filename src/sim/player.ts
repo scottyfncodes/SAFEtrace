@@ -14,6 +14,25 @@ import { SURFACE } from './world';
 
 export type Stance = 'FOOT' | 'ROLL' | 'AIR' | 'SLIDE' | 'BAIL';
 
+/**
+ * How much this frame wants the board turned, -1..1.
+ *
+ * Two ways in, and they mean different things. A keyboard says "turn left" — a
+ * rudder. A thumb on a stick says "go that way" — a direction. The second is
+ * what a person means when they push a stick, and a human who had played twice
+ * still called the rudder unintuitive, so a direction is translated into the
+ * turn that heads there. Momentum is untouched: the carve curve still decides
+ * how fast the board can answer, so at speed you still cannot spin on the spot.
+ */
+function steerOf(p: PlayerState, intent: Intent): number {
+  const mv = intent.moveVector;
+  if (!mv) return intent.steer;
+  const mag = Math.hypot(mv.x, mv.y);
+  if (mag <= 0.02) return 0;
+  const off = wrapAngle(Math.atan2(mv.y, mv.x) - p.heading);
+  return clamp(off / TUNE.headingBand, -1, 1);
+}
+
 export const TUNE = {
   footSpeed: 2.6,
   maxSpeed: 11.0,
@@ -23,6 +42,22 @@ export const TUNE = {
   pushDuration: 0.22,
   carveLow: 3.4,
   carveHigh: 1.1,
+  /**
+   * How hard the board can be swung around when it is barely moving.
+   *
+   * A skateboard at a standstill turns by the rider stepping it round, which is
+   * quick. The carve curve alone made a stationary player feel welded to a
+   * heading, and "navigate around objects without fighting the control" is
+   * exactly where a human said it stopped being fun.
+   */
+  pivotRate: 5.6,
+  /** Below this, a stick pointed backwards turns the board rather than braking. */
+  pivotSpeed: 2.4,
+  /**
+   * How far off the desired heading counts as full deflection. Small, so the
+   * board answers a small correction with a small correction.
+   */
+  headingBand: 0.55,
   carveAimPenalty: 0.65,
   /**
    * Drawing the sling settles the board.
@@ -131,7 +166,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
     p.bailTimer -= dt;
     // A bail costs speed and time, not agency. Leaving the player with no
     // steering at all reads as the game having stopped responding.
-    p.heading = wrapAngle(p.heading + intent.steer * 1.6 * dt);
+    p.heading = wrapAngle(p.heading + steerOf(p, intent) * 1.6 * dt);
     p.vel.x = damp(p.vel.x, 0, 0.12, dt);
     p.vel.y = damp(p.vel.y, 0, 0.12, dt);
     integrate(p, world, dt);
@@ -162,12 +197,28 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   const cap = maxSpeedFor(p);
 
   // --- steering ---------------------------------------------------------
-  // Turning radius grows with speed. This single curve is the whole feel.
+  /*
+   * Two ways in, and they mean different things.
+   *
+   * A keyboard says "turn left" — a rudder. A thumb says "go that way" — a
+   * direction. The second is what a person means when they push a stick, and
+   * a human who had played twice still described the rudder as "not intuitive",
+   * so the stick now names a heading and the board turns toward it as fast as
+   * a board can. Momentum is untouched: at speed you still cannot spin on the
+   * spot, and that is the part worth keeping.
+   */
+  const steerInput = steerOf(p, intent);
+
+  // Turning radius grows with speed. This single curve is the whole feel —
+  // with a floor, because a board that is barely rolling gets stepped around.
   let carveRate = remap(speed, 1.5, cap, TUNE.carveLow, TUNE.carveHigh);
+  if (speed < TUNE.pivotSpeed) {
+    carveRate = Math.max(carveRate, remap(speed, 0, TUNE.pivotSpeed, TUNE.pivotRate, TUNE.carveLow));
+  }
   if (p.aiming) carveRate *= TUNE.carveAimPenalty;
   if (p.stance === 'AIR') carveRate *= 0.28;
   if (p.stance === 'SLIDE') carveRate = TUNE.slideSteer;
-  p.heading = wrapAngle(p.heading + intent.steer * carveRate * dt);
+  p.heading = wrapAngle(p.heading + steerInput * carveRate * dt);
 
   // --- slide ------------------------------------------------------------
   const wantSlide = intent.brake && speed > 3.2 && p.stance !== 'AIR';
@@ -298,7 +349,8 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
 
 function updateFoot(p: PlayerState, intent: Intent, world: World, dt: number): void {
   const target = fromAngle(p.heading, intent.push ? TUNE.footSpeed : 0);
-  p.heading = wrapAngle(p.heading + intent.steer * 3.6 * dt);
+  // On foot there is no momentum to respect, so a stick points and you go.
+  p.heading = wrapAngle(p.heading + steerOf(p, intent) * 3.6 * dt);
   p.vel.x = damp(p.vel.x, target.x, 0.06, dt);
   p.vel.y = damp(p.vel.y, target.y, 0.06, dt);
   integrate(p, world, dt);
@@ -364,7 +416,7 @@ function bail(p: PlayerState): void {
 
 function updateFlow(p: PlayerState, intent: Intent, dt: number, cap: number): void {
   const fast = p.speed > cap * 0.6;
-  const doing = Math.abs(intent.steer) > 0.2 || p.stance === 'AIR' || p.pushTimer > 0;
+  const doing = Math.abs(steerOf(p, intent)) > 0.2 || p.stance === 'AIR' || p.pushTimer > 0;
   if (fast && doing && p.stance !== 'BAIL') {
     p.flow = clamp01(p.flow + TUNE.flowRise * dt);
   } else if (fast) {

@@ -216,3 +216,142 @@ describe('notifications are ranked before they are reduced', () => {
     expect(seg?.priority).toBe('important');
   });
 });
+
+describe('the stationary aiming mode', () => {
+  /*
+   * Requested twice by the human running the playtests, and built the second
+   * time. Exploring and shooting were being asked of the same two thumbs at
+   * once; they are now separate states with one door between them.
+   */
+  const enter = (sim: Sim) => {
+    const it = emptyIntent();
+    it.aimModePressed = true;
+    sim.step(TICK_DT, it, null);
+  };
+
+  it('enters and leaves on the same request', () => {
+    const sim = makeSim();
+    expect(sim.aimMode).toBe(false);
+    enter(sim);
+    expect(sim.aimMode).toBe(true);
+    enter(sim);
+    expect(sim.aimMode).toBe(false);
+  });
+
+  it('does not open with an empty pocket', () => {
+    const sim = makeSim();
+    sim.player.bearings = 0;
+    enter(sim);
+    expect(sim.aimMode).toBe(false);
+  });
+
+  it('stops the character dead and keeps them exactly where they stood', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 }, { x: 7, y: 2 });
+    enter(sim);
+    const anchor = { ...sim.aimAnchor! };
+    // Now shove every movement input at it for two seconds.
+    for (let i = 0; i < 120; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 1, y: 0 };
+      it.push = true;
+      it.pushPressed = true;
+      it.steer = 1;
+      it.olliePressed = true;
+      sim.step(TICK_DT, it, null);
+    }
+    expect(sim.player.pos.x).toBeCloseTo(anchor.x, 6);
+    expect(sim.player.pos.y).toBeCloseTo(anchor.y, 6);
+    expect(sim.player.speed).toBe(0);
+    expect(sim.aimMode).toBe(true);
+  });
+
+  it('fires from where the character is standing, not from where they were', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 }, { x: 7, y: 0 });
+    enter(sim);
+    const anchor = { ...sim.aimAnchor! };
+    for (let i = 0; i < 40; i++) {
+      const it = emptyIntent();
+      it.aim = true;
+      sim.step(TICK_DT, it, { x: anchor.x + 30, y: anchor.y });
+    }
+    const f = emptyIntent();
+    f.aim = true; f.fire = true; f.firePressed = true;
+    sim.step(TICK_DT, f, { x: anchor.x + 30, y: anchor.y });
+    expect(sim.projectiles.length).toBe(1);
+    expect(sim.projectiles[0].origin.x).toBeCloseTo(anchor.x, 3);
+    expect(sim.projectiles[0].origin.y).toBeCloseTo(anchor.y, 3);
+  });
+
+  it('says what the shot did, so a player can learn from it', () => {
+    const sim = makeSim();
+    const d = parkedDrone(sim);
+    enter(sim);
+    dragShoot(sim, toward(sim, d.pos));
+    expect(sim.lastShot).not.toBeNull();
+    expect(sim.lastShot!.hit).toBe(true);
+    expect(sim.lastShot!.label).toBe('UAV-01');
+  });
+
+  it('cannot trap the player: it lets go when the pocket runs out', () => {
+    const sim = makeSim();
+    enter(sim);
+    expect(sim.aimMode).toBe(true);
+    sim.player.bearings = 0;
+    for (let i = 0; i < 400; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.aimMode).toBe(false);
+  });
+
+  it('gives the board back on the way out', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    enter(sim);
+    enter(sim);
+    for (let i = 0; i < 90; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 1, y: 0 };
+      it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, null);
+    }
+    expect(sim.player.speed).toBeGreaterThan(1);
+  });
+});
+
+describe('the network stays shut until the game opens it', () => {
+  /*
+   * A human met the inspect panel forty-four metres from the spawn — "JXM1",
+   * five verb buttons, no context — and could not tell whether it was danger,
+   * an objective or scenery. Bellhaven is just a nice place until Devon is
+   * stopped.
+   */
+  it('shows nothing to inspect in the opening', () => {
+    const sim = makeSim();
+    place(sim, { x: 155, y: 250 });   // right on top of JX-M1
+    step(sim, 1);
+    expect(sim.visionUnlocked).toBe(false);
+    expect(sim.focusNode).toBeNull();
+  });
+
+  it('opens once the player has a reason to look', () => {
+    const sim = makeSim();
+    sim.unlockVision();
+    place(sim, { x: 155, y: 250 });
+    step(sim, 1);
+    expect(sim.focusNode?.id).toBe('JX-M1');
+  });
+
+  it('lets a player wave it away without skating off', () => {
+    const sim = makeSim();
+    sim.unlockVision();
+    place(sim, { x: 155, y: 250 });
+    step(sim, 0.5);
+    expect(sim.focusNode?.id).toBe('JX-M1');
+    sim.dismissFocus();
+    step(sim, 0.5);
+    expect(sim.focusNode).toBeNull();
+    // And asking for it back works.
+    sim.selectNode('JX-M1');
+    expect(sim.focusNode?.id).toBe('JX-M1');
+  });
+});

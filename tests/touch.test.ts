@@ -1,12 +1,23 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { TOUCH_TUNING, TouchEngine, type PointerSample } from '../src/core/touch';
 import { emptyIntent, mergeIntent } from '../src/core/input';
+import { makeSim, place } from './harness';
+import { TICK_DT } from '../src/core/loop';
 
+/**
+ * The touch vocabulary, rebuilt after two human sessions.
+ *
+ * The old one was a relative stick — horizontal offset steered a heading,
+ * vertical offset was a throttle, an upward flick was an ollie — and every part
+ * of it asked the player to model something invisible. The verdict after tuning
+ * it was "a tiny bit better but still not fun or intuitive".
+ *
+ * The rule these tests hold to: a thumb names a direction, and everything else
+ * is a button you can see.
+ */
 const VIEWPORT = { w: 390, h: 844, safe: { top: 47, right: 0, bottom: 34, left: 0 } };
 
-/** Bottom-left: the board. Bottom-right: the slingshot. Top: the world. */
-const PAD = { x: 90, y: 700 };
-const ACTION = { x: 300, y: 700 };
+const STICK = { x: 90, y: 700 };
 const WORLD = { x: 195, y: 240 };
 
 let engine: TouchEngine;
@@ -20,7 +31,6 @@ function make(): TouchEngine {
 
 const at = (p: { x: number; y: number }, id = 1, t = clock): PointerSample => ({ id, x: p.x, y: p.y, t });
 
-/** Drag a finger through a series of points, one sample per `stepMs`. */
 function drag(
   e: TouchEngine, id: number, points: Array<{ x: number; y: number }>, stepMs = 16,
 ): void {
@@ -31,559 +41,227 @@ function drag(
   }
 }
 
+function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
+  e.handle('down', at(p, id, clock));
+  clock += 90;
+  e.handle('up', at(p, id, clock));
+}
+
+const button = (e: TouchEngine, id: 'sling' | 'ollie' | 'vision') =>
+  e.buttonLayout().find((b) => b.id === id)!.pos;
+
 beforeEach(() => { engine = make(); clock = 1000; });
 
 describe('zones', () => {
-  it('splits the bottom of the screen into a board thumb and an action thumb', () => {
-    expect(engine.zoneAt(PAD.x, PAD.y)).toBe('steer');
-    expect(engine.zoneAt(ACTION.x, ACTION.y)).toBe('action');
-    // The upper screen is the world, not a control surface.
+  it('gives the movement thumb the bottom-left and the buttons the bottom-right', () => {
+    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
     expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('idle');
+    for (const id of ['sling', 'ollie', 'vision'] as const) {
+      const p = button(engine, id);
+      expect({ id, zone: engine.zoneAt(p.x, p.y) }).toEqual({ id, zone: id });
+    }
+  });
+
+  it('keeps every button inside the safe area', () => {
+    for (const b of engine.buttonLayout()) {
+      expect(b.pos.x + b.radius).toBeLessThanOrEqual(VIEWPORT.w - VIEWPORT.safe.right);
+      expect(b.pos.y + b.radius).toBeLessThanOrEqual(VIEWPORT.h - VIEWPORT.safe.bottom);
+      expect(b.pos.x - b.radius).toBeGreaterThanOrEqual(VIEWPORT.safe.left);
+    }
+  });
+
+  it('does not let the buttons overlap each other', () => {
+    const bs = engine.buttonLayout();
+    for (let i = 0; i < bs.length; i++) {
+      for (let j = i + 1; j < bs.length; j++) {
+        const d = Math.hypot(bs[i].pos.x - bs[j].pos.x, bs[i].pos.y - bs[j].pos.y);
+        expect({ pair: `${bs[i].id}/${bs[j].id}`, clear: d > bs[i].radius + bs[j].radius })
+          .toEqual({ pair: `${bs[i].id}/${bs[j].id}`, clear: true });
+      }
+    }
   });
 });
 
-describe('steering', () => {
-  it('carves continuously and proportionally', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 40, y: PAD.y }]);
-    const mid = engine.sample().steer;
-    expect(mid).toBeGreaterThan(0.3);
-    expect(mid).toBeLessThan(1);
-
-    drag(engine, 2, [{ x: PAD.x, y: PAD.y - 4 }]);
-    engine.handle('up', at(PAD, 1, clock));
-    const e2 = make();
-    drag(e2, 1, [PAD, { x: PAD.x - 200, y: PAD.y }]);
-    expect(e2.sample().steer).toBe(-1);
+describe('the stick names a direction', () => {
+  it('points where the thumb points, not left or right of a heading', () => {
+    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 60 }]);
+    const up = engine.sample().moveVector!;
+    expect(up.y).toBeLessThan(-0.9);
+    expect(Math.abs(up.x)).toBeLessThan(0.05);
   });
 
-  it('has a dead zone, so a resting thumb does not steer', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + TOUCH_TUNING.steerDead - 2, y: PAD.y }]);
-    expect(engine.sample().steer).toBe(0);
+  it('gives a magnitude, so a small push is a small move', () => {
+    drag(engine, 1, [STICK, { x: STICK.x + 20, y: STICK.y }]);
+    const small = Math.hypot(...Object.values(engine.sample().moveVector!) as [number, number]);
+    engine = make();
+    drag(engine, 1, [STICK, { x: STICK.x + 200, y: STICK.y }]);
+    const big = Math.hypot(...Object.values(engine.sample().moveVector!) as [number, number]);
+    expect(small).toBeLessThan(big);
+    expect(big).toBeCloseTo(1, 1);
   });
 
-  it('re-anchors when the thumb runs out of room, so it never pins to a coordinate', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 300, y: PAD.y }], 20);
-    expect(engine.sample().steer).toBe(1);
-    // Coming back a little must start unwinding the turn immediately.
-    clock += 20;
-    engine.handle('move', at({ x: PAD.x + 260, y: PAD.y }, 1, clock));
-    expect(engine.sample().steer).toBeLessThan(1);
+  it('rolls on a thumb that lands and never moves, because that is a first touch', () => {
+    engine.handle('down', at(STICK, 1, clock));
+    const i = engine.sample();
+    expect(i.push).toBe(true);
+    expect(i.moveVector).toEqual({ x: 0, y: 0 });
   });
 
-  it('stops steering when the touch is released or cancelled', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 60, y: PAD.y }]);
-    expect(engine.sample().steer).toBeGreaterThan(0);
-    engine.handle('up', at({ x: PAD.x + 60, y: PAD.y }, 1, clock));
-    expect(engine.sample().steer).toBe(0);
+  it('re-centres if the thumb runs out of screen, so the stick is never unreachable', () => {
+    drag(engine, 1, [STICK, { x: STICK.x + 400, y: STICK.y }]);
+    const v = engine.visual.stick;
+    expect(Math.hypot(v.thumb.x - v.anchor.x, v.thumb.y - v.anchor.y))
+      .toBeLessThanOrEqual(TOUCH_TUNING.stickFull * 1.31);
+  });
 
-    drag(engine, 2, [PAD, { x: PAD.x + 60, y: PAD.y }]);
-    engine.handle('cancel', at({ x: PAD.x + 60, y: PAD.y }, 2, clock));
-    expect(engine.sample().steer).toBe(0);
+  it('allows only one stick, so a stray palm cannot fight the thumb', () => {
+    engine.handle('down', at(STICK, 1, clock));
+    engine.handle('down', at({ x: STICK.x + 30, y: STICK.y }, 2, clock));
+    drag(engine, 2, [{ x: STICK.x + 30, y: STICK.y }, { x: STICK.x + 130, y: STICK.y }]);
+    const v = engine.visual.stick;
+    expect(v.anchor.x).toBeCloseTo(STICK.x, 0);
   });
 });
 
-describe('throttle', () => {
-  it('pushes when the thumb is held forward and brakes when it is pulled back', () => {
-    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y - 40 }], 60);
-    const push = engine.sample();
-    expect(push.push).toBe(true);
-    expect(push.pushPressed).toBe(true);
-    expect(push.brake).toBe(false);
-
-    const e2 = make();
-    drag(e2, 1, [PAD, { x: PAD.x, y: PAD.y + 40 }], 60);
-    const brake = e2.sample();
-    expect(brake.brake).toBe(true);
-    expect(brake.push).toBe(false);
+describe('the buttons are the whole rest of the vocabulary', () => {
+  it('ollies on a tap, with no flick to discover', () => {
+    tap(engine, button(engine, 'ollie'));
+    expect(engine.sample().olliePressed).toBe(true);
   });
 
-  it('keeps asking to push every frame, so the board sets the rhythm', () => {
-    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y - 40 }], 60);
-    expect(engine.sample().pushPressed).toBe(true);
-    expect(engine.sample().pushPressed).toBe(true);
+  it('opens the machine while VISION is held, and closes it when let go', () => {
+    const p = button(engine, 'vision');
+    engine.handle('down', at(p, 1, clock));
+    expect(engine.sample().vision).toBe(true);
+    clock += 500;
+    engine.handle('up', at(p, 1, clock));
+    expect(engine.sample().vision).toBe(false);
   });
 
-  /*
-   * This replaces a test that asserted a resting thumb does nothing. That was
-   * the behaviour, it was deliberate, and the first human to pick the game up
-   * could not work out how to start moving because of it. Placing a thumb and
-   * holding it is the first thing anyone tries; it now goes.
-   */
-  it('pushes while the thumb simply rests, because that is what a first touch is', () => {
-    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y - 2 }]);
+  it('asks for the aiming mode on a tap of the sling', () => {
+    tap(engine, button(engine, 'sling'));
+    expect(engine.sample().aimModePressed).toBe(true);
+  });
+
+  it('dims and refuses the sling when there is nothing to shoot with', () => {
+    engine.setSlingAvailable(false);
+    expect(engine.buttonLayout().find((b) => b.id === 'sling')!.enabled).toBe(false);
+    tap(engine, button(engine, 'sling'));
+    expect(engine.sample().aimModePressed).toBe(false);
+  });
+});
+
+describe('aiming is a different vocabulary', () => {
+  beforeEach(() => { engine.setAiming(true); });
+
+  it('turns the whole screen into the aim surface', () => {
+    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('aim');
+    expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('aim');
+  });
+
+  it('swings the view by dragging, right and left, up and down', () => {
+    drag(engine, 1, [WORLD, { x: WORLD.x + 130, y: WORLD.y }]);
+    const a = engine.takeLook();
+    expect(a.yaw).toBeGreaterThan(0);
+    drag(engine, 2, [WORLD, { x: WORLD.x, y: WORLD.y - 130 }]);
+    const b = engine.takeLook();
+    expect(b.pitch).toBeGreaterThan(0);
+  });
+
+  it('fires on release after a real drag', () => {
+    drag(engine, 1, [WORLD, { x: WORLD.x + 60, y: WORLD.y }]);
+    clock += 16;
+    engine.handle('up', at({ x: WORLD.x + 60, y: WORLD.y }, 1, clock));
     const i = engine.sample();
-    expect(i.push).toBe(true);
-    expect(i.brake).toBe(false);
+    expect(i.fire).toBe(true);
+    expect(i.firePressed).toBe(true);
   });
 
-  it('pushes on a thumb that lands and never moves at all', () => {
-    engine.handle('down', { id: 1, x: PAD.x, y: PAD.y, t: 0 });
+  it('treats a tap as a change of mind and leaves the mode instead', () => {
+    tap(engine, WORLD);
     const i = engine.sample();
-    expect(i.push).toBe(true);
-    expect(i.pushPressed).toBe(true);
+    expect(i.fire).toBe(false);
+    expect(i.aimModePressed).toBe(true);
   });
 
-  it('still brakes, but you have to mean it', () => {
-    drag(engine, 1, [PAD, { x: PAD.x, y: PAD.y + 44 }]);
+  it('never asks the character to move while a shot is being lined up', () => {
+    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 80 }]);
     const i = engine.sample();
-    expect(i.brake).toBe(true);
+    expect(i.moveVector).toBeNull();
     expect(i.push).toBe(false);
   });
 
-  it('keeps pushing after an ollie instead of quietly stopping the board', () => {
-    engine.handle('down', { id: 1, x: PAD.x, y: PAD.y, t: 0 });
-    // Settle, then flick up hard enough to ollie.
-    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 2, t: 140 });
-    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 40, t: 180 });
-    expect(engine.sample().olliePressed).toBe(true);
-    // Thumb comes back to rest. The board must not have stopped.
-    engine.handle('move', { id: 1, x: PAD.x, y: PAD.y - 40, t: 400 });
-    expect(engine.sample().push).toBe(true);
-  });
-});
-
-describe('ollie', () => {
-  const flick = (e: TouchEngine, from = PAD) => {
-    e.handle('down', at(from, 1, clock));
-    clock += TOUCH_TUNING.ollieSettle + 20;
-    e.handle('move', at({ x: from.x, y: from.y - 2 }, 1, clock));
-    for (let i = 1; i <= 4; i++) {
-      clock += 8;
-      e.handle('move', at({ x: from.x, y: from.y - 2 - i * 12 }, 1, clock));
-    }
-  };
-
-  it('fires on a short upward flick', () => {
-    flick(engine);
-    const i = engine.sample();
-    expect(i.olliePressed).toBe(true);
-    expect(i.ollieReleased).toBe(true);
-  });
-
-  it('is consumed once, not held', () => {
-    flick(engine);
-    expect(engine.sample().olliePressed).toBe(true);
-    expect(engine.sample().olliePressed).toBe(false);
-  });
-
-  it('does not fire from placing a thumb down', () => {
-    engine.handle('down', at(PAD, 1, clock));
-    clock += 10;
-    engine.handle('move', at({ x: PAD.x, y: PAD.y - 40 }, 1, clock));
-    expect(engine.sample().olliePressed).toBe(false);
-  });
-
-  it('does not fire from a slow push, which travels the same distance', () => {
-    engine.handle('down', at(PAD, 1, clock));
-    for (let i = 1; i <= 10; i++) {
-      clock += 40;
-      engine.handle('move', at({ x: PAD.x, y: PAD.y - i * 6 }, 1, clock));
-    }
-    const i = engine.sample();
-    expect(i.olliePressed).toBe(false);
-    expect(i.push).toBe(true);
-  });
-
-  it('does not fire from a fast horizontal carve', () => {
-    engine.handle('down', at(PAD, 1, clock));
-    clock += TOUCH_TUNING.ollieSettle + 20;
-    for (let i = 1; i <= 5; i++) {
-      clock += 8;
-      engine.handle('move', at({ x: PAD.x + i * 16, y: PAD.y }, 1, clock));
-    }
-    expect(engine.sample().olliePressed).toBe(false);
-  });
-
-  it('fires while carving, because a turning skater still ollies', () => {
-    engine.handle('down', at(PAD, 1, clock));
-    clock += TOUCH_TUNING.ollieSettle + 20;
-    engine.handle('move', at({ x: PAD.x + 40, y: PAD.y }, 1, clock));
-    for (let i = 1; i <= 4; i++) {
-      clock += 8;
-      engine.handle('move', at({ x: PAD.x + 42, y: PAD.y - i * 13 }, 1, clock));
-    }
-    const i = engine.sample();
-    expect(i.olliePressed).toBe(true);
-    expect(Math.abs(i.steer)).toBeGreaterThan(0);
-  });
-
-  it('will not repeat faster than the cooldown', () => {
-    flick(engine);
-    expect(engine.sample().olliePressed).toBe(true);
-    for (let i = 1; i <= 4; i++) {
-      clock += 8;
-      engine.handle('move', at({ x: PAD.x, y: PAD.y - 60 - i * 12 }, 1, clock));
-    }
-    expect(engine.sample().olliePressed).toBe(false);
-  });
-});
-
-describe('slingshot', () => {
-  it('aims opposite the pull, the way a slingshot actually works', () => {
-    // Pull down-left; the shot must go up-right.
-    drag(engine, 1, [ACTION, { x: ACTION.x - 60, y: ACTION.y + 60 }]);
-    const i = engine.sample();
-    expect(i.aim).toBe(true);
-    expect(i.aimVector!.x).toBeGreaterThan(0);
-    expect(i.aimVector!.y).toBeLessThan(0);
-    expect(Math.hypot(i.aimVector!.x, i.aimVector!.y)).toBeCloseTo(1, 5);
-  });
-
-  it('builds draw with pull distance and reports it to the simulation', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 30, y: ACTION.y }]);
-    const small = engine.sample().drawAmount!;
-    drag(engine, 2, [ACTION, { x: ACTION.x - 200, y: ACTION.y }]);
-    const e2 = make();
-    drag(e2, 1, [ACTION, { x: ACTION.x - 200, y: ACTION.y }]);
-    const full = e2.sample().drawAmount!;
-    expect(small).toBeGreaterThan(0);
-    expect(full).toBe(1);
-    expect(full).toBeGreaterThan(small);
-  });
-
-  it('fires on release, with the draw still open on that frame', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 70, y: ACTION.y }]);
-    clock += 16;
-    engine.handle('up', at({ x: ACTION.x - 70, y: ACTION.y }, 1, clock));
-    const i = engine.sample();
-    expect(i.firePressed).toBe(true);
-    // The simulation only fires while the character is aiming, so the release
-    // frame must still describe a drawn slingshot.
-    expect(i.aim).toBe(true);
-    expect(i.drawAmount).toBeGreaterThan(0.12);
-    expect(i.aimVector!.x).toBeGreaterThan(0);
-  });
-
-  it('fires once, not every frame after', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 70, y: ACTION.y }]);
-    clock += 16;
-    engine.handle('up', at({ x: ACTION.x - 70, y: ACTION.y }, 1, clock));
-    expect(engine.sample().firePressed).toBe(true);
-    expect(engine.sample().firePressed).toBe(false);
-  });
-
-  it('cancels when the thumb comes back to the pouch', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 70, y: ACTION.y }, { x: ACTION.x - 3, y: ACTION.y }]);
-    clock += 16;
-    engine.handle('up', at({ x: ACTION.x - 3, y: ACTION.y }, 1, clock));
-    expect(engine.sample().firePressed).toBe(false);
-  });
-
-  it('cancels when the gesture is interrupted', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 70, y: ACTION.y }]);
-    engine.handle('cancel', at({ x: ACTION.x - 70, y: ACTION.y }, 1, clock));
-    const i = engine.sample();
-    expect(i.firePressed).toBe(false);
-    expect(i.aim).toBe(false);
-  });
-
-  it('does not fire from a tap', () => {
-    engine.handle('down', at(ACTION, 1, clock));
-    clock += 60;
-    engine.handle('up', at({ x: ACTION.x + 2, y: ACTION.y }, 1, clock));
-    expect(engine.sample().firePressed).toBe(false);
-  });
-});
-
-describe('vision', () => {
-  it('needs two fingers: one is the slingshot', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 50, y: ACTION.y }]);
-    expect(engine.sample().vision).toBe(false);
-
-    engine.handle('down', at({ x: ACTION.x + 40, y: ACTION.y - 30 }, 2, clock));
-    expect(engine.sample().vision).toBe(true);
-  });
-
-  it('is not triggered by the steering thumb plus one finger', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 30, y: PAD.y }]);
-    engine.handle('down', at(ACTION, 2, clock));
-    expect(engine.sample().vision).toBe(false);
-  });
-
-  it('costs you the shot: aiming stops while the machine is open', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 70, y: ACTION.y }]);
-    expect(engine.sample().aim).toBe(true);
-    engine.handle('down', at({ x: ACTION.x + 40, y: ACTION.y - 30 }, 2, clock));
-    const i = engine.sample();
-    expect(i.vision).toBe(true);
-    expect(i.aim).toBe(false);
-    expect(i.firePressed).toBe(false);
-  });
-
-  it('keeps reporting the thumbs; what looking costs is the simulation to decide', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 40, y: PAD.y - 40 }]);
-    expect(engine.sample().push).toBe(true);
-    engine.handle('down', at(ACTION, 2, clock));
-    engine.handle('down', at({ x: ACTION.x + 40, y: ACTION.y }, 3, clock));
-    const i = engine.sample();
-    expect(i.vision).toBe(true);
-    expect(Math.abs(i.steer)).toBeGreaterThan(0);
-  });
-
-  it('does not resume aiming with the surviving finger when one is lifted', () => {
-    engine.handle('down', at(ACTION, 1, clock));
-    engine.handle('down', at({ x: ACTION.x + 40, y: ACTION.y }, 2, clock));
-    expect(engine.sample().vision).toBe(true);
-    clock += 40;
-    engine.handle('up', at({ x: ACTION.x + 40, y: ACTION.y }, 2, clock));
-    clock += 16;
-    engine.handle('move', at({ x: ACTION.x - 70, y: ACTION.y }, 1, clock));
-    const i = engine.sample();
-    expect(i.vision).toBe(false);
-    expect(i.aim).toBe(false);
+  it('drops any half-made gesture when the mode changes under it', () => {
+    drag(engine, 1, [WORLD, { x: WORLD.x + 90, y: WORLD.y }]);
+    engine.setAiming(false);
+    expect(engine.takeLook()).toEqual({ yaw: 0, pitch: 0 });
+    expect(engine.sample().fire).toBe(false);
   });
 });
 
 describe('reaching into the world', () => {
-  it('reports a tap so the caller can resolve it against the network', () => {
-    engine.handle('down', at(WORLD, 1, clock));
-    clock += 80;
-    engine.handle('up', at({ x: WORLD.x + 3, y: WORLD.y + 2 }, 1, clock));
-    const tap = engine.takeTap();
-    expect(tap).toEqual({ x: WORLD.x + 3, y: WORLD.y + 2 });
-    // Taps are consumed once.
-    expect(engine.takeTap()).toBeNull();
+  it('reports a tap above the controls so the caller can resolve it', () => {
+    tap(engine, WORLD);
+    engine.sample();
+    expect(engine.takeTap()).toEqual({ x: WORLD.x, y: WORLD.y });
   });
 
-  it('does not report a drag as a tap', () => {
-    drag(engine, 1, [WORLD, { x: WORLD.x + 60, y: WORLD.y }]);
-    engine.handle('up', at({ x: WORLD.x + 60, y: WORLD.y }, 1, clock));
+  it('does not mistake a stick tap for a reach into the world', () => {
+    tap(engine, STICK);
+    engine.sample();
     expect(engine.takeTap()).toBeNull();
   });
 });
 
 describe('input abstraction', () => {
-  it('produces the same Intent shape as any other device', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 40, y: PAD.y - 40 }]);
-    const touch = engine.sample();
-    expect(Object.keys(touch).sort()).toEqual(Object.keys(emptyIntent()).sort());
+  it('keeps the simulation free of any knowledge of thumbs', () => {
+    const merged = mergeIntent(emptyIntent(), engine.sample());
+    expect(Object.keys(merged).sort()).toEqual(Object.keys(emptyIntent()).sort());
   });
 
-  it('merges with a keyboard intent without either cancelling the other', () => {
-    const keys = emptyIntent();
-    keys.steer = -1;
-    keys.vision = true;
-
-    drag(engine, 1, [PAD, { x: PAD.x + 20, y: PAD.y - 40 }]);
-    const merged = mergeIntent(keys, engine.sample());
-
-    // The stronger steer wins; booleans are additive.
-    expect(merged.steer).toBe(-1);
+  it('lets a keyboard and a thumb coexist without cancelling each other', () => {
+    const kb = emptyIntent();
+    kb.vision = true;
+    drag(engine, 1, [STICK, { x: STICK.x + 40, y: STICK.y }]);
+    const merged = mergeIntent(kb, engine.sample());
     expect(merged.vision).toBe(true);
-    expect(merged.push).toBe(true);
-  });
-
-  it('carries a null draw when no device offers one, so the character loads it', () => {
-    expect(emptyIntent().drawAmount).toBeNull();
-  });
-});
-
-describe('control visuals', () => {
-  it('describes the pad and the band without the renderer knowing about touch', () => {
-    drag(engine, 1, [PAD, { x: PAD.x + 30, y: PAD.y - 30 }]);
-    drag(engine, 2, [ACTION, { x: ACTION.x - 60, y: ACTION.y }]);
-    const v = engine.visual;
-    expect(v.pad.active).toBe(true);
-    expect(v.pad.steer).toBeGreaterThan(0);
-    expect(v.pad.throttle).toBeGreaterThan(0);
-    expect(v.sling.active).toBe(true);
-    expect(v.sling.draw).toBeGreaterThan(0);
-    expect(v.sling.cancelling).toBe(false);
-  });
-
-  it('shows the band as cancelling when the thumb returns to the pouch', () => {
-    drag(engine, 1, [ACTION, { x: ACTION.x - 60, y: ACTION.y }, { x: ACTION.x - 2, y: ACTION.y }]);
-    expect(engine.visual.sling.cancelling).toBe(true);
+    expect(merged.moveVector).not.toBeNull();
   });
 });
 
 describe('viewport', () => {
-  it('moves the thumb zones when the device rotates', () => {
-    const e = make();
-    e.setViewport({ w: 844, h: 390, safe: { top: 0, right: 47, bottom: 21, left: 47 } });
-    // Landscape: the same physical corner is now a different coordinate.
-    expect(e.zoneAt(100, 330)).toBe('steer');
-    expect(e.zoneAt(700, 330)).toBe('action');
-    expect(e.zoneAt(400, 60)).toBe('idle');
-  });
-
-  it('keeps the thumb zones clear of the home indicator', () => {
-    // The bottom inset is reserved: the zone still resolves, but the layout
-    // rules that place UI use the same inset, so nothing lands under it.
-    expect(VIEWPORT.safe.bottom).toBeGreaterThan(0);
-    expect(engine.zoneAt(PAD.x, VIEWPORT.h - VIEWPORT.safe.bottom - 1)).toBe('steer');
+  it('moves the controls with the safe area rather than under the notch', () => {
+    const tall = make();
+    tall.setViewport({ w: 430, h: 932, safe: { top: 59, right: 0, bottom: 34, left: 0 } });
+    for (const b of tall.buttonLayout()) {
+      expect(b.pos.y + b.radius).toBeLessThanOrEqual(932 - 34);
+    }
+    expect(tall.homePoint().y).toBeLessThanOrEqual(932 - 34);
   });
 });
 
-// --------------------------------------------------------------------------
-// The gestures above are only worth anything if they reach the simulation.
-// These drive the real Sim from synthetic touch traces, with no DOM anywhere.
-
-import { makeSim, place, step } from './harness';
-import { TICK_DT } from '../src/core/loop';
-
-/** Run the simulation for a while, feeding it whatever the thumbs are doing. */
-function play(sim: ReturnType<typeof makeSim>, e: TouchEngine, seconds: number, aim: { x: number; y: number } | null = null): void {
-  const n = Math.round(seconds * 60);
-  for (let i = 0; i < n; i++) {
-    const intent = e.sample();
-    let point = aim;
-    if (intent.aimVector && !point) {
-      point = {
-        x: sim.player.pos.x + intent.aimVector.x * 30,
-        y: sim.player.pos.y + intent.aimVector.y * 30,
-      };
-    }
-    sim.step(TICK_DT, intent, point);
-    clock += 1000 / 60;
-  }
-}
-
-describe('touch drives the simulation', () => {
-  it('gets the player rolling from a thumb held forward', () => {
+describe('a thumb drives the simulation', () => {
+  it('gets a standing player moving within a second of first contact', () => {
     const sim = makeSim();
     const e = make();
-    place(sim, { x: 155, y: 215 });
-    drag(e, 1, [PAD, { x: PAD.x, y: PAD.y - 44 }], 40);
-    play(sim, e, 3);
-    expect(sim.player.speed).toBeGreaterThan(4);
-    expect(sim.player.odometer).toBeGreaterThan(6);
+    place(sim, { x: 158, y: 214 });
+    const from = { ...sim.player.pos };
+    e.handle('down', { id: 1, x: STICK.x, y: STICK.y - 40, t: 0 });
+    e.handle('move', { id: 1, x: STICK.x, y: STICK.y - 40, t: 16 });
+    for (let i = 0; i < 60; i++) sim.step(TICK_DT, e.sample(), null);
+    expect(Math.hypot(sim.player.pos.x - from.x, sim.player.pos.y - from.y)).toBeGreaterThan(2);
   });
 
-  it('carves the board without rewriting the physics', () => {
+  it('sends the character the way the thumb points, not the way it was facing', () => {
     const sim = makeSim();
     const e = make();
-    place(sim, { x: 155, y: 215 });
-    const before = sim.player.heading;
-    drag(e, 1, [PAD, { x: PAD.x + 60, y: PAD.y - 44 }], 40);
-    play(sim, e, 1.5);
-    expect(sim.player.heading).not.toBe(before);
-    expect(sim.player.stance).toBe('ROLL');
-  });
-
-  it('ollies at speed, leaving the ground and landing again', () => {
-    const sim = makeSim();
-    const e = make();
-    place(sim, { x: 155, y: 215 });
-    drag(e, 1, [PAD, { x: PAD.x, y: PAD.y - 44 }], 40);
-    play(sim, e, 2.5);
-
-    clock += 40;
-    e.handle('move', at({ x: PAD.x, y: PAD.y - 46 }, 1, clock));
-    for (let i = 1; i <= 4; i++) {
-      clock += 8;
-      e.handle('move', at({ x: PAD.x, y: PAD.y - 46 - i * 13 }, 1, clock));
-    }
-    let airborne = false;
-    for (let i = 0; i < 20; i++) {
-      sim.step(TICK_DT, e.sample(), null);
-      if (sim.player.stance === 'AIR') airborne = true;
-      clock += 1000 / 60;
-    }
-    expect(airborne).toBe(true);
-  });
-
-  it('draws and fires the slingshot, spending exactly one bearing', () => {
-    const sim = makeSim();
-    const e = make();
-    const cam = sim.sensorById.get('CM-207')!;
-    place(sim, { x: 145, y: 62 });
-    const before = sim.player.bearings;
-
-    // Pull back away from the camera, which lies north of the player.
-    e.handle('down', at(ACTION, 1, clock));
-    for (let i = 1; i <= 6; i++) {
-      clock += 16;
-      e.handle('move', at({ x: ACTION.x, y: ACTION.y + i * 16 }, 1, clock));
-      sim.step(TICK_DT, e.sample(), { x: cam.data.pos.x, y: cam.data.pos.y });
-    }
-    clock += 16;
-    e.handle('up', at({ x: ACTION.x, y: ACTION.y + 96 }, 1, clock));
-    sim.step(TICK_DT, e.sample(), { x: cam.data.pos.x, y: cam.data.pos.y });
-
-    expect(sim.player.bearings).toBe(before - 1);
-    step(sim, 3);
-    expect(sim.evidence.size).toBeGreaterThan(0);
-  });
-
-  it('keeps the machine thinking while the player aims', () => {
-    const sim = makeSim();
-    const e = make();
-    place(sim, { x: 145, y: 62 });
-    const tick = sim.tick;
-    drag(e, 1, [ACTION, { x: ACTION.x, y: ACTION.y + 70 }]);
-    play(sim, e, 2);
-    // Nothing pauses, nothing slows: aiming happens inside a running world.
-    expect(sim.tick).toBeGreaterThan(tick + 100);
-    expect(sim.player.aiming).toBe(true);
-  });
-
-  it('opens machine vision on two fingers and closes it on release', () => {
-    const sim = makeSim();
-    const e = make();
-    place(sim, { x: 155, y: 215 });
-    sim.unlockVision();
-
-    e.handle('down', at(ACTION, 1, clock));
-    e.handle('down', at({ x: ACTION.x + 40, y: ACTION.y }, 2, clock));
-    play(sim, e, 1);
-    expect(sim.visionActive).toBe(true);
-    expect(sim.visionBlend).toBeGreaterThan(0.4);
-
-    clock += 16;
-    e.handle('up', at(ACTION, 1, clock));
-    e.handle('up', at({ x: ACTION.x + 40, y: ACTION.y }, 2, clock));
-    play(sim, e, 1);
-    expect(sim.visionActive).toBe(false);
-    expect(sim.visionBlend).toBeLessThan(0.1);
-  });
-
-  it('will not open machine vision before the player has earned it', () => {
-    const sim = makeSim();
-    const e = make();
-    e.handle('down', at(ACTION, 1, clock));
-    e.handle('down', at({ x: ACTION.x + 40, y: ACTION.y }, 2, clock));
-    play(sim, e, 0.5);
-    expect(sim.visionActive).toBe(false);
-  });
-});
-
-describe('touch reaches into the network', () => {
-  it('selects a node, runs a verb, and gets the real graph back', () => {
-    const sim = makeSim();
-    const node = sim.network.get('CM-207')!;
-    place(sim, { x: node.pos.x + 5, y: node.pos.y + 5 });
-    step(sim, 0.1);
-
-    sim.selectNode('CM-207');
-    expect(sim.focusNode?.id).toBe('CM-207');
-
-    sim.startHack('QUERY', 'CM-207');
-    step(sim, 1.2);
-    // QUERY reveals actual edges, not a puzzle.
-    for (const edge of node.edges) expect(sim.discoveredNodes.has(edge)).toBe(true);
-    expect(node.edges).toContain('SVC-VISION');
-  });
-
-  it('refuses to reach a node the player is nowhere near', () => {
-    const sim = makeSim();
-    place(sim, { x: 155, y: 215 });
-    sim.selectNode('CM-207');
-    expect(sim.selectedNodeId).toBeNull();
-  });
-
-  it('lets go of a node when the player skates away, with no menu to dismiss', () => {
-    const sim = makeSim();
-    const node = sim.network.get('CM-207')!;
-    place(sim, { x: node.pos.x + 5, y: node.pos.y + 5 });
-    step(sim, 0.1);
-    sim.selectNode('CM-207');
-    sim.startHack('LOOP', 'CM-207');
-    expect(sim.hack).not.toBeNull();
-
-    place(sim, { x: 155, y: 215 });
-    step(sim, 0.1);
-    expect(sim.selectedNodeId).toBeNull();
-    expect(sim.hack).toBeNull();
+    place(sim, { x: 158, y: 214 });
+    sim.player.heading = 0; // facing east
+    // Thumb pushed straight up: the character should end up heading north.
+    e.handle('down', { id: 1, x: STICK.x, y: STICK.y, t: 0 });
+    e.handle('move', { id: 1, x: STICK.x, y: STICK.y - 60, t: 16 });
+    for (let i = 0; i < 120; i++) sim.step(TICK_DT, e.sample(), null);
+    // North is -y, which is an angle of -pi/2.
+    expect(Math.abs(sim.player.heading + Math.PI / 2)).toBeLessThan(0.5);
   });
 });

@@ -12,6 +12,19 @@ export function makeSim(seed = 0x5afe7ace): Sim {
   return new Sim(buildBellhaven(), { seed });
 }
 
+/**
+ * A sim in the state the investigation actually happens in.
+ *
+ * Nothing reaches into the network until VISION is unlocked — before that the
+ * town is just a town, which is what the opening is for. Tests that exercise
+ * hacking are testing the back half of the game and have to say so.
+ */
+export function makeUnlockedSim(seed = 0x5afe7ace): Sim {
+  const sim = makeSim(seed);
+  sim.unlockVision();
+  return sim;
+}
+
 export function step(sim: Sim, seconds: number, intent: Intent = emptyIntent(), pointer: Vec2 | null = null): void {
   const n = Math.round(seconds * 60);
   for (let i = 0; i < n; i++) sim.step(TICK_DT, intent, pointer);

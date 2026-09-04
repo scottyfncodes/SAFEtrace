@@ -6,14 +6,21 @@
  * the controls. No DOM, no timers, no globals — so every gesture in the game
  * can be unit-tested by feeding it a synthetic trace.
  *
- * The vocabulary, in one paragraph: the left thumb is the board. Carve with it,
- * push by holding it forward, brake by pulling it back, ollie with a flick up.
- * The right thumb is the slingshot: press, pull back away from the target, and
- * release. Put a second finger down on that side and the world comes apart —
- * which is why you cannot aim while you are looking at it.
+ * The vocabulary was rebuilt after a human played it twice.
+ *
+ * It used to be a relative stick: horizontal offset steered a heading, vertical
+ * offset was a throttle, and an upward flick was an ollie. Every part of that
+ * asked the player to model something invisible — where the anchor was, which
+ * way the board was pointing, how fast a flick had to be — and the verdict
+ * after tuning it was "a tiny bit better but still not fun or intuitive."
+ *
+ * So: the left thumb is a direction, not a rudder. Push it where you want to
+ * go and the character goes there; how far you push is how fast. Everything
+ * else that used to be a hidden gesture is now a button you can see. There is
+ * nothing left to discover by accident.
  */
 import { type Intent, emptyIntent } from './input';
-import { clamp, clamp01 } from './math';
+import { clamp01 } from './math';
 
 export type PointerPhase = 'down' | 'move' | 'up' | 'cancel';
 
@@ -34,86 +41,77 @@ export interface Viewport {
 }
 
 export const TOUCH_TUNING = {
-  /** Fraction of the viewport given to each thumb, measured from the bottom. */
+  /** Fraction of the viewport width given to the movement thumb. */
   padWidth: 0.55,
-  padHeight: 0.42,
-  actionWidth: 0.45,
-  /** Carve reaches full deflection this far from the anchor. */
-  steerFull: 58,
-  steerDead: 7,
-  /** Forward of the anchor by this much is a push; behind it is a brake. */
-  throttleDead: 12,
-  throttleFull: 46,
-  /**
-   * How far *behind* the landing point the steering anchor is dropped.
-   *
-   * A thumb placed on the screen and held still is the first thing anybody
-   * tries, and before this it did nothing at all: the anchor landed under the
-   * thumb, so neutral was exactly where the thumb already was, and the player
-   * had to somehow know to hold forward of a point they could not see. The
-   * anchor now sits behind the touch, so resting reads as a push and pulling
-   * back still brakes. It costs a little brake travel and buys the whole
-   * cold start.
-   */
-  throttleBias: 20,
-  /** An ollie flick: this fast, this far, mostly upward, this recently. */
-  ollieSpeed: 0.85,      // px per ms
-  ollieDistance: 22,     // px of net upward travel
-  ollieWindow: 150,      // ms the travel must happen within
-  ollieVerticality: 0.72, // |dy| / length
-  ollieCooldown: 260,    // ms between ollies from one touch
-  /** A touch may not ollie until it has settled, so placing a thumb is safe. */
-  ollieSettle: 110,
-  /** Slingshot: draw reaches full at this pull distance. */
-  drawFull: 96,
-  drawMin: 16,
-  /** Releasing inside this radius cancels instead of firing. */
-  cancelRadius: 15,
+  /** Fraction of the viewport height, from the bottom, that accepts a thumb. */
+  padHeight: 0.55,
+  /** The stick reaches full deflection this far from where it was planted. */
+  stickFull: 52,
+  /** Inside this, the thumb is resting rather than steering. */
+  stickDead: 5,
+  /** Below this magnitude the character coasts instead of pushing. */
+  moveThreshold: 0.16,
+  /** Buttons: radius, and the gap between their centres. */
+  buttonRadius: 34,
+  buttonGap: 82,
   /** A tap: short, and barely moved. */
-  tapMs: 220,
-  tapSlop: 12,
-  /** Two touches this close together in time count as a deliberate pair. */
-  visionPairMs: 260,
+  tapMs: 240,
+  tapSlop: 14,
+  /** Aiming: pixels of drag per radian of look. */
+  lookScale: 260,
+  /** A drag this small on release is a cancel, not a shot. */
+  aimTapSlop: 10,
 };
 
-export type TouchRole = 'steer' | 'action' | 'vision' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'ollie' | 'vision' | 'aim' | 'idle';
 
 interface Track {
   id: number;
   role: TouchRole;
   start: { x: number; y: number; t: number };
-  /** The steering anchor. Floats: it re-centres if the thumb drifts far. */
+  /** Where the stick was planted. Floats if the thumb runs out of room. */
   anchor: { x: number; y: number };
   cur: { x: number; y: number; t: number };
-  prev: { x: number; y: number; t: number };
   moved: number;
-  lastOllieT: number;
-  /** Recent samples, for flick detection. */
-  history: Array<{ x: number; y: number; t: number }>;
+}
+
+export interface ControlButton {
+  id: 'sling' | 'ollie' | 'vision';
+  pos: { x: number; y: number };
+  radius: number;
+  pressed: boolean;
+  /** Dimmed when the action is unavailable. */
+  enabled: boolean;
 }
 
 /** What the renderer needs in order to draw the controls. */
 export interface ControlVisual {
-  pad: { active: boolean; anchor: { x: number; y: number }; thumb: { x: number; y: number }; steer: number; throttle: number };
   /** Where a left thumb is expected to land, for the cold-start affordance. */
   home: { x: number; y: number };
-  sling: { active: boolean; origin: { x: number; y: number }; thumb: { x: number; y: number }; draw: number; cancelling: boolean };
+  stick: {
+    active: boolean;
+    anchor: { x: number; y: number };
+    thumb: { x: number; y: number };
+    /** Screen-space direction, magnitude 0..1. */
+    vector: { x: number; y: number };
+  };
+  buttons: ControlButton[];
   vision: boolean;
+  aiming: boolean;
 }
 
 export class TouchEngine {
   private tracks = new Map<number, Track>();
   private viewport: Viewport = { w: 390, h: 844, safe: { top: 0, right: 0, bottom: 0, left: 0 } };
-  private pendingOllie = false;
   private pendingTap: { x: number; y: number } | null = null;
   private pendingSkip = false;
-  /**
-   * The release frame must still describe a drawn slingshot: the simulation
-   * only fires while the character is actually aiming, and by the time a thumb
-   * has lifted the gesture is over.
-   */
-  private pendingFire: { aimVector: { x: number; y: number }; draw: number } | null = null;
-  private lastVision = false;
+  private pendingOllie = false;
+  private pendingAimMode = false;
+  private pendingFire = false;
+  /** Accumulated look delta while aiming, consumed once per frame. */
+  private lookDelta = { yaw: 0, pitch: 0 };
+  private aiming = false;
+  private canSling = true;
   readonly tuning = { ...TOUCH_TUNING };
 
   /** True while any finger is on the screen; used to keep audio awake. */
@@ -121,20 +119,51 @@ export class TouchEngine {
 
   setViewport(v: Viewport): void { this.viewport = v; }
 
+  /** The engine speaks a different vocabulary while a shot is being lined up. */
+  setAiming(on: boolean): void {
+    if (this.aiming === on) return;
+    this.aiming = on;
+    this.tracks.clear();
+    this.lookDelta = { yaw: 0, pitch: 0 };
+  }
+
+  setSlingAvailable(on: boolean): void { this.canSling = on; }
+
   reset(): void {
     this.tracks.clear();
-    this.pendingOllie = false;
     this.pendingTap = null;
-    this.pendingFire = null;
+    this.pendingOllie = false;
+    this.pendingAimMode = false;
+    this.pendingFire = false;
+    this.lookDelta = { yaw: 0, pitch: 0 };
+  }
+
+  /** Button centres, laid out from the bottom-right corner. */
+  buttonLayout(): ControlButton[] {
+    const { w, h, safe } = this.viewport;
+    const r = this.tuning.buttonRadius;
+    const gap = this.tuning.buttonGap;
+    const x = w - safe.right - r - 22;
+    const y = h - safe.bottom - r - 26;
+    return [
+      { id: 'ollie', pos: { x, y }, radius: r, pressed: false, enabled: true },
+      { id: 'sling', pos: { x, y: y - gap }, radius: r, pressed: false, enabled: this.canSling },
+      { id: 'vision', pos: { x: x - gap * 0.86, y: y - gap * 0.34 }, radius: r * 0.86, pressed: false, enabled: true },
+    ];
   }
 
   /** Which zone does a screen point belong to? */
   zoneAt(x: number, y: number): TouchRole {
+    if (this.aiming) return 'aim';
+    for (const b of this.buttonLayout()) {
+      // A generous target: a thumb is eleven millimetres wide.
+      if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.radius * 1.35) return b.id;
+    }
     const { w, h, safe } = this.viewport;
     const bottom = h - safe.bottom;
     const padTop = bottom - h * this.tuning.padHeight;
     if (y < padTop) return 'idle';
-    return x < w * this.tuning.padWidth ? 'steer' : 'action';
+    return x < w * this.tuning.padWidth ? 'stick' : 'idle';
   }
 
   handle(phase: PointerPhase, s: PointerSample): void {
@@ -146,210 +175,130 @@ export class TouchEngine {
   }
 
   private onDown(s: PointerSample): void {
-    const zone = this.zoneAt(s.x, s.y);
-    // Anything that is not the steering thumb can become part of a VISION pair.
-    const others = [...this.tracks.values()].filter((t) => t.role !== 'steer');
-    let role: TouchRole = zone === 'steer' ? 'steer' : 'action';
-
-    // A steering thumb is unique: a second touch in that zone is an action.
-    if (role === 'steer' && [...this.tracks.values()].some((t) => t.role === 'steer')) role = 'action';
-
-    if (role === 'action' && others.length >= 1) {
-      // The second finger outside the pad opens the machine. Any aim in
-      // progress is abandoned rather than fired: looking costs you the shot.
-      role = 'vision';
-      for (const o of others) o.role = 'vision';
-    }
+    let role = this.zoneAt(s.x, s.y);
+    // One stick at a time; a second thumb on that side does nothing.
+    if (role === 'stick' && [...this.tracks.values()].some((t) => t.role === 'stick')) role = 'idle';
+    if (role === 'sling' && !this.canSling) role = 'idle';
 
     this.tracks.set(s.id, {
-      id: s.id,
-      role,
+      id: s.id, role,
       start: { x: s.x, y: s.y, t: s.t },
-      anchor: { x: s.x, y: role === 'steer' ? s.y + this.tuning.throttleBias : s.y },
+      anchor: { x: s.x, y: s.y },
       cur: { x: s.x, y: s.y, t: s.t },
-      prev: { x: s.x, y: s.y, t: s.t },
       moved: 0,
-      lastOllieT: -Infinity,
-      history: [{ x: s.x, y: s.y, t: s.t }],
     });
   }
 
   private onMove(track: Track, s: PointerSample): void {
-    track.prev = track.cur;
+    const dxs = s.x - track.cur.x;
+    const dys = s.y - track.cur.y;
     track.cur = { x: s.x, y: s.y, t: s.t };
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
-    track.history.push({ x: s.x, y: s.y, t: s.t });
-    while (track.history.length > 1 && s.t - track.history[0].t > this.tuning.ollieWindow * 1.6) {
-      track.history.shift();
+    if (track.role === 'aim') {
+      // Dragging moves the view under a fixed reticle, the way a hand does.
+      this.lookDelta.yaw += dxs / this.tuning.lookScale;
+      this.lookDelta.pitch -= dys / this.tuning.lookScale;
+      return;
     }
 
-    if (track.role === 'steer') {
-      this.detectOllie(track, s);
-      // The anchor follows a thumb that has run out of room, so steering never
-      // pins the player to an exact coordinate.
+    if (track.role === 'stick') {
+      // The anchor follows a thumb that has run out of room, so the stick can
+      // never be pinned to an unreachable corner of the screen.
       const dx = s.x - track.anchor.x;
-      const limit = this.tuning.steerFull * 1.35;
-      if (dx > limit) track.anchor.x = s.x - limit;
-      if (dx < -limit) track.anchor.x = s.x + limit;
       const dy = s.y - track.anchor.y;
-      if (dy > limit) track.anchor.y = s.y - limit;
-      if (dy < -limit) track.anchor.y = s.y + limit;
+      const limit = this.tuning.stickFull * 1.3;
+      const d = Math.hypot(dx, dy);
+      if (d > limit) {
+        track.anchor.x = s.x - (dx / d) * limit;
+        track.anchor.y = s.y - (dy / d) * limit;
+      }
     }
-  }
-
-  /**
-   * An ollie is a flick, not a position. A thumb being placed and then held
-   * forward to push travels the same distance, so speed and transience are what
-   * separate them — plus a settle window, so putting the thumb down is safe.
-   */
-  private detectOllie(track: Track, s: PointerSample): void {
-    if (s.t - track.start.t < this.tuning.ollieSettle) return;
-    if (s.t - track.lastOllieT < this.tuning.ollieCooldown) return;
-
-    const cutoff = s.t - this.tuning.ollieWindow;
-    let from: { x: number; y: number; t: number } | null = null;
-    for (const h of track.history) if (h.t >= cutoff) { from = h; break; }
-    if (!from || from.t === s.t) return;
-
-    const dx = s.x - from.x;
-    const dy = s.y - from.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 1) return;
-
-    const up = -dy;
-    if (up < this.tuning.ollieDistance) return;
-    if (up / dist < this.tuning.ollieVerticality) return;
-
-    const speed = dist / Math.max(1, s.t - from.t);
-    if (speed < this.tuning.ollieSpeed) return;
-
-    this.pendingOllie = true;
-    track.lastOllieT = s.t;
-    // Re-anchor so the flick itself does not read as a huge push — but keep the
-    // resting bias, or landing an ollie would silently stop the board.
-    track.anchor.y = s.y + this.tuning.throttleBias;
   }
 
   private onRelease(track: Track, s: PointerSample, cancelled: boolean): void {
     this.tracks.delete(track.id);
-
     const held = s.t - track.start.t;
     const isTap = !cancelled && held <= this.tuning.tapMs && track.moved <= this.tuning.tapSlop;
 
-    if (track.role === 'action') {
-      const pull = Math.hypot(s.x - track.start.x, s.y - track.start.y);
-      if (isTap) {
-        // A tap in the action zone is a request to touch something in the
-        // world, not a shot. The caller resolves what is under it.
-        this.pendingTap = { x: s.x, y: s.y };
-        this.pendingSkip = true;
-      } else if (!cancelled && pull > this.tuning.cancelRadius && this.drawOf(pull) > 0.12) {
-        const dx = s.x - track.start.x;
-        const dy = s.y - track.start.y;
-        this.pendingFire = {
-          aimVector: { x: -dx / pull, y: -dy / pull },
-          draw: this.drawOf(pull),
-        };
-      }
-    } else if (isTap && track.role !== 'steer') {
-      this.pendingTap = { x: s.x, y: s.y };
-      this.pendingSkip = true;
-    } else if (track.role === 'steer' && isTap) {
-      this.pendingSkip = true;
+    switch (track.role) {
+      case 'aim':
+        if (cancelled) break;
+        // Letting go is the shot. A release that never moved is a change of
+        // mind, and puts the player back on the board.
+        if (track.moved > this.tuning.aimTapSlop || held > 320) this.pendingFire = true;
+        else this.pendingAimMode = true;
+        break;
+      case 'sling':
+        if (isTap) this.pendingAimMode = true;
+        break;
+      case 'ollie':
+        if (isTap) this.pendingOllie = true;
+        break;
+      case 'idle':
+        if (isTap) { this.pendingTap = { x: s.x, y: s.y }; this.pendingSkip = true; }
+        break;
+      case 'stick':
+        if (isTap) this.pendingSkip = true;
+        break;
+      default:
+        break;
     }
-
-    // Dropping from two fingers to one must not resume aiming with the
-    // survivor: the remaining finger is demoted until it is lifted.
-    const rest = [...this.tracks.values()].filter((t) => t.role !== 'steer');
-    if (rest.length === 1 && rest[0].role === 'vision') rest[0].role = 'idle';
   }
 
-  private drawOf(pull: number): number {
-    const t = this.tuning;
-    return clamp01((pull - t.drawMin) / (t.drawFull - t.drawMin));
-  }
-
-  private get steerTrack(): Track | undefined {
-    for (const t of this.tracks.values()) if (t.role === 'steer') return t;
-    return undefined;
-  }
-
-  private get actionTrack(): Track | undefined {
-    for (const t of this.tracks.values()) if (t.role === 'action') return t;
+  private get stickTrack(): Track | undefined {
+    for (const t of this.tracks.values()) if (t.role === 'stick') return t;
     return undefined;
   }
 
   private get visionHeld(): boolean {
-    let n = 0;
-    for (const t of this.tracks.values()) if (t.role === 'vision') n++;
-    return n >= 2;
+    for (const t of this.tracks.values()) if (t.role === 'vision') return true;
+    return false;
   }
 
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
   sample(): Intent {
     const i = emptyIntent();
     const t = this.tuning;
-    const vision = this.visionHeld;
 
-    const steer = this.steerTrack;
-    if (steer) {
-      const dx = steer.cur.x - steer.anchor.x;
-      const mag = Math.max(0, Math.abs(dx) - t.steerDead) / (t.steerFull - t.steerDead);
-      i.steer = clamp(Math.sign(dx) * mag, -1, 1);
+    if (this.aiming) {
+      i.aim = true;
+      if (this.pendingFire) { i.fire = true; i.firePressed = true; this.pendingFire = false; }
+      if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
+      if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
+      return i;
+    }
 
-      // Forward of the anchor pushes; behind it brakes. Forward and back is how
-      // a skater already thinks about going and stopping.
-      const dy = steer.anchor.y - steer.cur.y;
-      if (dy > t.throttleDead) {
-        // Held forward is a push at the board's own cadence: the simulation's
-        // cooldown still decides the rhythm, so mashing gains nothing.
+    const stick = this.stickTrack;
+    if (stick) {
+      const dx = stick.cur.x - stick.anchor.x;
+      const dy = stick.cur.y - stick.anchor.y;
+      const d = Math.hypot(dx, dy);
+      if (d > t.stickDead) {
+        const mag = clamp01((d - t.stickDead) / (t.stickFull - t.stickDead));
+        i.moveVector = { x: (dx / d) * mag, y: (dy / d) * mag };
+        if (mag > t.moveThreshold) { i.push = true; i.pushPressed = true; }
+      } else {
+        // A thumb resting on the stick still rolls: the first thing anybody
+        // does is put a finger down and wait to see what happens.
+        i.moveVector = { x: 0, y: 0 };
         i.push = true;
         i.pushPressed = true;
-      } else if (dy < -t.throttleDead) {
-        i.brake = true;
       }
     }
 
-    if (this.pendingOllie) {
-      i.olliePressed = true;
-      i.ollieReleased = true;
-      this.pendingOllie = false;
-    }
-
-    // The second finger ends the aim gesture — that is gesture disambiguation,
-    // not a rule. What holding VISION costs the player is decided once, in the
-    // simulation, so it cannot drift between input devices.
-    if (vision) {
-      i.vision = true;
-      i.aim = false;
-    } else {
-      const action = this.actionTrack;
-      if (action) {
-        const dx = action.cur.x - action.start.x;
-        const dy = action.cur.y - action.start.y;
-        const pull = Math.hypot(dx, dy);
-        if (pull > t.cancelRadius) {
-          i.aim = true;
-          i.drawAmount = this.drawOf(pull);
-          // You pull the pouch back; the shot goes the other way.
-          i.aimVector = { x: -dx / pull, y: -dy / pull };
-        }
-      }
-      if (this.pendingFire) {
-        // Hold the draw open for exactly the frame the release lands on.
-        i.aim = true;
-        i.drawAmount = this.pendingFire.draw;
-        i.aimVector = this.pendingFire.aimVector;
-        i.fire = true;
-        i.firePressed = true;
-      }
-    }
-    this.pendingFire = null;
-
+    if (this.visionHeld) { i.vision = true; i.aim = false; }
+    if (this.pendingOllie) { i.olliePressed = true; i.ollieReleased = true; this.pendingOllie = false; }
+    if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
     if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
-    this.lastVision = vision;
     return i;
+  }
+
+  /** Look delta accumulated since the last call, in radians. */
+  takeLook(): { yaw: number; pitch: number } {
+    const l = this.lookDelta;
+    this.lookDelta = { yaw: 0, pitch: 0 };
+    return l;
   }
 
   /** A world-space tap the caller should resolve against the network. */
@@ -359,45 +308,6 @@ export class TouchEngine {
     return tap;
   }
 
-  get visual(): ControlVisual {
-    const steer = this.steerTrack;
-    const action = this.actionTrack;
-    const vision = this.visionHeld;
-    const t = this.tuning;
-
-    let draw = 0;
-    let cancelling = false;
-    if (action) {
-      const pull = Math.hypot(action.cur.x - action.start.x, action.cur.y - action.start.y);
-      draw = this.drawOf(pull);
-      cancelling = pull <= t.cancelRadius;
-    }
-
-    return {
-      home: this.homePoint(),
-      pad: {
-        active: !!steer,
-        anchor: steer ? { x: steer.anchor.x, y: steer.anchor.y } : { x: 0, y: 0 },
-        thumb: steer ? { x: steer.cur.x, y: steer.cur.y } : { x: 0, y: 0 },
-        steer: steer ? clamp((steer.cur.x - steer.anchor.x) / t.steerFull, -1, 1) : 0,
-        throttle: steer ? clamp((steer.anchor.y - steer.cur.y) / t.throttleFull, -1, 1) : 0,
-      },
-      sling: {
-        active: !!action && !vision,
-        origin: action ? { x: action.start.x, y: action.start.y } : { x: 0, y: 0 },
-        thumb: action ? { x: action.cur.x, y: action.cur.y } : { x: 0, y: 0 },
-        draw,
-        cancelling,
-      },
-      vision,
-    };
-  }
-
-  /**
-   * The natural resting place for a left thumb: inside the steering zone, a
-   * comfortable reach above the bottom safe area. Nothing is drawn here once
-   * the player has started moving.
-   */
   homePoint(): { x: number; y: number } {
     const { w, h, safe } = this.viewport;
     return {
@@ -406,7 +316,35 @@ export class TouchEngine {
     };
   }
 
-  get visionActive(): boolean { return this.lastVision; }
+  get visual(): ControlVisual {
+    const stick = this.stickTrack;
+    const t = this.tuning;
+    let vector = { x: 0, y: 0 };
+    if (stick) {
+      const dx = stick.cur.x - stick.anchor.x;
+      const dy = stick.cur.y - stick.anchor.y;
+      const d = Math.hypot(dx, dy);
+      if (d > t.stickDead) {
+        const mag = clamp01((d - t.stickDead) / (t.stickFull - t.stickDead));
+        vector = { x: (dx / d) * mag, y: (dy / d) * mag };
+      }
+    }
+    const held = new Set([...this.tracks.values()].map((x) => x.role));
+    return {
+      home: this.homePoint(),
+      stick: {
+        active: !!stick,
+        anchor: stick ? { x: stick.anchor.x, y: stick.anchor.y } : { x: 0, y: 0 },
+        thumb: stick ? { x: stick.cur.x, y: stick.cur.y } : { x: 0, y: 0 },
+        vector,
+      },
+      buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) })),
+      vision: this.visionHeld,
+      aiming: this.aiming,
+    };
+  }
+
+  get visionActive(): boolean { return this.visionHeld; }
 }
 
 /**
@@ -426,8 +364,6 @@ export class TouchAdapter {
   attach(el: HTMLElement | Window = window): void {
     const target = el as HTMLElement;
     const relevant = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
-    // Real interactive elements keep their default behaviour, so the
-    // preferences card and the verb chips still work with a finger.
     const interactive = (e: Event) =>
       !!(e.target as HTMLElement | null)?.closest?.('button, input, label, a, .go, .verb');
 
@@ -439,7 +375,6 @@ export class TouchAdapter {
     const move = (e: PointerEvent) => {
       if (!relevant(e) || interactive(e)) return;
       e.preventDefault();
-      // Coalesced events give a truthful flick velocity on high-rate screens.
       const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e];
       for (const c of events.length ? events : [e]) {
         this.engine.handle('move', { id: e.pointerId, x: c.clientX, y: c.clientY, t: c.timeStamp });

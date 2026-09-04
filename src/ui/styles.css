@@ -146,6 +146,20 @@ html, body {
 .phone-row b { font-weight: 500; color: #2A3440; }
 
 /* ------------------------------------------------------------------ inspect */
+.node-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 6px;
+}
+.node-kind {
+  font-size: calc(9px * var(--text-scale));
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--st-teal-bright); font-weight: 600;
+}
+.verb.close {
+  padding: 3px 9px; font-size: calc(9px * var(--text-scale));
+  opacity: 0.75; letter-spacing: 0.08em;
+}
+#inspect.hidden { opacity: 0; pointer-events: none; }
 #inspect {
   position: absolute; bottom: 24px; left: 24px;
   width: calc(300px * var(--text-scale));
@@ -202,6 +216,7 @@ html, body {
 }
 
 /* --------------------------------------------------------------------- talk */
+#dialogue.hidden { opacity: 0 !important; }
 #dialogue {
   position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
   max-width: 560px; text-align: center;

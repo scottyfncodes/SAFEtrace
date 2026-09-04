@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { validateWorld, World } from '../src/sim/world';
-import { makeSim, place, step } from './harness';
+import { makeUnlockedSim, place, step } from './harness';
 import { RECORD_CHAIN } from '../src/content/story';
 import { SABLE_GAP_X, SABLE_LANE_Y } from '../src/content/northgate';
 import { observe } from '../src/sim/surveillance/sensors';
@@ -98,7 +98,7 @@ describe('Sable Lane is the route the model cannot follow', () => {
   });
 
   it('leaves its middle uncovered while watching both ends', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const seenAt = (x: number, y: number) => {
       const subject = { ...sim.playerSubject, pos: { x, y }, speed: 0 };
       return sim.sensors.filter((s) => {
@@ -124,7 +124,7 @@ describe('Sable Lane is the route the model cannot follow', () => {
   });
 
   it('costs something: taking it reads as an unusual route, as it should', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     place(sim, { x: SABLE_GAP_X, y: SABLE_LANE_Y });
     step(sim, 4);
     expect([...sim.playerTrack.flags]).toContain('UNUSUAL_ROUTE');
@@ -133,7 +133,7 @@ describe('Sable Lane is the route the model cannot follow', () => {
   });
 
   it('is not the only way in: the street still works, and is watched', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     place(sim, { x: 145, y: 60 });
     step(sim, 3);
     const watchers = sim.sensorsSeeingPlayer().map((s) => s.data.id);
@@ -189,7 +189,7 @@ describe('the six-record chain', () => {
   });
 
   it('is walkable: every record is reachable by following edges from CM-207', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
@@ -208,7 +208,7 @@ describe('the six-record chain', () => {
   });
 
   it('counts a record as read only once the player has actually held it', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.2);
@@ -224,7 +224,7 @@ describe('the six-record chain', () => {
   });
 
   it('can be read all the way through, from the alley, without new mechanics', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     // Arrive behind the camera, the way the district is built to be played.
     place(sim, { x: SABLE_GAP_X, y: 100 });
     step(sim, 0.2);

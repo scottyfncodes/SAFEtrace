@@ -34,6 +34,17 @@ export interface Intent {
    * continuous draw axis, so the character loads it at their own rate.
    */
   drawAmount: number | null;
+  /**
+   * A direction to travel in, in screen space, with magnitude 0..1.
+   *
+   * This is the difference between steering a vehicle and moving a person. A
+   * stick that says "turn left" needs the player to model the character's
+   * heading before they can go anywhere; a stick that says "that way" does not.
+   * Devices with an absolute stick supply this; a keyboard supplies `steer`.
+   */
+  moveVector: { x: number; y: number } | null;
+  /** Requests to enter or leave the stationary aiming mode. */
+  aimModePressed: boolean;
   skip: boolean;
 }
 
@@ -43,7 +54,8 @@ export const emptyIntent = (): Intent => ({
   toggleStance: false, aim: false, fire: false, firePressed: false,
   vision: false, interact: false, interactPressed: false,
   pointer: { x: 0, y: 0 }, pointerActive: false,
-  aimVector: null, drawAmount: null, skip: false,
+  aimVector: null, drawAmount: null, moveVector: null,
+  aimModePressed: false, skip: false,
 });
 
 /**
@@ -69,6 +81,8 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
   if (add.pointerActive) { base.pointer = add.pointer; base.pointerActive = true; }
   if (add.aimVector) base.aimVector = add.aimVector;
   if (add.drawAmount !== null) base.drawAmount = add.drawAmount;
+  if (add.moveVector) base.moveVector = add.moveVector;
+  base.aimModePressed ||= add.aimModePressed;
   return base;
 }
 
@@ -86,6 +100,11 @@ const CODE = {
   stance: ['ShiftLeft', 'ShiftRight'],
   vision: ['KeyQ'],
   interact: ['KeyE'],
+  /**
+   * Stand still and line up a shot: the same state a thumb reaches with the
+   * sling button, so both devices exercise the same thing.
+   */
+  aimMode: ['KeyF'],
   skip: ['Escape', 'Enter'],
 };
 
@@ -179,6 +198,7 @@ export class InputManager {
     i.toggleStance = this.any(CODE.stance, this.pressed) || gpBtn(3);
     i.interact = this.any(CODE.interact, this.down);
     i.interactPressed = this.any(CODE.interact, this.pressed);
+    i.aimModePressed = this.any(CODE.aimMode, this.pressed);
     i.skip = this.any(CODE.skip, this.pressed);
 
     const aimRaw = this.mouse.right || (gp ? (gp.buttons[6]?.value ?? 0) > 0.4 : false);

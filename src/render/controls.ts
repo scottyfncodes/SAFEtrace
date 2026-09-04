@@ -1,10 +1,14 @@
 /**
  * Touch controls, drawn into the world canvas.
  *
- * Deliberately almost invisible. There is no permanent joystick sitting on
- * Bellhaven: the pad only exists where a thumb is, and it fades the moment the
- * thumb leaves. What the player sees instead is the board responding, and a
- * slingshot band that stretches under their finger.
+ * These used to be almost invisible on purpose — no permanent joystick sitting
+ * on Bellhaven, just a board that responded. Two human playtests said the same
+ * thing: you cannot respond to a control you cannot find. So the stick is drawn
+ * where the thumb plants it, the three things a thumb can press are drawn where
+ * they are, and nothing in the game is a gesture you have to be told about.
+ *
+ * It is still restrained. Thin rings, no labels shouting, and it all fades back
+ * when a hand is off the glass.
  */
 import { clamp01, smoothstep } from '../core/math';
 import type { ControlVisual } from '../core/touch';
@@ -12,11 +16,10 @@ import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
 
 export class ControlsRenderer {
-  /** Per-control fade, so releasing a thumb does not snap the ring away. */
-  private padFade = 0;
-  private slingFade = 0;
+  private stickFade = 0;
   private visionFade = 0;
   private homeFade = 0;
+  private buttonFade = 0;
   private pulse = 0;
 
   constructor(private settings: Settings) {}
@@ -24,29 +27,31 @@ export class ControlsRenderer {
   /**
    * `showHome` is true only until the player has actually travelled. A first
    * touch is the hardest moment in the game and there was nothing on screen to
-   * aim it at; after that the pad goes back to existing only under a thumb.
+   * aim it at.
    */
   update(v: ControlVisual, dt: number, showHome = false): void {
     const to = (cur: number, on: boolean, rate: number) =>
       clamp01(cur + (on ? rate : -rate * 0.7) * dt);
-    this.padFade = to(this.padFade, v.pad.active, 7);
-    this.slingFade = to(this.slingFade, v.sling.active, 9);
+    this.stickFade = to(this.stickFade, v.stick.active, 9);
     this.visionFade = to(this.visionFade, v.vision, 6);
-    this.homeFade = to(this.homeFade, showHome && !v.pad.active, 3.2);
+    this.homeFade = to(this.homeFade, showHome && !v.stick.active, 3.2);
+    // Buttons live at a low resting alpha rather than vanishing: they are the
+    // only permanent statement of what this game lets you do.
+    this.buttonFade = to(this.buttonFade, !v.aiming, 4);
     this.pulse = (this.pulse + dt * (this.settings.reduceMotion ? 0 : 0.85)) % 1;
   }
 
   draw(ctx: CanvasRenderingContext2D, v: ControlVisual, w: number, h: number): void {
+    if (v.aiming) return;
+    if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
-    if (this.padFade > 0.01) this.drawPad(ctx, v);
-    if (this.slingFade > 0.01) this.drawSling(ctx, v);
+    if (this.stickFade > 0.01) this.drawStick(ctx, v);
     if (this.visionFade > 0.01) this.drawVisionHint(ctx, w, h);
   }
 
   /**
-   * The cold start, and nothing more than this: a ring where a thumb goes, and
-   * a slow breath outward so the eye finds it. No words, no arrows, no legend.
-   * Touching it moves you, which is the only thing that needs teaching.
+   * The cold start: a ring where a thumb goes, and a slow breath outward so the
+   * eye finds it. No words, no arrows. Touching it moves you.
    */
   private drawHome(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
     const a = smoothstep(this.homeFade);
@@ -55,121 +60,100 @@ export class ControlsRenderer {
 
     ctx.save();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = alpha('#FFFFFF', (0.16 + breathe * 0.10) * a);
-    ctx.beginPath();
-    ctx.arc(x, y, 34, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // The ring the thumb would make, expanding: an invitation to press.
-    ctx.strokeStyle = alpha('#FFFFFF', (0.22 - breathe * 0.20) * a);
-    ctx.beginPath();
-    ctx.arc(x, y, 21 + breathe * 16, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = alpha('#FFFFFF', 0.10 * a);
-    ctx.beginPath();
-    ctx.arc(x, y, 21, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  private drawPad(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
-    const a = smoothstep(this.padFade);
-    const { anchor, thumb, throttle } = v.pad;
-    ctx.save();
-    ctx.lineWidth = 1.5;
-
-    // The anchor ring: where the board thinks your thumb is.
-    ctx.strokeStyle = alpha('#FFFFFF', 0.20 * a);
-    ctx.beginPath();
-    ctx.arc(anchor.x, anchor.y, 34, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Forward is warm, back is cool. The colour says go or stop before the
-    // player has consciously read the position.
-    const t = clamp01(Math.abs(throttle));
-    if (t > 0.08) {
-      ctx.strokeStyle = alpha(throttle > 0 ? VENEER.warning : '#8FB6D8', 0.42 * a * t);
-      ctx.lineWidth = 3;
-      const from = -Math.PI / 2;
-      ctx.beginPath();
-      ctx.arc(anchor.x, anchor.y, 34, from - t * 1.5 * Math.sign(throttle) * -1, from + t * 1.5, throttle < 0);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = alpha('#FFFFFF', 0.28 * a);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(anchor.x, anchor.y);
-    ctx.lineTo(thumb.x, thumb.y);
-    ctx.stroke();
-
-    ctx.fillStyle = alpha('#FFFFFF', 0.16 * a);
-    ctx.beginPath();
-    ctx.arc(thumb.x, thumb.y, 21, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = alpha('#FFFFFF', 0.42 * a);
-    ctx.stroke();
+    ctx.strokeStyle = alpha('#FFFFFF', (0.18 + breathe * 0.12) * a);
+    ctx.beginPath(); ctx.arc(x, y, 40, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = alpha('#FFFFFF', (0.24 - breathe * 0.22) * a);
+    ctx.beginPath(); ctx.arc(x, y, 22 + breathe * 18, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = alpha('#FFFFFF', 0.12 * a);
+    ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
   /**
-   * The band. It stretches from the pouch back toward the thumb, and a short
-   * arrow leaves the pouch the other way, because that is where the bearing
-   * is going.
+   * The stick. A ring where the thumb planted, a knuckle where it is now, and
+   * a wedge pointing the way the character is being sent — because the whole
+   * point of the rebuild is that the thumb names a direction, not a rudder.
    */
-  private drawSling(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
-    const a = smoothstep(this.slingFade);
-    const { origin, thumb, draw, cancelling } = v.sling;
-    const col = cancelling ? '#9AA3A9' : VENEER.player;
+  private drawStick(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+    const a = smoothstep(this.stickFade);
+    const { anchor, thumb, vector } = v.stick;
+    const mag = Math.hypot(vector.x, vector.y);
 
     ctx.save();
-    ctx.lineCap = 'round';
-
-    ctx.strokeStyle = alpha('#FFFFFF', 0.16 * a);
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(origin.x, origin.y, 26, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.strokeStyle = alpha('#FFFFFF', 0.22 * a);
+    ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 40, 0, Math.PI * 2); ctx.stroke();
 
-    ctx.strokeStyle = alpha(col, (0.35 + draw * 0.5) * a);
-    ctx.lineWidth = 2 + draw * 2.5;
-    ctx.beginPath();
-    ctx.moveTo(origin.x, origin.y);
-    ctx.lineTo(thumb.x, thumb.y);
-    ctx.stroke();
-
-    ctx.fillStyle = alpha(col, 0.22 * a);
-    ctx.beginPath();
-    ctx.arc(thumb.x, thumb.y, 20, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = alpha(col, 0.55 * a);
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-
-    if (!cancelling) {
-      const dx = origin.x - thumb.x, dy = origin.y - thumb.y;
-      const l = Math.hypot(dx, dy) || 1;
-      const ux = dx / l, uy = dy / l;
-      const reach = 22 + draw * 30;
-      ctx.strokeStyle = alpha(col, 0.5 * a);
-      ctx.lineWidth = 2;
+    if (mag > 0.02) {
+      const ux = vector.x / mag, uy = vector.y / mag;
+      ctx.strokeStyle = alpha(VENEER.accent, (0.30 + mag * 0.45) * a);
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(origin.x + ux * 26, origin.y + uy * 26);
-      ctx.lineTo(origin.x + ux * (26 + reach), origin.y + uy * (26 + reach));
+      ctx.moveTo(anchor.x + ux * 14, anchor.y + uy * 14);
+      ctx.lineTo(anchor.x + ux * (18 + mag * 30), anchor.y + uy * (18 + mag * 30));
       ctx.stroke();
     }
 
-    if (cancelling) {
-      ctx.strokeStyle = alpha('#9AA3A9', 0.5 * a);
-      ctx.lineWidth = 1.6;
-      const r = 8;
-      ctx.beginPath();
-      ctx.moveTo(thumb.x - r, thumb.y - r); ctx.lineTo(thumb.x + r, thumb.y + r);
-      ctx.moveTo(thumb.x + r, thumb.y - r); ctx.lineTo(thumb.x - r, thumb.y + r);
+    ctx.fillStyle = alpha('#FFFFFF', 0.18 * a);
+    ctx.beginPath(); ctx.arc(thumb.x, thumb.y, 23, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = alpha('#FFFFFF', 0.46 * a);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** The three things a right thumb can do, drawn where they are. */
+  private drawButtons(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+    const a = smoothstep(this.buttonFade);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const b of v.buttons) {
+      const on = b.pressed;
+      const dim = b.enabled ? 1 : 0.35;
+      ctx.fillStyle = alpha('#0E141B', (on ? 0.42 : 0.24) * a * dim);
+      ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, b.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = alpha('#FFFFFF', (on ? 0.75 : 0.40) * a * dim);
+      ctx.lineWidth = on ? 2.2 : 1.5;
       ctx.stroke();
+      ctx.fillStyle = alpha('#FFFFFF', (on ? 0.95 : 0.72) * a * dim);
+      this.glyph(ctx, b.id, b.pos.x, b.pos.y, b.radius);
     }
     ctx.restore();
+  }
+
+  /**
+   * Glyphs rather than words: a board for the ollie, a drawn band for the
+   * sling, an eye for VISION. Three shapes, learned in one press each.
+   */
+  private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
+    const s = r * 0.5;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = ctx.fillStyle as string;
+    ctx.beginPath();
+    if (id === 'ollie') {
+      // A board tipping up, with the ground under it.
+      ctx.moveTo(x - s, y + s * 0.7);
+      ctx.lineTo(x + s, y - s * 0.5);
+      ctx.moveTo(x - s * 1.1, y + s * 1.1);
+      ctx.lineTo(x + s * 1.1, y + s * 1.1);
+    } else if (id === 'sling') {
+      // A Y-fork with the band pulled back.
+      ctx.moveTo(x - s * 0.8, y - s); ctx.lineTo(x, y);
+      ctx.moveTo(x + s * 0.8, y - s); ctx.lineTo(x, y);
+      ctx.moveTo(x, y); ctx.lineTo(x, y + s);
+      ctx.moveTo(x - s * 0.8, y - s); ctx.lineTo(x + s * 0.8, y - s);
+    } else {
+      // An eye.
+      ctx.moveTo(x - s, y);
+      ctx.quadraticCurveTo(x, y - s * 0.9, x + s, y);
+      ctx.quadraticCurveTo(x, y + s * 0.9, x - s, y);
+    }
+    ctx.stroke();
+    if (id === 'vision') {
+      ctx.beginPath(); ctx.arc(x, y, s * 0.32, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   /**

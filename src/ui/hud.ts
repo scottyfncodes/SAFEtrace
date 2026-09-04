@@ -19,19 +19,15 @@ const KEY_PROMPTS = [
   '<span><kbd>E</kbd>inspect</span>',
 ].join('');
 
-// Deliberately three lines, not six. The rest is discovered by moving.
-//
-// "forward to push" described the old control, where a resting thumb did
-// nothing and the player had to hold ahead of a point they could not see. A
-// thumb on the screen now rolls, so the first line says the first thing.
+// Two lines, not three. The ollie, the sling and VISION are buttons you can
+// see now, so there is nothing left to tell anybody about them.
 const TOUCH_PROMPTS = [
   '<span>hold to roll</span>',
-  '<span>drag to steer</span>',
-  '<span>flick up to ollie</span>',
+  '<span>push the way you want to go</span>',
 ].join('');
 import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
-import { PHONE, SYSTEM } from '../content/copy';
+import { INSPECT, PHONE, SYSTEM } from '../content/copy';
 
 const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
 
@@ -106,6 +102,7 @@ export class Hud {
       if (!target) return;
       e.preventDefault();
       e.stopPropagation();
+      if (target.dataset.close) { this.sim.dismissFocus(); return; }
       const jumpTo = target.dataset.node;
       if (jumpTo) { this.sim.selectNode(jumpTo); return; }
       const verb = target.dataset.verb as HackVerb | undefined;
@@ -151,6 +148,12 @@ export class Hud {
       this.prompts.style.opacity = String(1 - this.promptFade);
     }
 
+    // Aiming is one job. The phone stays — SAFEtrace does not stop watching
+    // because you stood still — but nothing else competes with the reticle.
+    this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
+    this.inspect.classList.toggle('hidden', this.sim.aimMode);
+    this.dialogue.classList.toggle('hidden', this.sim.aimMode);
+
     this.debug.classList.toggle('show', this.settings.showDebug);
     if (this.settings.showDebug) this.updateDebug();
   }
@@ -175,6 +178,20 @@ export class Hud {
   }
 
   private drainMessages(): void {
+    /*
+     * The town gets louder as it gets more interested in you.
+     *
+     * Before Devon is stopped, SAFEtrace is a pleasant utility that mentions
+     * the weather; the player is learning to move and has no frame for a
+     * segment or a node. So until VISION is unlocked the quiet tiers are
+     * dropped and only what is actually happening gets through. Nothing is
+     * rewritten and nothing is softened — the same words arrive later, when
+     * they land instead of pile up.
+     */
+    if (!this.sim.visionUnlocked) {
+      this.queue = this.queue.filter((m) => m.priority === 'critical' || m.priority === 'important');
+    }
+
     // Anything urgent on screen silences the flavour underneath it, rather than
     // stacking on top of it.
     if (this.liveOf('critical') > 0) {
@@ -277,6 +294,10 @@ export class Hud {
     const rolling = this.sim.player.speed > 1.4;
 
     this.inspect.innerHTML =
+      `<div class="node-head">` +
+        `<span class="node-kind">${escapeHtml(INSPECT.heading)} · ${escapeHtml(INSPECT.kind[node.kind] ?? 'Node')}</span>` +
+        `<button class="verb close" data-close="1">${escapeHtml(INSPECT.dismiss)}</button>` +
+      `</div>` +
       `<div class="node-id">${escapeHtml(node.id)}</div>` +
       `<div>${escapeHtml(node.label)}</div>` +
       `<div class="rec">SEGMENT ${escapeHtml(node.segmentId)} · ${escapeHtml(node.state)}</div>` +

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeSim, place, step } from './harness';
+import { makeUnlockedSim, place, step } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
@@ -26,7 +26,7 @@ function shoot(sim: Sim, at: Vec2): void {
 
 describe('the slingshot loop', () => {
   it('takes a camera out of service and spends a bearing doing it', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const cam = sim.sensorById.get('CM-207')!;
     // Stand in the street in front of the camera, at a workable range.
     place(sim, { x: 145, y: 62 });
@@ -39,7 +39,7 @@ describe('the slingshot loop', () => {
   });
 
   it('creates evidence, analyses it, and reaches a verdict', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: 145, y: 62 });
     shoot(sim, cam.data.pos);
@@ -57,7 +57,7 @@ describe('the slingshot loop', () => {
 
   it('links the shooter when they stay put, and not when they were never held', () => {
     const linked = (stay: boolean) => {
-      const sim = makeSim();
+      const sim = makeUnlockedSim();
       const cam = sim.sensorById.get('CM-207')!;
       place(sim, { x: 145, y: 62 });
       // Let the system acquire the player first when we want a link.
@@ -77,7 +77,7 @@ describe('the slingshot loop', () => {
   });
 
   it('turns a knocked-over bin into an anomaly that moves the asset pool', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     // A bin with clear ground south of it, so the shot is about the bin rather
     // than about whatever happens to be authored behind it. Picking "the first
     // bin" made this test depend on content ordering.
@@ -104,7 +104,7 @@ describe('the slingshot loop', () => {
   });
 
   it('declines to shoot a person', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const targets = sim.ballisticTargets();
     // No subject of any kind is ever a ballistic target.
     const people = new Set([
@@ -116,7 +116,7 @@ describe('the slingshot loop', () => {
 
 describe('the hacking loop', () => {
   it('QUERY reveals a node’s edges, which is how the network becomes a place', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
@@ -131,7 +131,7 @@ describe('the hacking loop', () => {
   });
 
   it('LOOP blinds a camera now and betrays you later', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
@@ -149,7 +149,7 @@ describe('the hacking loop', () => {
   });
 
   it('cancels an interference the moment the player moves off', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
@@ -164,7 +164,7 @@ describe('the hacking loop', () => {
   });
 
   it('REROUTE moves attention and leaves nothing behind', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
@@ -177,7 +177,7 @@ describe('the hacking loop', () => {
 
 describe('drones', () => {
   it('cannot see through overhead cover', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const drone = sim.drones[0];
     // Under the parking decks.
     const covered = { x: 500, y: 100 };
@@ -191,7 +191,7 @@ describe('drones', () => {
   });
 
   it('is stopped by a rotor hit and releases its task', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     const drone = sim.drones[0];
     // Park it overhead so the shot is a ballistics problem rather than a
     // moving-target problem, which is tested by playing, not by unit tests.
@@ -211,7 +211,7 @@ describe('drones', () => {
 
 describe('escape', () => {
   it('lets the score come down once the player is unobserved and behaving', () => {
-    const sim = makeSim();
+    const sim = makeUnlockedSim();
     place(sim, { x: 145, y: 62 });
     sim.playerTrack.risk.total = 70;
     sim.playerTrack.linkedEvidence.length = 0;
