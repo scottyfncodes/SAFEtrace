@@ -13,7 +13,7 @@ export const WEIGHTS = {
   behaviour: 1.0,
   evidence: 1.0,
   incident: 1.0,
-  anomaly: 26.0,
+  anomaly: 20.0,
   history: 4.5,
   decayPerSecondUnobserved: 0.85,
   decayPerSecondNormal: 0.35,

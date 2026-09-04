@@ -85,7 +85,7 @@ export function measureError(track: Track, subject: Subject, world: World, prevE
     const d = distToSeg(track.prediction[i - 1], track.prediction[i], subject.pos);
     if (d < best) best = d;
   }
-  const offRoad = world.distanceToRoad(subject.pos);
+  const offRoad = world.distanceOffModel(subject.pos);
   const corridor = 12;
   const instant = clamp01(Math.max(best - corridor, 0) / 45 + Math.max(offRoad - 13, 0) / 40);
   // Smooth so a single corner does not read as anomalous.

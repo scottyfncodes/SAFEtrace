@@ -89,11 +89,11 @@ export function analyse(
   // Uncertainty grows with range and shrinks when a sensor actually saw the
   // impact. An unobserved shot from cover back-projects into a disc wide
   // enough to hold half a street, which is exactly the skill the player learns.
-  const observedBonus = e.observedBy.length > 0 ? 0.32 : 0.85;
+  const observedBonus = e.observedBy.length > 0 ? 0.42 : 0.95;
   const uncertainty = (5 + estRange * 0.34) * observedBonus + rng.range(-1, 2);
 
   e.originEstimate = origin;
-  e.originUncertainty = Math.max(4, uncertainty);
+  e.originUncertainty = Math.max(6, uncertainty);
 
   const candidates = tracks.filter((t) => {
     if (t.confidence < 0.22) return false;

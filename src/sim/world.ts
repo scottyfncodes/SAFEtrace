@@ -195,8 +195,20 @@ export class World {
     return best;
   }
 
-  /** Distance from p to the nearest road centreline. Used for UNUSUAL_ROUTE. */
-  distanceToRoad(p: Vec2): number {
+  /**
+   * How far p is from anything SAFEtrace modelled.
+   *
+   * Zero inside modelled space — carriageway, footway, plaza, school forecourt —
+   * because being in a place people are expected to be is ordinary. Otherwise
+   * the distance to the nearest road centreline. This is the quantity that
+   * drives UNUSUAL_ROUTE and prediction error, and it is the mechanical
+   * statement of the world design: the spaces nobody modelled are the spaces
+   * you are free in.
+   */
+  distanceOffModel(p: Vec2): number {
+    for (const s of this.surfaceHash.queryRadius(p, 0.1, this.scratch as SurfacePatch[])) {
+      if (s.modelled && pointInPoly(s.poly, p)) return 0;
+    }
     const n = this.nearestRoadNode(p, 60);
     if (!n) return 999;
     let best = Math.hypot(n.pos.x - p.x, n.pos.y - p.y);
@@ -208,6 +220,9 @@ export class World {
     }
     return best;
   }
+
+  /** @deprecated Use distanceOffModel; kept as the name the docs use. */
+  distanceToRoad(p: Vec2): number { return this.distanceOffModel(p); }
 
   neighbours(id: string): RoadAdj[] { return this.adjacency.get(id) ?? []; }
 

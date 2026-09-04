@@ -160,7 +160,7 @@ export function buildBellhaven(): WorldData {
 
   // ---------------------------------------------------------------- commons
   b.in('commons').useSegment('S-C1');
-  b.rectSurface(255, 15, 285, 125, 'roughConcrete', 0);
+  b.rectSurface(255, 15, 285, 125, 'roughConcrete', 0, true);
 
   // Retail strip along Market Street.
   b.building('shop', [pt(268, 22), pt(360, 22), pt(360, 48), pt(268, 48)], {
@@ -180,7 +180,7 @@ export function buildBellhaven(): WorldData {
    * here is fine, because everyone is here. The cost is that your behaviour is
    * scored precisely.
    */
-  b.rectSurface(300, 66, 112, 50, 'smoothConcrete', 3);
+  b.rectSurface(300, 66, 112, 50, 'smoothConcrete', 3, true);
   // Flanking blocks, so the plaza is a room rather than a field.
   b.building('civic', [pt(262, 64), pt(296, 64), pt(296, 116), pt(262, 116)], {
     height: 8, wall: WALL_CREAM, roof: ROOF_SAND, label: 'BELLHAVEN LIBRARY',
@@ -300,7 +300,7 @@ export function buildBellhaven(): WorldData {
   // ---------------------------------------------------------------- ridgeline
   b.in('ridgeline').useSegment('S-R1');
   b.rectSurface(250, 292, 240, 120, 'grass', 0);
-  b.rectSurface(262, 300, 200, 34, 'roughConcrete', 3);
+  b.rectSurface(262, 300, 200, 34, 'roughConcrete', 3, true);
 
   b.building('school', [pt(268, 300), pt(430, 300), pt(430, 332), pt(268, 332)], {
     height: 9, wall: WALL_COOL, roof: ROOF_SLATE, label: 'RIDGELINE SECONDARY',
@@ -317,11 +317,15 @@ export function buildBellhaven(): WorldData {
   b.prop('bin', pt(432, 360)); b.prop('bin', pt(432, 370));
 
   b.fence(pt(250, 292), pt(250, 404));
-  b.fence(pt(250, 404), pt(490, 404));
   b.fence(pt(490, 404), pt(490, 292));
-  // The gap in the fence behind the bike racks. Not on any map SAFEtrace has.
+  // The gaps in the fence: behind the bike racks, and either side of the
+  // grounds store. Not on any map SAFEtrace has, because they are not gates.
   b.fence(pt(250, 292), pt(340, 292));
-  b.fence(pt(356, 292), pt(490, 292));
+  b.fence(pt(356, 292), pt(462, 292));
+  b.fence(pt(482, 292), pt(490, 292));
+  b.fence(pt(250, 404), pt(318, 404));
+  b.fence(pt(342, 404), pt(462, 404));
+  b.fence(pt(482, 404), pt(490, 404));
 
   b.camera({ pos: pt(349, 298), facing: 270, kind: 'school', fov: 86, range: 38, sweep: 30, sweepPeriod: 9, height: 5.2, bias: 0.98, label: 'RIDGELINE — MAIN ENTRANCE' });
   b.camera({ pos: pt(268, 336), facing: 20, kind: 'school', fov: 74, range: 32, sweep: 24, sweepPeriod: 11, height: 4.8, bias: 0.97, label: 'RIDGELINE — WEST YARD' });
@@ -337,6 +341,46 @@ export function buildBellhaven(): WorldData {
   for (const x of [292, 298, 304, 310]) b.prop('mailbox', pt(x, 296), Math.PI / 2);
   b.trees([pt(262, 350), pt(262, 386), pt(470, 350), pt(470, 386), pt(440, 296)]);
   b.cover([pt(268, 336), pt(430, 336), pt(430, 344), pt(268, 344)], 'awning', 4);
+
+  // ---------------------------------------------------------------- greenway
+  /*
+   * Bellhaven Greenway. Community facilities, a court, a playground, and the
+   * paths down to the drainage aprons. None of the paths are on the road graph,
+   * which is exactly why they matter: the forecast cannot follow you here.
+   */
+  b.in('maple').useSegment('S-M1');
+  b.rectSurface(20, 292, 226, 110, 'grass', 0);
+
+  // The court. Smooth, flat, and the second best skate spot in town.
+  b.rectSurface(56, 306, 30, 52, 'smoothConcrete', 4);
+  b.prop('hoop', pt(71, 310), 0);
+  b.prop('hoop', pt(71, 354), Math.PI);
+  b.ledge(pt(52, 306), pt(52, 358));
+  b.kicker(pt(90, 332), 9, 12, 0, 3.6);
+
+  // The playground, and the community hall that watches it.
+  b.rectSurface(178, 306, 40, 34, 'dirt', 4);
+  b.prop('bench', pt(178, 346), 0);
+  b.prop('bench', pt(206, 346), 0);
+  b.prop('bin', pt(220, 344));
+  b.building('civic', [pt(176, 356), pt(222, 356), pt(222, 380), pt(176, 380)], {
+    height: 5.5, wall: WALL_CREAM, roof: ROOF_SAND, label: 'GREENWAY COMMUNITY HALL',
+  });
+  b.camera({ pos: pt(199, 354), facing: 270, kind: 'school', fov: 82, range: 30, sweep: 24, sweepPeriod: 11, height: 4.6, bias: 0.96, label: 'GREENWAY HALL — PLAY AREA' });
+  b.cover([pt(176, 380), pt(222, 380), pt(222, 388), pt(176, 388)], 'awning', 3.6);
+  b.trees([pt(36, 300), pt(36, 342), pt(36, 384), pt(112, 300), pt(112, 372),
+           pt(150, 316), pt(150, 366), pt(238, 306), pt(238, 356), pt(238, 392)]);
+  b.ammoCache(pt(199, 344), 'GREENWAY HALL');
+
+  // The four ways down to the water. Paved, obvious on the ground, and
+  // invisible to a model that only knows about streets.
+  b.path([pt(60, 286), pt(60, 340), pt(62, 396)], 3.6);
+  b.path([pt(196, 286), pt(196, 350), pt(196, 418)], 3.6);
+  b.path([pt(330, 396), pt(330, 436)], 3.6);
+  b.path([pt(455, 286), pt(472, 300), pt(472, 396), pt(470, 442)], 3.6);
+  // A cross-path linking the court, the playground and the hall.
+  b.path([pt(60, 340), pt(120, 340), pt(178, 340), pt(196, 350)], 3.0);
+  b.path([pt(196, 350), pt(240, 366), pt(268, 396)], 3.0);
 
   // ---------------------------------------------------------------- the channel
   /*

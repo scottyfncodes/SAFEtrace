@@ -91,13 +91,17 @@ export class TownBuilder {
     return this;
   }
 
-  surface(poly: Vec2[], kind: SurfaceKind, priority = 0): this {
-    this.surfaces.push({ id: this.id('SF'), kind, poly, priority });
+  surface(poly: Vec2[], kind: SurfaceKind, priority = 0, modelled = false): this {
+    this.surfaces.push({ id: this.id('SF'), kind, poly, priority, modelled });
     return this;
   }
 
-  rectSurface(x: number, y: number, w: number, h: number, kind: SurfaceKind, priority = 0): this {
-    return this.surface([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], kind, priority);
+  rectSurface(
+    x: number, y: number, w: number, h: number, kind: SurfaceKind, priority = 0, modelled = false,
+  ): this {
+    return this.surface(
+      [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], kind, priority, modelled,
+    );
   }
 
   /** A road: emits a paved strip, graph nodes at each point, and edges between them. */
@@ -122,7 +126,7 @@ export class TownBuilder {
         this.surface([
           P(a.x + n.x * hw, a.y + n.y * hw), P(b.x + n.x * hw, b.y + n.y * hw),
           P(b.x - n.x * hw, b.y - n.y * hw), P(a.x - n.x * hw, a.y - n.y * hw),
-        ], surface, 2);
+        ], surface, 2, true);
         if (opts.sidewalk !== false) {
           const sw = 2.2;
           for (const s of [1, -1]) {
@@ -131,13 +135,31 @@ export class TownBuilder {
               P(b.x + n.x * s * hw, b.y + n.y * s * hw),
               P(b.x + n.x * s * (hw + sw), b.y + n.y * s * (hw + sw)),
               P(a.x + n.x * s * (hw + sw), a.y + n.y * s * (hw + sw)),
-            ], 'roughConcrete', 1);
+            ], 'roughConcrete', 1, true);
           }
         }
       }
     }
     void name;
     return ids;
+  }
+
+  /**
+   * A paved path. It exists physically and it is excellent to skate, but it is
+   * deliberately NOT on the road graph — so SAFEtrace's forecast cannot run
+   * along it. The spaces the system did not model are the spaces you are free in.
+   */
+  path(pts: Vec2[], width = 3.4, surface: SurfaceKind = 'roughConcrete'): this {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const n = perp(norm(sub(b, a)));
+      const hw = width / 2;
+      this.surface([
+        P(a.x + n.x * hw, a.y + n.y * hw), P(b.x + n.x * hw, b.y + n.y * hw),
+        P(b.x - n.x * hw, b.y - n.y * hw), P(a.x - n.x * hw, a.y - n.y * hw),
+      ], surface, 3);
+    }
+    return this;
   }
 
   /** Join two existing road node ids (for loops and junctions). */
@@ -151,7 +173,7 @@ export class TownBuilder {
     this.surface([
       P(na.pos.x + n.x * hw, na.pos.y + n.y * hw), P(nb.pos.x + n.x * hw, nb.pos.y + n.y * hw),
       P(nb.pos.x - n.x * hw, nb.pos.y - n.y * hw), P(na.pos.x - n.x * hw, na.pos.y - n.y * hw),
-    ], 'asphalt', 2);
+    ], 'asphalt', 2, true);
     return this;
   }
 
@@ -204,7 +226,7 @@ export class TownBuilder {
     const dd = (opts.drivewayDir ?? 90) * DEG;
     const dx = Math.cos(dd), dy = Math.sin(dd);
     const drivewayCentre = P(opts.at.x + dx * (d / 2 + 5.5), opts.at.y + dy * (d / 2 + 5.5));
-    this.surface(rectPoly(drivewayCentre, 4.2, 12, dd), 'smoothConcrete', 3);
+    this.surface(rectPoly(drivewayCentre, 4.2, 12, dd), 'smoothConcrete', 3, true);
 
     if (opts.garage) {
       const gp = rectPoly(P(opts.at.x + dx * (d / 2 + 2.6), opts.at.y + dy * (d / 2 + 2.6)), 6, 5.5, rot);

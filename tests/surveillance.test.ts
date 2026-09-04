@@ -264,6 +264,42 @@ describe('the world reacts without being scripted', () => {
     expect(worst).toBeLessThan(45); // below DRONE_DISPATCH
   });
 
+  /**
+   * The risk landscape is learnable content. A player who understands SAFEtrace
+   * should be able to predict this table, so it is asserted rather than left to
+   * drift with tuning.
+   */
+  it('scores where you are the way the world design says it should', () => {
+    const measure = (p: { x: number; y: number }) => {
+      const sim = makeSim();
+      place(sim, p);
+      step(sim, 9);
+      return sim.playerRisk;
+    };
+
+    const street = measure({ x: 155, y: 215 });
+    const plaza = measure({ x: 356, y: 91 });
+    const channel = measure({ x: 280, y: 434 });
+
+    // Being on the street, behaving normally, is unremarkable.
+    expect(street).toBeLessThan(25);
+    // A plaza is modelled space: everyone is there, so being there is ordinary
+    // even though it is the most heavily covered ground in town.
+    expect(plaza).toBeLessThan(45);
+    // The Channel is not modelled. The system notices, but noticing is not
+    // dispatching: taking the unmodelled route stays under the drone threshold.
+    expect(channel).toBeGreaterThan(street);
+    expect(channel).toBeLessThan(45);
+  });
+
+  it('treats a plaza as modelled space and a drainage channel as not', () => {
+    const sim = makeSim();
+    expect(sim.world.distanceOffModel({ x: 356, y: 91 })).toBe(0);
+    expect(sim.world.distanceOffModel({ x: 155, y: 215 })).toBe(0);
+    expect(sim.world.distanceOffModel({ x: 280, y: 434 })).toBeGreaterThan(13);
+    expect(sim.world.distanceOffModel({ x: 120, y: 330 })).toBeGreaterThan(13);
+  });
+
   it('never produces NaN or out-of-range state over a long run', () => {
     const sim = makeSim();
     skate(sim, 40, 0.35);

@@ -47,7 +47,7 @@ export function classify(
   const m = mem(track.id);
   const flags = new Set<BehaviourFlag>();
 
-  const offRoad = world.distanceToRoad(subject.pos);
+  const offRoad = world.distanceOffModel(subject.pos);
   if (offRoad > THRESHOLDS.offRoadDistance) m.offRoadTicks++;
   else m.offRoadTicks = Math.max(0, m.offRoadTicks - 3);
 
@@ -95,7 +95,7 @@ function displacement(track: Track, ticks: number, tick: number): number {
 export const FLAG_WEIGHT: Record<BehaviourFlag, number> = {
   NORMAL_TRANSIT: 0,
   LOITERING: 6,
-  UNUSUAL_ROUTE: 12,
+  UNUSUAL_ROUTE: 9,
   RECKLESS_VELOCITY: 9,
   EVASIVE: 22,
   PROXIMITY_TO_EVIDENCE: 18,

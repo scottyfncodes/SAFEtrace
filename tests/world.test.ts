@@ -50,6 +50,37 @@ describe('Bellhaven content validation', () => {
     expect(world.blocked({ x: 196, y: 412 }, { x: 196, y: 428 }, 4.2)).toBe(false);
   });
 
+  it('gives every Channel apron a paved route that the road graph does not know about', () => {
+    const world = new World(data);
+    // The intended descents: paved the whole way, so they are skateable.
+    const routes: Array<Array<[number, number]>> = [
+      [[60, 290], [60, 320], [60, 360], [62, 392]],
+      [[196, 290], [196, 330], [196, 380], [196, 414]],
+      [[472, 305], [472, 350], [472, 392], [470, 438]],
+    ];
+    for (const route of routes) {
+      for (const [x, y] of route) {
+        expect(world.surfaceAt({ x, y }), `unpaved at ${x},${y}`).not.toBe('grass');
+      }
+    }
+    // And the descents are genuinely off the modelled network: the forecast
+    // cannot follow the player down them.
+    expect(world.distanceToRoad({ x: 196, y: 380 })).toBeGreaterThan(60);
+  });
+
+  it('lets a skater reach the Channel from the spawn without crossing a lawn', () => {
+    const world = new World(data);
+    // Down Maple Court, along Ridgeline Road, then the greenway path.
+    const line: Array<[number, number]> = [
+      [155, 214], [155, 250], [155, 278], [180, 280], [196, 280],
+      [196, 300], [196, 340], [196, 400], [196, 424],
+    ];
+    for (const [x, y] of line) {
+      const s = world.surfaceAt({ x, y });
+      expect(['asphalt', 'smoothConcrete', 'roughConcrete', 'tile'], `${s} at ${x},${y}`).toContain(s);
+    }
+  });
+
   it('provides overhead cover that defeats drones', () => {
     const world = new World(data);
     expect(world.underCover({ x: 500, y: 100 })).not.toBeNull(); // parking decks
