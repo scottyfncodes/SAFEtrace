@@ -176,34 +176,6 @@ export class Renderer {
    * and a warning when something is actually looking at you. Coverage geometry
    * belongs in the plan view, where it can be read.
    */
-  private drawSkateHud(ctx: CanvasRenderingContext2D): void {
-    const sim = this.sim;
-    const t = clamp01(sim.player.speed / Math.max(1, sim.playerMaxSpeed));
-    // Speed, as a short bar low on the left. Never a number.
-    const x = 26, y = this.h - 96, len = 74;
-    ctx.strokeStyle = alpha('#12181F', 0.34);
-    ctx.lineWidth = 5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y); ctx.stroke();
-    ctx.strokeStyle = alpha(sim.player.flow > 0.4 ? VENEER.warning : '#F6F4EE', 0.85);
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len * t, y); ctx.stroke();
-
-    if (sim.playerObserved) {
-      // The edge of the frame warms when a lens has you. Deliberately not a
-      // meter: you are being looked at, not scored.
-      const g = ctx.createLinearGradient(0, 0, 0, this.h);
-      g.addColorStop(0, alpha(VENEER.player, 0.16));
-      g.addColorStop(0.3, alpha(VENEER.player, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, this.w, this.h);
-    }
-  }
-
-  /**
-   * The stationary aiming view: the world from the character's own eyeline,
-   * a reticle, whatever the shot has locked onto, and how many bearings are
-   * left. Nothing else. The player is doing one thing here.
-   */
   private renderAiming(ctx: CanvasRenderingContext2D, dt: number): void {
     const sim = this.sim;
     void dt;
@@ -352,6 +324,25 @@ export class Renderer {
     ctx.fillStyle = skin;
     ctx.beginPath(); ctx.arc(pullX + 8, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+  }
+
+  /**
+   * The only thing the skating view puts on top of itself.
+   *
+   * There used to be a speed bar under the left thumb as well. It had no label,
+   * it duplicated something the world already says better — the road going past
+   * — and a human asked what it was for, which is the only question a piece of
+   * permanent UI is not allowed to raise. Gone.
+   */
+  private drawSkateHud(ctx: CanvasRenderingContext2D): void {
+    if (!this.sim.playerObserved) return;
+    // The top edge warms when a lens actually has you. Deliberately not a
+    // meter: you are being looked at, not scored.
+    const g = ctx.createLinearGradient(0, 0, 0, this.h);
+    g.addColorStop(0, alpha(VENEER.player, 0.16));
+    g.addColorStop(0.3, alpha(VENEER.player, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, this.w, this.h);
   }
 
   // ------------------------------------------------------------------ layers

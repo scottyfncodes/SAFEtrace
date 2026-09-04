@@ -27,7 +27,12 @@ import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
 
 /** Eye height of a teenager standing on a board. */
 export const EYE_Z = 1.62;
-const VFOV = (62 * Math.PI) / 180;
+/**
+ * Narrower than it was, to buy back some of the rider's size after the camera
+ * moved half again as far out. Dollying back and tightening the lens is how you
+ * get more world in frame without the subject becoming a speck.
+ */
+const VFOV = (54 * Math.PI) / 180;
 const NEAR = 0.25;
 const FAR = 105;
 
@@ -113,10 +118,10 @@ type P3 = { x: number; y: number; z: number };
  */
 export class ChaseCamera {
   yaw = 0;
-  private dist = 6.8;
-  private height = 3.4;
+  private dist = 10.2;
+  private height = 5.0;
   /** Negative is downward: the rig looks down at the rider from behind. */
-  private pitch = -0.30;
+  private pitch = -0.38;
   private look: Vec2 = { x: 0, y: 0 };
 
   reset(sim: Sim): void {
@@ -139,12 +144,12 @@ export class ChaseCamera {
     this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2)));
 
     // Farther back and flatter at speed: more road, more sense of pace.
-    // A quarter farther out than the first framing: the rider is still clearly
-    // readable and there is meaningfully more road to anticipate with.
-    this.dist = damp(this.dist, lerp(6.1, 9.8, t), 0.24, dt);
-    this.height = damp(this.height, lerp(3.1, 4.0, t), 0.24, dt);
+    // Half again farther out. The rig is now high and back enough to read a
+    // junction, a patrol and the pavement either side before arriving at them.
+    this.dist = damp(this.dist, lerp(9.2, 14.7, t), 0.24, dt);
+    this.height = damp(this.height, lerp(4.6, 6.0, t), 0.24, dt);
     // Flatter at speed, so more of the road ahead comes into frame.
-    this.pitch = damp(this.pitch, lerp(-0.36, -0.24, t), 0.3, dt);
+    this.pitch = damp(this.pitch, lerp(-0.40, -0.30, t), 0.3, dt);
 
     // The point the rig is looking at lags the rider under acceleration.
     this.look = {

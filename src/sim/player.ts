@@ -28,9 +28,25 @@ function steerOf(p: PlayerState, intent: Intent): number {
   const mv = intent.moveVector;
   if (!mv) return intent.steer;
   const mag = Math.hypot(mv.x, mv.y);
-  if (mag <= 0.02) return 0;
+  if (mag <= TUNE.steerDead) return 0;
+
+  /*
+   * How far off the wanted heading we are, and how hard the thumb is asking.
+   *
+   * The second half of that used to be thrown away: the magnitude was measured
+   * and then discarded, so a six-pixel nudge pointing ninety degrees off the
+   * nose produced *full* deflection. That is the whole of why the board was
+   * twitchy — there was no such thing as a small input.
+   *
+   * Authority now rises as a cubic on the stick's own travel, so the first
+   * third of the throw is a gentle correction and only the last third asks for
+   * everything. Angular error is scaled by a wider band on top of that, so
+   * pointing sharply away from the nose is a request rather than a command.
+   */
+  const throwT = clamp01((mag - TUNE.steerDead) / (1 - TUNE.steerDead));
+  const authority = throwT * throwT * (3 - 2 * throwT) * throwT;
   const off = wrapAngle(Math.atan2(mv.y, mv.x) - p.heading);
-  return clamp(off / TUNE.headingBand, -1, 1);
+  return clamp(off / TUNE.headingBand, -1, 1) * authority;
 }
 
 export const TUNE = {
@@ -40,8 +56,8 @@ export const TUNE = {
   pushImpulse: 3.1,
   pushCooldown: 0.42,
   pushDuration: 0.22,
-  carveLow: 3.4,
-  carveHigh: 1.1,
+  carveLow: 2.35,
+  carveHigh: 0.82,
   /**
    * The board leans into a turn and leans out of it. It does not snap.
    *
@@ -50,14 +66,20 @@ export const TUNE = {
    * drives an angular *velocity* that has to be built up and bled off, which is
    * where the weight of the thing lives.
    */
-  turnAccel: 11.0,
-  turnDamp: 7.5,
+  /**
+   * The board is heavy. It takes a moment to come round and a moment to stop
+   * coming round, and both of those moments are the feel of the thing.
+   */
+  turnAccel: 6.2,
+  turnDamp: 6.0,
+  /** Thumb travel below this is a resting hand, not a steering input. */
+  steerDead: 0.14,
   /**
    * A board at walking pace is redirected by the foot that is pushing it, not
    * by wishing. Redirecting during a push is most of how a skater turns around
    * in a driveway, and it is coupled to an animation the player can see.
    */
-  pushSteerBoost: 2.6,
+  pushSteerBoost: 1.45,
   /** Visible body lean, radians at full carve. */
   leanMax: 0.42,
   /**
@@ -65,7 +87,7 @@ export const TUNE = {
    * a small correction is a small correction and the board is not always
    * fighting for the last few degrees.
    */
-  headingBand: 0.85,
+  headingBand: 1.30,
   carveAimPenalty: 0.65,
   /**
    * Drawing the sling settles the board.
@@ -86,8 +108,12 @@ export const TUNE = {
    * the turn and washes out a little when you ask too much of it.
    */
   lateralGrip: 0.34,
-  /** Enough pop that the shadow visibly separates from the board. */
-  ollieImpulse: 4.5,
+  /**
+   * Twice the apex it had: 0.41 m became 0.89 m at a normal tap. That clears a
+   * kerb with room to watch it happen, and it still lands inside the same
+   * landing-tolerance window, so nothing about bailing changed.
+   */
+  ollieImpulse: 6.6,
   ollieMaxLoad: 0.25,
   gravity: 21,
   slideFriction: 6.5,

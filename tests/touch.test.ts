@@ -85,10 +85,46 @@ describe('zones', () => {
 
 describe('the stick names a direction', () => {
   it('points where the thumb points, not left or right of a heading', () => {
+    // Direction, independent of how far the thumb has travelled: the magnitude
+    // is the separate question below.
     drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 60 }]);
     const up = engine.sample().moveVector!;
-    expect(up.y).toBeLessThan(-0.9);
-    expect(Math.abs(up.x)).toBeLessThan(0.05);
+    const len = Math.hypot(up.x, up.y);
+    expect(up.y / len).toBeLessThan(-0.98);
+    expect(Math.abs(up.x) / len).toBeLessThan(0.05);
+  });
+
+  /*
+   * The property that was missing, and the whole of why steering was twitchy:
+   * the simulation measured the stick's travel and then discarded it, so a
+   * six-pixel nudge pointing ninety degrees off the nose asked for a full
+   * deflection. There was no such thing as a small input.
+   */
+  it('asks for far less turn on a small nudge than on a full push', () => {
+    const heading = 0;                        // facing east
+    const turnFor = (dx: number, dy: number) => {
+      const e = make();
+      drag(e, 1, [STICK, { x: STICK.x + dx, y: STICK.y + dy }]);
+      const sim = makeSim();
+      place(sim, { x: 300, y: 150 }, { x: 7, y: 0 });
+      sim.player.heading = heading;
+      const before = sim.player.heading;
+      for (let i = 0; i < 20; i++) sim.step(TICK_DT, e.sample(), null);
+      return Math.abs(sim.player.heading - before);
+    };
+    const nudge = turnFor(0, -14);
+    const full = turnFor(0, -110);
+    expect(nudge).toBeLessThan(full * 0.35);
+    expect(full).toBeGreaterThan(0.05);
+  });
+
+  it('ignores a thumb that has barely left the spot it landed on', () => {
+    drag(engine, 1, [STICK, { x: STICK.x + 3, y: STICK.y - 3 }]);
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 7, y: 0 });
+    sim.player.heading = 0;
+    for (let i = 0; i < 30; i++) sim.step(TICK_DT, engine.sample(), null);
+    expect(Math.abs(sim.player.heading)).toBeLessThan(0.02);
   });
 
   it('gives a magnitude, so a small push is a small move', () => {

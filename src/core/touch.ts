@@ -45,10 +45,17 @@ export const TOUCH_TUNING = {
   padWidth: 0.55,
   /** Fraction of the viewport height, from the bottom, that accepts a thumb. */
   padHeight: 0.55,
-  /** The stick reaches full deflection this far from where it was planted. */
-  stickFull: 52,
+  /**
+   * The stick reaches full deflection this far from where it was planted.
+   *
+   * Longer than it was. The response curve in the simulation is what stops the
+   * board being twitchy; the throw is what gives a thumb somewhere to be
+   * gentle. Shortening the travel to calm the steering would have done the
+   * opposite of what it looks like — less room for nuance, not more.
+   */
+  stickFull: 84,
   /** Inside this, the thumb is resting rather than steering. */
-  stickDead: 5,
+  stickDead: 6,
   /** Below this magnitude the character coasts instead of pushing. */
   moveThreshold: 0.16,
   /** Buttons: radius, and the gap between their centres. */

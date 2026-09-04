@@ -472,3 +472,46 @@ describe('it handles like a skateboard, not a radio-controlled car', () => {
     expect(apex).toBeGreaterThan(0.35);
   });
 });
+
+describe('the pop clears something worth clearing', () => {
+  it('gets about a metre off the road, with a readable arc', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 6, y: 0 });
+    const it = emptyIntent();
+    it.olliePressed = true;
+    it.ollieReleased = true;
+    sim.step(TICK_DT, it, null);
+
+    let apex = 0;
+    let rising = 0;
+    let falling = 0;
+    let last = sim.player.z;
+    for (let i = 0; i < 120 && (sim.player.z > 0 || i < 3); i++) {
+      sim.step(TICK_DT, emptyIntent(), null);
+      if (sim.player.z > last) rising++; else if (sim.player.z < last) falling++;
+      apex = Math.max(apex, sim.player.z);
+      last = sim.player.z;
+    }
+    // Roughly double the 0.41 m a tap used to reach.
+    expect(apex).toBeGreaterThan(0.78);
+    expect(apex).toBeLessThan(1.3);
+    // An arc, not a teleport: it spends time going up and time coming down.
+    expect(rising).toBeGreaterThan(10);
+    expect(falling).toBeGreaterThan(10);
+  });
+
+  it('lands, and absorbs the landing rather than bouncing', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 6, y: 0 });
+    const it = emptyIntent();
+    it.olliePressed = true;
+    it.ollieReleased = true;
+    sim.step(TICK_DT, it, null);
+    for (let i = 0; i < 200 && sim.player.stance === 'AIR'; i++) {
+      sim.step(TICK_DT, emptyIntent(), null);
+    }
+    expect(sim.player.stance).not.toBe('AIR');
+    expect(sim.player.z).toBeLessThan(0.05);
+    expect(sim.player.landTimer).toBeGreaterThan(0);
+  });
+});
