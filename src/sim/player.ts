@@ -129,6 +129,55 @@ export const TUNE = {
   inputBuffer: 0.28,
 };
 
+/**
+ * Six tricks, and each one is the real thing.
+ *
+ * A trick on a skateboard is the *board* doing something while the rider stays
+ * over it — the deck flips or spins under the feet and is caught on the way
+ * down. Spinning the whole character is a different trick entirely (that is a
+ * 180, and it is not what any of these are), and it is the shortcut that makes
+ * skating games look like they were made by somebody who has never stood on a
+ * board. So each spec here is two numbers about the deck and nothing about the
+ * rider: `flip` is rotations about the board's long axis, `shove` is rotations
+ * about the vertical.
+ *
+ * Signs follow a regular stance, left foot forward:
+ *   kickflip           the deck rolls toward the heel side, one full turn
+ *   heelflip           the same turn the other way
+ *   pop shove-it       the tail swings behind you, half a turn, deck flat
+ *   frontside shove-it the same half turn in front of you
+ *   varial flip        a kickflip and a pop shove-it at once
+ *   360 shove-it       a full turn of the deck, flat, no flip
+ */
+export interface TrickSpec {
+  name: string;
+  /** Turns about the board's long axis. Negative rolls toward the heel edge. */
+  flip: number;
+  /** Turns about the vertical. Negative swings the tail backside. */
+  shove: number;
+  /** How long the board takes to come all the way round, in seconds. */
+  duration: number;
+}
+
+export const TRICKS: readonly TrickSpec[] = [
+  { name: 'KICKFLIP', flip: -1, shove: 0, duration: 0.42 },
+  { name: 'HEELFLIP', flip: 1, shove: 0, duration: 0.42 },
+  { name: 'POP SHOVE-IT', flip: 0, shove: -0.5, duration: 0.38 },
+  { name: 'FRONTSIDE SHOVE-IT', flip: 0, shove: 0.5, duration: 0.38 },
+  { name: 'VARIAL FLIP', flip: -1, shove: -0.5, duration: 0.46 },
+  { name: '360 SHOVE-IT', flip: 0, shove: -1, duration: 0.52 },
+];
+
+/** A trick in progress, or the record of the one that just landed. */
+export interface TrickState {
+  spec: TrickSpec;
+  /** Seconds elapsed. */
+  t: number;
+  /** 0..1 through the rotation; the renderer turns the deck by this. */
+  phase: number;
+  landed: boolean;
+}
+
 export interface PlayerState {
   pos: Vec2;
   vel: Vec2;
@@ -173,11 +222,20 @@ export interface PlayerState {
    */
   ollieBuffer: number;
   pushBuffer: number;
+  /**
+   * The trick the board is doing, if any. Set by the simulation, read by the
+   * renderer, and cleared when the board is caught.
+   */
+  trick: TrickState | null;
+  /** A trick asked for, waiting for a board to be under the feet. */
+  trickRequest: TrickSpec | null;
   /** Rendering hooks. */
   landedThisTick: boolean;
   bailedThisTick: boolean;
   pushedThisTick: boolean;
   poppedThisTick: boolean;
+  /** The trick that came all the way round this tick, if one did. */
+  trickedThisTick: TrickSpec | null;
 }
 
 export function makePlayer(spawn: Vec2): PlayerState {
@@ -208,10 +266,13 @@ export function makePlayer(spawn: Vec2): PlayerState {
     ollieBuffer: 0,
     pushBuffer: 0,
     lastSurface: 'asphalt',
+    trick: null,
+    trickRequest: null,
     landedThisTick: false,
     bailedThisTick: false,
     pushedThisTick: false,
     poppedThisTick: false,
+    trickedThisTick: null,
   };
 }
 
@@ -223,9 +284,12 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   p.bailedThisTick = false;
   p.pushedThisTick = false;
   p.poppedThisTick = false;
+  p.trickedThisTick = null;
 
   if (p.stance === 'BAIL') {
     p.bailTimer -= dt;
+    // Whatever was asked for during a slam is not owed on the way up.
+    p.trickRequest = null;
     // A bail costs speed and time, not agency. Leaving the player with no
     // steering at all reads as the game having stopped responding.
     p.heading = wrapAngle(p.heading + steerOf(p, intent) * 1.6 * dt);
@@ -372,6 +436,40 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
     }
   }
 
+  // --- tricks -----------------------------------------------------------
+  /*
+   * One button, one motion.
+   *
+   * A trick needs air under the board, and asking a player to pop and then
+   * flick in the right window is asking them to learn two controls to express
+   * one intention. So a trick asked for on the ground pops first and starts
+   * the rotation on the way up, exactly as it is one movement under a foot.
+   * Asked for while already airborne, it starts immediately — which is how a
+   * kicker or a drop turns into a trick.
+   */
+  if (p.trickRequest && p.onBoard && !p.aiming) {
+    if (p.stance !== 'AIR') {
+      p.vz = TUNE.ollieImpulse * 0.94;
+      p.z = 0.001;
+      p.stance = 'AIR';
+      p.ollieLoad = -1;
+      p.ollieBuffer = 0;
+      p.poppedThisTick = true;
+    }
+    if (!p.trick) p.trick = { spec: p.trickRequest, t: 0, phase: 0, landed: false };
+  }
+  p.trickRequest = null;
+
+  if (p.trick && !p.trick.landed) {
+    p.trick.t += dt;
+    p.trick.phase = clamp01(p.trick.t / p.trick.spec.duration);
+    if (p.trick.phase >= 1) {
+      // Caught: the board is back under the feet and the rider rides it down.
+      p.trick.landed = true;
+      p.trickedThisTick = p.trick.spec;
+    }
+  }
+
   // --- terrain features -------------------------------------------------
   const feature = world.featureAt(p.pos);
   if (feature && p.stance !== 'AIR') {
@@ -443,6 +541,7 @@ function updateFoot(p: PlayerState, intent: Intent, world: World, dt: number): v
   p.flow = Math.max(0, p.flow - TUNE.flowFall * dt);
   p.speed = len(p.vel);
   p.stance = 'FOOT';
+  p.trickRequest = null;
 }
 
 function applyFriction(p: PlayerState, a: number, dt: number): void {
@@ -464,6 +563,18 @@ function integrate(p: PlayerState, world: World, dt: number): void {
       p.stance = 'ROLL';
       p.landedThisTick = true;
       p.landTimer = 0.22;
+      /*
+       * Landing on a board that is still turning is landing on your ankle.
+       * There is no forgiveness window here because the physics already
+       * supplies one: a pop gives about a second and a third of air and the
+       * longest trick takes half of it, so this only catches a trick asked
+       * for on the way down.
+       */
+      if (p.trick && !p.trick.landed) {
+        p.trick = null;
+        bail(p);
+      }
+      p.trick = null;
       // A landing badly out of line with travel is a bail.
       const travel = angleOf(p.vel);
       const off = Math.abs(wrapAngle(travel - p.heading));
@@ -492,6 +603,7 @@ function integrate(p: PlayerState, world: World, dt: number): void {
 
 function bail(p: PlayerState): void {
   p.stance = 'BAIL';
+  p.trick = null;
   p.bailTimer = TUNE.bailTime;
   p.bailedThisTick = true;
   p.vel.x *= 0.25;

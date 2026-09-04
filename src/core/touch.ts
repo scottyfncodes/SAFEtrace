@@ -58,9 +58,10 @@ export const TOUCH_TUNING = {
   stickDead: 6,
   /** Below this magnitude the character coasts instead of pushing. */
   moveThreshold: 0.16,
-  /** Buttons: radius, and the gap between their centres. */
-  buttonRadius: 34,
-  buttonGap: 82,
+  /** Buttons: radius, and the gaps between their centres in the cluster. */
+  buttonRadius: 32,
+  buttonGap: 78,
+  buttonRowGap: 82,
   /** A tap: short, and barely moved. */
   tapMs: 240,
   tapSlop: 14,
@@ -87,7 +88,7 @@ export const TOUCH_TUNING = {
   pullAimPitch: 0.14,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'ollie' | 'vision' | 'look' | 'pull' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'ollie' | 'trick' | 'vision' | 'look' | 'pull' | 'idle';
 
 interface Track {
   id: number;
@@ -100,7 +101,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'ollie' | 'vision';
+  id: 'sling' | 'ollie' | 'trick' | 'vision';
   pos: { x: number; y: number };
   radius: number;
   pressed: boolean;
@@ -130,6 +131,7 @@ export class TouchEngine {
   private pendingTap: { x: number; y: number } | null = null;
   private pendingSkip = false;
   private pendingOllie = false;
+  private pendingTrick = false;
   private pendingAimMode = false;
   private pendingFire = false;
   /** Accumulated look delta while aiming, consumed once per frame. */
@@ -168,6 +170,7 @@ export class TouchEngine {
     this.tracks.clear();
     this.pendingTap = null;
     this.pendingOllie = false;
+    this.pendingTrick = false;
     this.pendingAimMode = false;
     this.pendingFire = false;
     this.lookDelta = { yaw: 0, pitch: 0 };
@@ -175,22 +178,36 @@ export class TouchEngine {
   }
 
   /** Button centres, laid out from the bottom-right corner. */
+  /**
+   * Four buttons, in a block in the bottom-right corner.
+   *
+   * They used to be a single row along the bottom, which put the left-most of
+   * them at the middle of the screen — directly under where a left thumb wants
+   * to rest. Adding a fourth would have pushed it further into the movement
+   * pad. A two-by-two block keeps the whole vocabulary inside the right thumb's
+   * arc and gives the left one its side of the glass back.
+   *
+   * The bottom row is what a skater does: POP, and a TRICK. Above it are the
+   * two things that change what the game is: the sling, and VISION. SLING
+   * stays bottom-right against the bearings column it spends, which is where
+   * it was put and where it should stay.
+   */
   buttonLayout(): ControlButton[] {
     const { w, h, safe } = this.viewport;
     const r = this.tuning.buttonRadius;
-    const gap = this.tuning.buttonGap;
     // Clear of the bearings column, which lives against the right edge.
-    const x = w - safe.right - r - 46;
-    const y = h - safe.bottom - r - 26;
-    // A row along the bottom right, with the sling nearest the bearings it
-    // spends: POP, VISION, SLING, then the pocket. Reading right to left is
-    // reading outward from the thing you are about to use.
+    const right = w - safe.right - r - 44;
+    const left = right - this.tuning.buttonGap;
+    const low = h - safe.bottom - r - 24;
+    const high = low - this.tuning.buttonRowGap;
+
     const out: ControlButton[] = [
-      { id: 'sling', pos: { x, y }, radius: r, pressed: false, enabled: this.canSling },
-      { id: 'ollie', pos: { x: x - gap * (this.canVision ? 2 : 1), y }, radius: r, pressed: false, enabled: true },
+      { id: 'sling', pos: { x: right, y: low }, radius: r, pressed: false, enabled: this.canSling },
+      { id: 'trick', pos: { x: left, y: low }, radius: r, pressed: false, enabled: true },
+      { id: 'ollie', pos: { x: right, y: high }, radius: r, pressed: false, enabled: true },
     ];
     if (this.canVision) {
-      out.push({ id: 'vision', pos: { x: x - gap, y }, radius: r * 0.9, pressed: false, enabled: true });
+      out.push({ id: 'vision', pos: { x: left, y: high }, radius: r * 0.9, pressed: false, enabled: true });
     }
     return out;
   }
@@ -212,8 +229,18 @@ export class TouchEngine {
       return onSling ? 'pull' : 'look';
     }
     for (const b of this.buttonLayout()) {
-      // A generous target: a thumb is eleven millimetres wide.
-      if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.radius * 1.35) return b.id;
+      /*
+       * A generous target, but not in every direction: a thumb is eleven
+       * millimetres wide, so the buttons grow outward toward the corner they
+       * live in and stay tight on the side facing the movement pad. Otherwise
+       * the left column's forgiveness reaches across into the stick's half of
+       * the screen and eats thumbs that were trying to skate.
+       */
+      const dx = x - b.pos.x;
+      const dy = y - b.pos.y;
+      const kx = dx < 0 ? 1.08 : 1.35;
+      const ky = dy < 0 ? 1.15 : 1.35;
+      if (Math.hypot(dx / kx, dy / ky) <= b.radius) return b.id;
     }
     const { w, h, safe } = this.viewport;
     const bottom = h - safe.bottom;
@@ -301,6 +328,9 @@ export class TouchEngine {
       case 'ollie':
         if (isTap) this.pendingOllie = true;
         break;
+      case 'trick':
+        if (isTap) this.pendingTrick = true;
+        break;
       case 'idle':
         if (isTap) { this.pendingTap = { x: s.x, y: s.y }; this.pendingSkip = true; }
         break;
@@ -386,6 +416,7 @@ export class TouchEngine {
 
     if (this.visionHeld) { i.vision = true; i.aim = false; }
     if (this.pendingOllie) { i.olliePressed = true; i.ollieReleased = true; this.pendingOllie = false; }
+    if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
     if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
     return i;

@@ -14,7 +14,7 @@ import {
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
 import type { SimEvents } from './events';
-import { aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
+import { TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
   collectBearings, type DroppedBearing, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
@@ -282,6 +282,7 @@ export class Sim {
 
     // 1-2. Input and movement.
     this.updateAim(intent, pointerWorld);
+    this.requestTrick(intent);
     updatePlayer(this.player, intent, this.world, dt);
     this.holdAimAnchor();
     this.emitPlayerFeedback();
@@ -333,10 +334,27 @@ export class Sim {
 
   // ---------------------------------------------------------------- movement
 
+  /**
+   * Which trick, decided here rather than by the player.
+   *
+   * A button that always produces a kickflip is a button that stops being
+   * interesting on the second press, and a menu of six is a menu — it turns a
+   * flick of a foot into an inventory screen. The board does something real
+   * and the player finds out what by watching it, which is roughly how it
+   * goes when somebody is still learning them anyway. Seeded, like everything
+   * else in the simulation, so a replay produces the same afternoon.
+   */
+  private requestTrick(intent: Intent): void {
+    if (!intent.trickPressed) return;
+    if (this.aimMode || !this.player.onBoard || this.player.trick) return;
+    this.player.trickRequest = TRICKS[this.rng.int(0, TRICKS.length - 1)];
+  }
+
   private emitPlayerFeedback(): void {
     const p = this.player;
     if (p.pushedThisTick) this.bus.emit('player:push', { pos: p.pos, speed: p.speed });
     if (p.poppedThisTick) this.bus.emit('player:pop', { pos: p.pos });
+    if (p.trickedThisTick) this.bus.emit('player:trick', { pos: p.pos, name: p.trickedThisTick.name });
     if (p.landedThisTick) this.bus.emit('player:land', { pos: p.pos, speed: p.speed });
     if (p.bailedThisTick) this.bus.emit('player:bail', { pos: p.pos });
   }

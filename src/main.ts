@@ -285,6 +285,10 @@ class Game {
     bus.on('drone:destabilised', () => { this.audio.impactMetal(); this.renderer.kick(0.3); });
     bus.on('veneer:crack', () => { this.audio.peelIn(); this.renderer.kick(0.25); });
     bus.on('vision:unlocked', () => this.audio.motif(0.8));
+    bus.on('player:trick', ({ name }) => {
+      this.renderer.flashTrick(name);
+      this.audio.land(0.6);
+    });
     bus.on('aim:entered', () => {
       // Start looking where the character already faces, so the transition
       // never spins the world.

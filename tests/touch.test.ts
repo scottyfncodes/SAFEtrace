@@ -151,6 +151,33 @@ describe('the stick names a direction', () => {
       .toBeLessThanOrEqual(TOUCH_TUNING.stickFull * 1.31);
   });
 
+  it('centres wherever the thumb lands, anywhere in the pad', () => {
+    /*
+     * There is no joystick sitting at a fixed spot on the glass waiting to be
+     * found. The stick is wherever the thumb went down, every time it goes
+     * down — which is the only version that works on a phone held one-handed,
+     * where the reachable arc moves with the grip.
+     */
+    for (const p of [{ x: 40, y: 810 }, { x: 190, y: 620 }, { x: 110, y: 760 }]) {
+      const e = make();
+      e.handle('down', at(p, 1, clock));
+      const v = e.visual.stick;
+      expect({ x: Math.round(v.anchor.x), y: Math.round(v.anchor.y) }).toEqual({ x: p.x, y: p.y });
+      // And it is centred: a thumb that has not moved is not asking to go
+      // anywhere, wherever on the glass it happens to be.
+      expect(e.sample().moveVector).toEqual({ x: 0, y: 0 });
+    }
+  });
+
+  it('re-centres on the next thumb, not on the last one', () => {
+    drag(engine, 1, [STICK, { x: STICK.x + 60, y: STICK.y }]);
+    engine.handle('up', at({ x: STICK.x + 60, y: STICK.y }, 1, clock));
+    const second = { x: 200, y: 620 };
+    engine.handle('down', at(second, 2, clock));
+    const v = engine.visual.stick;
+    expect({ x: Math.round(v.anchor.x), y: Math.round(v.anchor.y) }).toEqual(second);
+  });
+
   it('allows only one stick, so a stray palm cannot fight the thumb', () => {
     engine.handle('down', at(STICK, 1, clock));
     engine.handle('down', at({ x: STICK.x + 30, y: STICK.y }, 2, clock));
@@ -164,7 +191,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   it('does not draw VISION before the story has given it to the player', () => {
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['ollie', 'sling']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['ollie', 'sling', 'trick']);
     fresh.setVisionAvailable(true);
     expect(fresh.buttonLayout().map((b) => b.id)).toContain('vision');
   });

@@ -32,7 +32,16 @@ export const EYE_Z = 1.62;
  * moved half again as far out. Dollying back and tightening the lens is how you
  * get more world in frame without the subject becoming a speck.
  */
-const VFOV = (54 * Math.PI) / 180;
+/*
+ * Narrower than an eye, on purpose.
+ *
+ * The rig has been pulled back three times now, and distance costs the rider
+ * their size: at twenty-six metres a 1.8 m skater is fifty pixels on a phone.
+ * Tightening the lens from 54 degrees to 46 buys a fifth of that back without
+ * moving the camera in again, and it does the aiming view a favour too — a
+ * slingshot sight picture wants a long lens, not a wide one.
+ */
+const VFOV = (46 * Math.PI) / 180;
 const NEAR = 0.25;
 const FAR = 105;
 
@@ -118,8 +127,8 @@ type P3 = { x: number; y: number; z: number };
  */
 export class ChaseCamera {
   yaw = 0;
-  private dist = 10.2;
-  private height = 5.0;
+  private dist = 17.9;
+  private height = 8.8;
   /** Negative is downward: the rig looks down at the rider from behind. */
   private pitch = -0.38;
   private look: Vec2 = { x: 0, y: 0 };
@@ -143,11 +152,16 @@ export class ChaseCamera {
     // player's own intention, but still eased.
     this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2)));
 
-    // Farther back and flatter at speed: more road, more sense of pace.
-    // Half again farther out. The rig is now high and back enough to read a
-    // junction, a patrol and the pavement either side before arriving at them.
-    this.dist = damp(this.dist, lerp(9.2, 14.7, t), 0.24, dt);
-    this.height = damp(this.height, lerp(4.6, 6.0, t), 0.24, dt);
+    /*
+     * Farther back and flatter at speed: more road, more sense of pace.
+     *
+     * Another seventy-five per cent out, and distance and height scale
+     * together so the rig dollies straight back along its own view axis — the
+     * framing is the one that was already right, seen from further away,
+     * rather than a new and steeper angle on the same street.
+     */
+    this.dist = damp(this.dist, lerp(16.1, 25.7, t), 0.24, dt);
+    this.height = damp(this.height, lerp(8.05, 10.5, t), 0.24, dt);
     // Flatter at speed, so more of the road ahead comes into frame.
     this.pitch = damp(this.pitch, lerp(-0.40, -0.30, t), 0.3, dt);
 
@@ -364,6 +378,35 @@ export class PerspectiveRenderer {
     ], fill);
   }
 
+  /**
+   * A steel ball, not a floating cube.
+   *
+   * A bearing was a flat square card, and at the size a nine-millimetre ball
+   * subtends it read as a blocky object rather than the thing the whole
+   * slingshot is about. This is a billboarded disc with a dark rim and a
+   * highlight up and to the left, which is the least it takes for something
+   * this small to read as round and metal. It is drawn a little larger than a
+   * real bearing for the same reason a bullet tracer is: at true scale it is
+   * two pixels and the player cannot follow their own shot.
+   */
+  private ball(cam: Cam, p: Vec2, z: number, r: number): void {
+    const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
+    if (d > FAR || d < 0.25) return;
+    const ux = -(p.y - cam.pos.y) / d, uy = (p.x - cam.pos.x) / d;
+    const ring = (rad: number, dx: number, dz: number, fill: string): void => {
+      const pts: P3[] = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const c = Math.cos(a) * rad + dx, sz = Math.sin(a) * rad + dz;
+        pts.push({ x: p.x + ux * c, y: p.y + uy * c, z: z + sz });
+      }
+      this.push(cam, pts, fill);
+    };
+    ring(r, 0, 0, '#6E767E');
+    ring(r * 0.72, -r * 0.16, r * 0.16, '#C9CDD2');
+    ring(r * 0.3, -r * 0.3, r * 0.3, '#F4F6F8');
+  }
+
   private collectActors(sim: Sim, cam: Cam): void {
     for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, FAR)) {
       if (p.kind === 'tree') { this.card(cam, p.pos, 3.6, 2.0, 2.6, shade(VENEER.grass, -0.2)); continue; }
@@ -379,7 +422,8 @@ export class PerspectiveRenderer {
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
-    for (const pr of sim.projectiles) this.card(cam, pr.pos, pr.z, 0.1, 0.1, '#2E3944');
+    for (const pr of sim.projectiles) this.ball(cam, pr.pos, pr.z, 0.075);
+    for (const b of sim.droppedBearings) this.ball(cam, b.pos, 0.05, 0.06);
   }
 
   private person(cam: Cam, p: Vec2, tint: string): void {
@@ -448,19 +492,55 @@ export class PerspectiveRenderer {
     const rising = p.stance === 'AIR' && p.vz > 0;
     const tail = p.stance === 'AIR' ? (rising ? 0.30 : 0.10) : Math.max(0, -p.crouch) * 0.12;
 
+    /*
+     * The trick is the board's, not the rider's.
+     *
+     * Every one of these is the deck turning under a pair of feet: a kickflip
+     * rolls it about its own long axis, a shove-it swings it about the vertical
+     * with the deck staying flat, a varial does both at once. Spinning the
+     * whole character instead — the shortcut — produces a 180, which is a
+     * different trick and looks like one. So the deck's four corners are
+     * transformed properly here, in the board's own frame, and the rider does
+     * nothing but tuck their feet up out of its way and catch it.
+     */
+    const tr = p.trick;
+    const ph = tr ? tr.phase : 0;
+    const spin = tr ? tr.spec.shove * Math.PI * 2 * ph : 0;
+    // The carve bank and the flip are the same rotation about the same axis,
+    // so they are one angle. Ten degrees at full lock, from the roll above.
+    const bank = (tr ? tr.spec.flip * Math.PI * 2 * ph : 0) + Math.asin(clamp01(Math.abs(roll) / 0.2)) * Math.sign(roll);
+    const cb = Math.cos(bank), sb = Math.sin(bank);
+    const cs = Math.cos(spin), ss = Math.sin(spin);
+    /** A point in the board's own frame — forward, right, up — put into the world. */
+    const onBoard = (f: number, r: number, u = 0): P3 => {
+      // Bank and flip, about the board's long axis.
+      const r1 = r * cb - u * sb;
+      const u1 = r * sb + u * cb;
+      // Shove, about the board's vertical.
+      const f2 = f * cs - r1 * ss;
+      const r2 = f * ss + r1 * cs;
+      return { x: p.pos.x + fx * f2 + rx * r2, y: p.pos.y + fy * f2 + ry * r2, z: z + 0.09 + u1 };
+    };
+    // Nose up as the tail snaps down: a pitch, applied before the board turns.
+    const rise = (f: number) => (f < 0 ? tail : tail * 0.35);
+
     if (p.onBoard) {
-      const deckZ = z + 0.09;
-      const c1 = at(0.92, 0.20), c2 = at(0.92, -0.20), c3 = at(-0.92, -0.20), c4 = at(-0.92, 0.20);
       this.push(cam, [
-        { x: c1.x, y: c1.y, z: deckZ + roll + tail * 0.35 },
-        { x: c2.x, y: c2.y, z: deckZ - roll + tail * 0.35 },
-        { x: c3.x, y: c3.y, z: deckZ - roll + tail },
-        { x: c4.x, y: c4.y, z: deckZ + roll + tail },
+        onBoard(0.92, 0.20, rise(0.92)),
+        onBoard(0.92, -0.20, rise(0.92)),
+        onBoard(-0.92, -0.20, rise(-0.92)),
+        onBoard(-0.92, 0.20, rise(-0.92)),
       ], VENEER.player, alpha('#2E3944', 0.45), 1.4);
       for (const [f, r] of [[0.66, 0.22], [0.66, -0.22], [-0.66, 0.22], [-0.66, -0.22]] as Array<[number, number]>) {
-        const w = at(f, r);
-        // Planted. The only thing that lifts a wheel is leaving the ground.
-        this.card(cam, w, z + 0.045 + (f < 0 ? tail : tail * 0.35), 0.07, 0.045, '#2A3038');
+        if (tr) {
+          // Off the ground and turning: the wheels go where the deck takes them.
+          const w = onBoard(f, r, rise(f) - 0.05);
+          this.card(cam, { x: w.x, y: w.y }, w.z, 0.07, 0.045, '#2A3038');
+        } else {
+          // Planted. The only thing that lifts a wheel is leaving the ground.
+          const w = at(f, r);
+          this.card(cam, w, z + 0.045 + rise(f), 0.07, 0.045, '#2A3038');
+        }
       }
     }
 
@@ -475,15 +555,22 @@ export class PerspectiveRenderer {
     const legTop = z + 0.72 - crouch;
     const legCol = shade(VENEER.player, -0.6);
 
+    /*
+     * Feet up while the board is turning. This is the whole of the rider's
+     * part in a trick: they pull their knees up, the deck goes round beneath
+     * them, and they put their feet back down on it on the way out.
+     */
+    const tuck = tr && !tr.landed ? Math.sin(ph * Math.PI) * 0.28 : 0;
+
     // Left foot: forward on the deck, always, riding the roll.
     const leftFoot = at(0.40, -0.15);
-    this.limb(cam, leftFoot, z + 0.12 - roll + tail * 0.35, at(0.12, -0.07), legTop, 0.075, legCol);
+    this.limb(cam, leftFoot, z + 0.12 - roll + tail * 0.35 + tuck, at(0.12, -0.07), legTop, 0.075, legCol);
 
     // Right foot: on the tail, or off it and pushing.
     const rightFoot = reach > 0.02
       ? at(-0.44 - reach * 0.30, 0.24 + reach * 0.30)
       : at(-0.46, 0.15);
-    const rightZ = reach > 0.02 ? 0.03 : z + 0.12 + roll + tail;
+    const rightZ = reach > 0.02 ? 0.03 : z + 0.12 + roll + tail + tuck;
     this.limb(cam, rightFoot, rightZ, at(-0.1, 0.07), legTop, 0.075, legCol);
     this.card(cam, rightFoot, rightZ + 0.02, 0.11, 0.05, shade(VENEER.player, -0.7));
 

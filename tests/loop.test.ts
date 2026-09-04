@@ -4,6 +4,7 @@ import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
 import type { Sim } from '../src/sim/sim';
+import { TRICKS } from '../src/sim/player';
 
 /** Chest height on a person, which is what the sling is pointed at. */
 const PERSON_Z = 1.15;
@@ -295,5 +296,114 @@ describe('escape', () => {
     place(sim, { x: 300, y: 442 });
     step(sim, 20);
     expect(sim.playerTrack.risk.total).toBeLessThan(70);
+  });
+});
+
+describe('tricks are the board, not the rider', () => {
+  /*
+   * A skateboard trick is the deck doing something under a pair of feet. The
+   * shortcut — spinning the whole character — produces a 180, which is a
+   * different trick and reads as one, so what the simulation carries is two
+   * numbers about the deck: turns about its long axis, and turns about the
+   * vertical. Every entry has to be a real trick with real numbers.
+   */
+  const press = (sim: Sim): void => {
+    const it = emptyIntent();
+    it.trickPressed = true;
+    sim.step(TICK_DT, it, null);
+  };
+
+  it('names six tricks that exist, and describes each one correctly', () => {
+    const by = new Map(TRICKS.map((t) => [t.name, t]));
+    expect([...by.keys()].sort()).toEqual([
+      '360 SHOVE-IT', 'FRONTSIDE SHOVE-IT', 'HEELFLIP', 'KICKFLIP',
+      'POP SHOVE-IT', 'VARIAL FLIP',
+    ]);
+    // A kickflip and a heelflip are one flip, opposite ways, no shove.
+    expect(by.get('KICKFLIP')!.flip).toBe(-by.get('HEELFLIP')!.flip);
+    expect(Math.abs(by.get('KICKFLIP')!.flip)).toBe(1);
+    expect(by.get('KICKFLIP')!.shove).toBe(0);
+    // A shove-it is half a turn of the deck, flat, and frontside is the other
+    // way round from a pop shove-it.
+    expect(by.get('POP SHOVE-IT')!.shove).toBe(-0.5);
+    expect(by.get('FRONTSIDE SHOVE-IT')!.shove).toBe(0.5);
+    expect(by.get('POP SHOVE-IT')!.flip).toBe(0);
+    // A varial flip is a kickflip and a pop shove-it at the same time.
+    expect(by.get('VARIAL FLIP')!.flip).toBe(by.get('KICKFLIP')!.flip);
+    expect(by.get('VARIAL FLIP')!.shove).toBe(by.get('POP SHOVE-IT')!.shove);
+    // A 360 shove-it is a whole turn, still flat.
+    expect(by.get('360 SHOVE-IT')!.shove).toBe(-1);
+    expect(by.get('360 SHOVE-IT')!.flip).toBe(0);
+  });
+
+  it('pops on its own, so one press is one motion', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    expect(sim.player.stance).toBe('ROLL');
+    press(sim);
+    expect(sim.player.stance).toBe('AIR');
+    expect(sim.player.trick).not.toBeNull();
+  });
+
+  it('turns the board and hands it back, without turning the rider', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    const heading = sim.player.heading;
+    press(sim);
+    const spec = sim.player.trick!.spec;
+    let seen: string | null = null;
+    sim.bus.on('player:trick', ({ name }) => { seen = name; });
+    step(sim, spec.duration + 0.05);
+    expect(seen).toBe(spec.name);
+    // Caught in the air: the rotation is complete and the feet are back on it.
+    // It stays on the state until the wheels touch, which the next test covers.
+    expect(sim.player.trick!.landed).toBe(true);
+    expect(sim.player.trick!.phase).toBe(1);
+    // And the rider is pointed exactly where they were.
+    expect(sim.player.heading).toBeCloseTo(heading, 6);
+  });
+
+  it('lands it: a pop buys more air than the longest trick needs', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    step(sim, 2.0);
+    expect(sim.player.stance).toBe('ROLL');
+    expect(sim.player.trick).toBeNull();
+  });
+
+  it('does not stack: one board, one trick at a time', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    const first = sim.player.trick!.spec.name;
+    for (let i = 0; i < 6; i++) press(sim);
+    expect(sim.player.trick!.spec.name).toBe(first);
+  });
+
+  it('takes a board to do: nothing happens while aiming', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    sim.enterAimMode();
+    press(sim);
+    expect(sim.player.trick).toBeNull();
+    expect(sim.player.stance).not.toBe('AIR');
+  });
+
+  it('is not the same trick every time, and is the same every replay', () => {
+    const run = (): string[] => {
+      const sim = makeUnlockedSim();
+      place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+      const out: string[] = [];
+      for (let i = 0; i < 14; i++) {
+        press(sim);
+        if (sim.player.trick) out.push(sim.player.trick.spec.name);
+        step(sim, 2.0);
+      }
+      return out;
+    };
+    const a = run();
+    expect(new Set(a).size).toBeGreaterThan(2);
+    expect(run()).toEqual(a);
   });
 });

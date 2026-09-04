@@ -99,6 +99,17 @@ export class Renderer {
   ripple(pos: Vec2, life = 0.9): void { this.ripples.push({ pos, t: 0, life }); }
   kick(a: number): void { this.cam.kick(a * this.settings.cameraShake); }
 
+  /**
+   * The one piece of text a skating game owes the player.
+   *
+   * A trick button that rolls the dice has to say what came up, or it is a
+   * button that makes the board do something illegible. It is two words, low
+   * on the screen, gone in a moment — the name of the thing you just did, not
+   * a score for having done it.
+   */
+  private trickFlash: { name: string; t: number } | null = null;
+  flashTrick(name: string): void { this.trickFlash = { name, t: 0 }; }
+
   screenToWorld(p: Vec2): Vec2 { return this.cam.toWorld(p, this.w, this.h); }
 
   render(dt: number): void {
@@ -127,6 +138,7 @@ export class Renderer {
     if (sim.visionBlend < 0.999) {
       this.perspective.draw(ctx, sim, this.chase.state(sim), this.w, this.h, false);
       this.drawSkateHud(ctx);
+      this.drawTrickFlash(ctx, dt);
     }
     if (sim.visionBlend <= 0.001) {
       if (this.controlVisual) {
@@ -235,16 +247,15 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Bearings left, and the outcome of the last shot.
-    ctx.fillStyle = alpha('#F6F4EE', 0.85);
-    for (let i = 0; i < sim.player.maxBearings; i++) {
-      ctx.globalAlpha = i < sim.player.bearings ? 0.85 : 0.22;
-      ctx.beginPath();
-      ctx.arc(this.w - 22, this.h - 44 - i * 9, 2.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
+    /*
+     * No bearings column here.
+     *
+     * There was one, drawn low on the right — and the HUD draws its own,
+     * labelled, against the same edge, which does not go away when the sling
+     * comes up. So aiming showed the player two columns of dots, one of them
+     * unlabelled, counting the same thing. Two of a thing is worse than one of
+     * it: the second one is a question.
+     */
     const shot = sim.lastShot;
     if (shot && sim.tick - shot.tick < 110) {
       const a = 1 - (sim.tick - shot.tick) / 110;
@@ -317,9 +328,14 @@ export class Renderer {
     ctx.lineTo(fx + span, forkY - prong);
     ctx.stroke();
 
-    // The bearing in the pouch, and the hand around it.
+    // The bearing in the pouch: a little steel ball, lit from up and left so
+    // it reads as a sphere rather than a dot.
+    ctx.fillStyle = '#6E767E';
+    ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#C9CDD2';
-    ctx.beginPath(); ctx.arc(pullX, pullY, 6.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(pullX - 0.8, pullY - 0.8, 5.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#F4F6F8';
+    ctx.beginPath(); ctx.arc(pullX - 2.2, pullY - 2.4, 2.1, 0, Math.PI * 2); ctx.fill();
     if (grip) {
       ctx.strokeStyle = shade(VENEER.player, -0.34);
       ctx.lineWidth = 22;
@@ -353,6 +369,25 @@ export class Renderer {
    * — and a human asked what it was for, which is the only question a piece of
    * permanent UI is not allowed to raise. Gone.
    */
+  private drawTrickFlash(ctx: CanvasRenderingContext2D, dt: number): void {
+    const f = this.trickFlash;
+    if (!f) return;
+    f.t += dt;
+    if (f.t > 1.5) { this.trickFlash = null; return; }
+    // Up and out: it arrives at once and leaves without being dismissed.
+    const a = clamp01(f.t < 0.12 ? f.t / 0.12 : 1 - (f.t - 0.12) / 1.38);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.round(Math.min(22, this.w * 0.045))}px ui-monospace, Menlo, monospace`;
+    const y = this.h * 0.42 - f.t * 16;
+    ctx.fillStyle = alpha('#12181F', 0.5 * a);
+    ctx.fillText(f.name, this.w / 2 + 1, y + 1);
+    ctx.fillStyle = alpha('#F6F4EE', 0.92 * a);
+    ctx.fillText(f.name, this.w / 2, y);
+    ctx.restore();
+  }
+
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;
     // The top edge warms when a lens actually has you. Deliberately not a

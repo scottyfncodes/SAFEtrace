@@ -128,8 +128,8 @@ export class ControlsRenderer {
   }
 
   /**
-   * Glyphs rather than words: a board for the ollie, a drawn band for the
-   * sling, an eye for VISION. Three shapes, learned in one press each.
+   * Words where a word is faster, shapes where a shape is: POP and TRICK say
+   * exactly what they do, the sling is a drawn slingshot, VISION is an eye.
    */
   private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
     const s = r * 0.5;
@@ -141,6 +141,12 @@ export class ControlsRenderer {
       // could not read faster from three letters.
       ctx.font = `700 ${Math.round(r * 0.46)}px ui-monospace, Menlo, monospace`;
       ctx.fillText('POP', x, y + 1);
+      return;
+    } else if (id === 'trick') {
+      // Same treatment as POP, because they are the same kind of thing: a verb
+      // the board performs. Which trick is the board's business, not a label's.
+      ctx.font = `700 ${Math.round(r * 0.38)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('TRICK', x, y + 1);
       return;
     } else if (id === 'sling') {
       // An actual slingshot, drawn upright: a forked handle, two prongs, the
