@@ -9,7 +9,7 @@ import type { BehaviourFlag, Evidence, Subject, Track } from './types';
 export const THRESHOLDS = {
   loiterWindowTicks: 420,      // 7 s
   loiterDisplacement: 6,       // metres
-  offRoadDistance: 9,          // metres from any road centreline
+  offRoadDistance: 13,         // metres from any road centreline
   offRoadSustainTicks: 90,     // 1.5 s
   recklessSpeed: 8.5,          // m/s in a pedestrian zone
   recklessSustainTicks: 60,
@@ -69,7 +69,7 @@ export function classify(
   if (m.duckCount >= 2) flags.add('EVASIVE');
 
   const disp = displacement(track, THRESHOLDS.loiterWindowTicks, tick);
-  if (disp < THRESHOLDS.loiterDisplacement && track.history.length > 12) flags.add('LOITERING');
+  if (disp < THRESHOLDS.loiterDisplacement && track.history.length > 40) flags.add('LOITERING');
 
   for (const e of evidence) {
     if (tick - e.tick > THRESHOLDS.evidenceWindowTicks) continue;

@@ -49,7 +49,7 @@ export function scoreRisk(
   }
   inc *= WEIGHTS.incident;
 
-  const anomaly = track.predictionError * WEIGHTS.anomaly;
+  const anomaly = track.predictionError * WEIGHTS.anomaly * (1 - subject.familiarity);
   const history = subject.priorContacts * WEIGHTS.history;
 
   const raw = behaviour + ev + inc + anomaly + history;

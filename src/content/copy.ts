@@ -81,14 +81,14 @@ export interface AdBeat {
 }
 
 export const AD_SCRIPT: AdBeat[] = [
-  { seconds: 4.5, look: { x: 150, y: 230, zoom: 2.4 }, headline: 'Bellhaven', sub: 'A place worth looking after.' },
-  { seconds: 4.0, look: { x: 250, y: 180, zoom: 3.0 }, headline: 'SAFEtrace™ HOME', sub: 'Protect your family.' },
-  { seconds: 4.0, look: { x: 370, y: 95, zoom: 3.4 }, headline: 'SAFEtrace™ CITY', sub: 'Predict. Prevent. Protect.' },
-  { seconds: 4.0, look: { x: 350, y: 320, zoom: 3.2 }, headline: 'SAFEtrace™ SCHOOL', sub: 'Safer classrooms. Smarter communities.' },
-  { seconds: 3.6, look: { x: 470, y: 200, zoom: 3.6 }, headline: 'SAFEtrace™ PREDICT', sub: "Don't wait for danger." },
-  { seconds: 4.4, look: { x: 200, y: 260, zoom: 2.6 }, headline: 'SAFEtrace™ CARE', sub: 'Someone is always looking out.' },
-  { seconds: 5.0, look: { x: 158, y: 214, zoom: 2.2 }, wordmark: true },
-  { seconds: 3.0, look: { x: 158, y: 214, zoom: 2.0 }, title: true },
+  { seconds: 4.5, look: { x: 150, y: 232, zoom: 8.5 }, headline: 'Bellhaven', sub: 'A place worth looking after.' },
+  { seconds: 4.0, look: { x: 132, y: 200, zoom: 11.5 }, headline: 'SAFEtrace™ HOME', sub: 'Protect your family.' },
+  { seconds: 4.0, look: { x: 366, y: 96, zoom: 10.5 }, headline: 'SAFEtrace™ CITY', sub: 'Predict. Prevent. Protect.' },
+  { seconds: 4.0, look: { x: 348, y: 318, zoom: 10.0 }, headline: 'SAFEtrace™ SCHOOL', sub: 'Safer classrooms. Smarter communities.' },
+  { seconds: 3.6, look: { x: 505, y: 206, zoom: 12.0 }, headline: 'SAFEtrace™ PREDICT', sub: "Don't wait for danger." },
+  { seconds: 4.4, look: { x: 170, y: 250, zoom: 9.0 }, headline: 'SAFEtrace™ CARE', sub: 'Someone is always looking out.' },
+  { seconds: 5.0, look: { x: 158, y: 214, zoom: 11.0 }, wordmark: true },
+  { seconds: 3.0, look: { x: 158, y: 214, zoom: 12.6 }, title: true },
 ];
 
 export const AD_REPRISE_ANNOTATIONS: Record<number, string> = {

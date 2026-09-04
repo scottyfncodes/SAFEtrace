@@ -23,6 +23,13 @@ export interface Subject {
   districtPriors: Record<string, number>;
   /** Contacts on record; raises the risk floor. */
   priorContacts: number;
+  /**
+   * How well SAFEtrace already knows this person's routine, 0..1. A resident
+   * who walks the same route every afternoon is legible, so their prediction
+   * error is not read as anomalous. The player has almost no history, which is
+   * precisely why the system finds them interesting.
+   */
+  familiarity: number;
 }
 
 export interface Observation {

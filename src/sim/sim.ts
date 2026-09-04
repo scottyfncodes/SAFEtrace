@@ -92,8 +92,8 @@ export class Sim {
   /** A forced, brief crack in the veneer. Seconds. */
   crackTimer = 0;
 
-  /** Sun direction for shadows. Fixed at roughly four in the afternoon. */
-  readonly sun: Vec2 = norm({ x: 0.55, y: -0.83 });
+  /** Direction shadows fall. One sun, fixed at roughly four in the afternoon. */
+  readonly sun: Vec2 = norm({ x: 0.55, y: 0.34 });
 
   private observationBuffer = new Map<string, Observation[]>();
   private assets: Asset[] = [];
@@ -118,6 +118,8 @@ export class Sim {
     }
 
     this.player = makePlayer(worldData.spawns.player);
+    // Facing south down Maple Court, the way the advertisement's last shot looks.
+    this.player.heading = Math.PI / 2;
     this.playerSubject = {
       id: 'SUBJ-4417',
       kind: 'player',
@@ -128,6 +130,7 @@ export class Sim {
       speed: 0,
       districtPriors: { maple: 0.95, commons: 0.7, ridgeline: 0.8, northgate: 0.2, channel: 0.35, relay: 0.05 },
       priorContacts: 0,
+      familiarity: 0.15,
     };
     this.playerTrack = makeTrack(this.playerSubject);
 
@@ -144,6 +147,7 @@ export class Sim {
       // The prior was reasonable. The prior was decisive.
       districtPriors: { maple: 0.9, commons: 0.75, ridgeline: 0.85, northgate: 0.97, channel: 0.4, relay: 0.05 },
       priorContacts: 0,
+      familiarity: 0.55,
     };
     this.devonTrack = makeTrack(this.devon);
 
@@ -159,6 +163,7 @@ export class Sim {
         speed: 0,
         districtPriors: {},
         priorContacts: 0,
+        familiarity: 0.92,
       };
       this.npcSubjects.push(s);
       this.npcTracks.push(makeTrack(s));
@@ -839,13 +844,15 @@ export class Sim {
   private updateVision(intent: Intent, dt: number): void {
     if (this.crackTimer > 0) {
       this.crackTimer -= dt;
-      this.visionBlend = Math.min(1, this.visionBlend + dt * 3.4);
+      this.visionBlend = Math.min(1, this.visionBlend + dt * 2.6);
       this.visionActive = true;
       return;
     }
     this.visionActive = this.visionUnlocked && intent.vision;
     const target = this.visionActive ? 1 : 0;
-    const rate = this.visionActive ? 2.2 : 3.0;
+    // Roughly 600 ms in, 430 ms out. Coming back is faster, so the real world
+    // returns a little too suddenly, which is the correct feeling.
+    const rate = this.visionActive ? 1.45 : 2.3;
     this.visionBlend += Math.sign(target - this.visionBlend) * Math.min(Math.abs(target - this.visionBlend), rate * dt);
   }
 

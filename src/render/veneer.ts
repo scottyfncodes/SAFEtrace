@@ -1,0 +1,400 @@
+/**
+ * The beautiful world.
+ *
+ * Oblique top-down: the camera looks down and slightly from the south, so we
+ * see south-facing walls and buildings extrude upward on screen. One sun, fixed
+ * at about four in the afternoon, throwing long soft shadows to the south-east.
+ */
+import { type Vec2, type Rect, pointInPoly, rectsOverlap, polyBounds } from '../core/math';
+import type { World } from '../sim/world';
+import type { Building, Prop } from '../sim/worldTypes';
+import type { Sim } from '../sim/sim';
+import type { ViewCamera } from './camera';
+import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
+
+/** Screen-space offset per metre of height. */
+export const ROOF_K = 0.42;
+/** Shadow offset per metre of height. */
+export const SHADOW_K = { x: 0.55, y: 0.34 };
+const STATIC_SCALE = 4;
+
+export class VeneerRenderer {
+  private ground: HTMLCanvasElement | null = null;
+  private groundOrigin: Vec2 = { x: 0, y: 0 };
+
+  constructor(private world: World) {}
+
+  /** Composite all static ground surfaces once. */
+  prepare(): void {
+    const { min, max } = this.world.data.bounds;
+    const w = Math.ceil((max.x - min.x) * STATIC_SCALE);
+    const h = Math.ceil((max.y - min.y) * STATIC_SCALE);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    if (!g) return;
+    this.groundOrigin = { x: min.x, y: min.y };
+
+    g.fillStyle = VENEER.grass;
+    g.fillRect(0, 0, w, h);
+
+    const surfaces = [...this.world.data.surfaces].sort((a, b) => a.priority - b.priority);
+    for (const s of surfaces) {
+      g.beginPath();
+      for (let i = 0; i < s.poly.length; i++) {
+        const p = s.poly[i];
+        const x = (p.x - min.x) * STATIC_SCALE, y = (p.y - min.y) * STATIC_SCALE;
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.closePath();
+      g.fillStyle = SURFACE_COLOUR[s.kind] ?? VENEER.grass;
+      g.fill();
+      // Grass gets a soft second tone so lawns are not flat colour fields.
+      if (s.kind === 'grass') {
+        g.fillStyle = alpha(VENEER.grassDark, 0.28);
+        g.fill();
+      }
+    }
+
+    // Road centre markings.
+    g.lineWidth = 1.4;
+    g.setLineDash([9, 11]);
+    g.strokeStyle = VENEER.roadMark;
+    for (const e of this.world.data.roadEdges) {
+      if (e.width < 8) continue;
+      const a = this.world.roadNodeById.get(e.a);
+      const b = this.world.roadNodeById.get(e.b);
+      if (!a || !b) continue;
+      g.beginPath();
+      g.moveTo((a.pos.x - min.x) * STATIC_SCALE, (a.pos.y - min.y) * STATIC_SCALE);
+      g.lineTo((b.pos.x - min.x) * STATIC_SCALE, (b.pos.y - min.y) * STATIC_SCALE);
+      g.stroke();
+    }
+    g.setLineDash([]);
+
+    this.ground = c;
+  }
+
+  drawGround(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number): void {
+    if (!this.ground) return;
+    const o = cam.toScreen(this.groundOrigin, w, h);
+    const s = cam.zoom / STATIC_SCALE;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.translate(o.x, o.y);
+    ctx.scale(s, s);
+    ctx.drawImage(this.ground, 0, 0);
+    ctx.restore();
+  }
+
+  /** Shadows for every solid, drawn before any body so they never overlap wrongly. */
+  drawShadows(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect, sim: Sim): void {
+    ctx.fillStyle = VENEER.shadow;
+    for (const b of this.world.data.buildings) {
+      const bb = polyBounds(b.poly);
+      if (!rectsOverlap(bb, view)) continue;
+      this.polyPath(ctx, b.poly, cam, w, h, { x: SHADOW_K.x * b.height, y: SHADOW_K.y * b.height });
+      ctx.fill();
+    }
+    ctx.fillStyle = VENEER.shadowSoft;
+    for (const p of this.world.data.props) {
+      if (p.pos.x < view.x || p.pos.x > view.x + view.w || p.pos.y < view.y || p.pos.y > view.y + view.h) continue;
+      if (p.kind === 'fenceGate') continue;
+      const hgt = p.kind === 'tree' ? 6 : p.kind === 'pole' || p.kind === 'sign' ? 3.4 : 0.9;
+      const r = this.propRadius(p);
+      const c = cam.toScreen({ x: p.pos.x + SHADOW_K.x * hgt, y: p.pos.y + SHADOW_K.y * hgt }, w, h);
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, r * cam.zoom * 1.05, r * cam.zoom * 0.72, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // The drone's shadow arrives before it does. On a sunny afternoon that is
+    // both beautiful and horrible.
+    for (const d of sim.drones) {
+      const c = cam.toScreen({ x: d.pos.x + sim.sun.x * d.z, y: d.pos.y + sim.sun.y * d.z }, w, h);
+      ctx.fillStyle = alpha('#3A4C6B', 0.20);
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, 1.5 * cam.zoom, 1.1 * cam.zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  drawBuildings(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect): void {
+    const list = this.world.data.buildings
+      .filter((b) => rectsOverlap(polyBounds(b.poly), view))
+      .sort((a, b) => polyBounds(a.poly).y - polyBounds(b.poly).y);
+
+    for (const b of list) this.drawBuilding(ctx, b, cam, w, h);
+  }
+
+  private drawBuilding(ctx: CanvasRenderingContext2D, b: Building, cam: ViewCamera, w: number, h: number): void {
+    const lift = ROOF_K * b.height;
+    const poly = b.poly;
+
+    // South-facing walls, drawn back to front so corners read correctly.
+    const walls: Array<{ a: Vec2; b: Vec2; depth: number }> = [];
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[j], c = poly[i];
+      // Outward normal with a positive y component faces the viewer.
+      const nx = c.y - a.y, ny = -(c.x - a.x);
+      const centroidY = (a.y + c.y) / 2;
+      if (ny > 0 || (Math.abs(ny) < 0.01 && nx !== 0)) walls.push({ a, b: c, depth: centroidY });
+    }
+    walls.sort((x, y) => x.depth - y.depth);
+
+    ctx.lineJoin = 'round';
+    for (const wall of walls) {
+      const a1 = cam.toScreen(wall.a, w, h);
+      const b1 = cam.toScreen(wall.b, w, h);
+      const a2 = cam.toScreen({ x: wall.a.x, y: wall.a.y - lift }, w, h);
+      const b2 = cam.toScreen({ x: wall.b.x, y: wall.b.y - lift }, w, h);
+      ctx.beginPath();
+      ctx.moveTo(a1.x, a1.y); ctx.lineTo(b1.x, b1.y); ctx.lineTo(b2.x, b2.y); ctx.lineTo(a2.x, a2.y);
+      ctx.closePath();
+      ctx.fillStyle = shade(b.wall, -0.16);
+      ctx.fill();
+
+      // Windows: two per wall, evenly placed. Cheap, and it makes houses read.
+      if (b.height > 3.4 && Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y) > 5) {
+        ctx.save();
+        ctx.clip();
+        const n = b.kind === 'house' ? 2 : 4;
+        for (let k = 1; k <= n; k++) {
+          const t = k / (n + 1);
+          const px = wall.a.x + (wall.b.x - wall.a.x) * t;
+          const py = wall.a.y + (wall.b.y - wall.a.y) * t;
+          const s1 = cam.toScreen({ x: px, y: py - lift * 0.32 }, w, h);
+          const s2 = cam.toScreen({ x: px, y: py - lift * 0.78 }, w, h);
+          ctx.fillStyle = VENEER.glass;
+          ctx.fillRect(s1.x - 0.55 * cam.zoom, s2.y, 1.1 * cam.zoom, s1.y - s2.y);
+        }
+        ctx.restore();
+      }
+    }
+
+    // Roof.
+    this.polyPath(ctx, poly, cam, w, h, { x: 0, y: -lift });
+    ctx.fillStyle = b.roof;
+    ctx.fill();
+    ctx.strokeStyle = alpha(shade(b.roof, -0.35), 0.9);
+    ctx.lineWidth = Math.max(1, cam.zoom * 0.14);
+    ctx.stroke();
+
+    // Ridge line, so roofs are not flat rectangles.
+    if (b.kind === 'house' || b.kind === 'shed' || b.kind === 'garage') {
+      const bb = polyBounds(poly);
+      const horizontal = bb.w > bb.h;
+      const a = horizontal
+        ? { x: bb.x + 1, y: bb.y + bb.h / 2 - lift }
+        : { x: bb.x + bb.w / 2, y: bb.y + 1 - lift };
+      const c = horizontal
+        ? { x: bb.x + bb.w - 1, y: bb.y + bb.h / 2 - lift }
+        : { x: bb.x + bb.w / 2, y: bb.y + bb.h - 1 - lift };
+      const s1 = cam.toScreen(a, w, h), s2 = cam.toScreen(c, w, h);
+      ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+      ctx.strokeStyle = alpha(shade(b.roof, 0.25), 0.7);
+      ctx.lineWidth = Math.max(1, cam.zoom * 0.2);
+      ctx.stroke();
+    }
+  }
+
+  drawProps(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect): void {
+    const props = this.world.data.props
+      .filter((p) => p.pos.x > view.x - 8 && p.pos.x < view.x + view.w + 8 && p.pos.y > view.y - 8 && p.pos.y < view.y + view.h + 8)
+      .sort((a, b) => a.pos.y - b.pos.y);
+    for (const p of props) this.drawProp(ctx, p, cam, w, h);
+  }
+
+  private propRadius(p: Prop): number {
+    switch (p.kind) {
+      case 'tree': return 3.2 * p.scale;
+      case 'car': return 2.2;
+      case 'planter': return 1.4 * p.scale;
+      case 'bench': return 1.2;
+      case 'hoop': return 1.0;
+      default: return 0.55;
+    }
+  }
+
+  private drawProp(ctx: CanvasRenderingContext2D, p: Prop, cam: ViewCamera, w: number, h: number): void {
+    const z = cam.zoom;
+    const c = cam.toScreen(p.pos, w, h);
+
+    switch (p.kind) {
+      case 'fenceGate': {
+        const a = cam.toScreen({ x: p.pos.x - Math.cos(p.rot) * p.scale / 2, y: p.pos.y - Math.sin(p.rot) * p.scale / 2 }, w, h);
+        const b = cam.toScreen({ x: p.pos.x + Math.cos(p.rot) * p.scale / 2, y: p.pos.y + Math.sin(p.rot) * p.scale / 2 }, w, h);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = alpha('#7C8892', 0.85);
+        ctx.lineWidth = Math.max(1, z * 0.24);
+        ctx.stroke();
+        break;
+      }
+      case 'tree': {
+        const r = 3.2 * p.scale * z;
+        const top = cam.toScreen({ x: p.pos.x, y: p.pos.y - 2.4 * p.scale }, w, h);
+        ctx.fillStyle = '#6B5541';
+        ctx.fillRect(c.x - 0.24 * z, top.y, 0.48 * z, c.y - top.y);
+        ctx.beginPath();
+        ctx.arc(top.x, top.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = VENEER.tree;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(top.x - r * 0.26, top.y - r * 0.26, r * 0.62, 0, Math.PI * 2);
+        ctx.fillStyle = VENEER.treeLight;
+        ctx.fill();
+        break;
+      }
+      case 'car': {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(p.rot);
+        const lift = 1.5 * ROOF_K * z;
+        ctx.fillStyle = shade(p.tint ?? '#8FA0AC', -0.25);
+        roundRect(ctx, -2.2 * z, -0.95 * z, 4.4 * z, 1.9 * z, 0.5 * z);
+        ctx.fill();
+        ctx.translate(0, -lift);
+        ctx.fillStyle = p.tint ?? '#8FA0AC';
+        roundRect(ctx, -2.2 * z, -0.95 * z, 4.4 * z, 1.9 * z, 0.5 * z);
+        ctx.fill();
+        ctx.fillStyle = VENEER.glass;
+        roundRect(ctx, -0.85 * z, -0.7 * z, 1.7 * z, 1.4 * z, 0.28 * z);
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'bin': {
+        const top = cam.toScreen({ x: p.pos.x, y: p.pos.y - 1.1 }, w, h);
+        ctx.fillStyle = p.knocked ? '#7E8B75' : '#4E7A57';
+        roundRect(ctx, c.x - 0.55 * z, top.y, 1.1 * z, c.y - top.y, 0.18 * z);
+        ctx.fill();
+        ctx.fillStyle = alpha('#2F4E37', 0.9);
+        ctx.fillRect(c.x - 0.6 * z, top.y - 0.12 * z, 1.2 * z, 0.28 * z);
+        break;
+      }
+      case 'hydrant':
+        ctx.fillStyle = '#C9503F';
+        ctx.beginPath(); ctx.arc(c.x, c.y - 0.4 * z, 0.38 * z, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'bench':
+        ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(p.rot);
+        ctx.fillStyle = '#A98455';
+        ctx.fillRect(-1.1 * z, -0.35 * z, 2.2 * z, 0.7 * z);
+        ctx.restore();
+        break;
+      case 'planter': {
+        const r = 1.4 * p.scale * z;
+        ctx.fillStyle = '#C7BDA8';
+        ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = VENEER.tree;
+        ctx.beginPath(); ctx.arc(c.x, c.y - 0.3 * z, r * 0.68, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'pole': case 'sign': {
+        const top = cam.toScreen({ x: p.pos.x, y: p.pos.y - 3.2 }, w, h);
+        ctx.strokeStyle = '#8E959B';
+        ctx.lineWidth = Math.max(1, 0.2 * z);
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+        if (p.kind === 'sign') {
+          ctx.fillStyle = VENEER.accent;
+          roundRect(ctx, top.x - 1.5 * z, top.y - 0.9 * z, 3 * z, 1.2 * z, 0.2 * z);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'hoop': {
+        const top = cam.toScreen({ x: p.pos.x, y: p.pos.y - 3.0 }, w, h);
+        ctx.strokeStyle = '#8E959B'; ctx.lineWidth = Math.max(1, 0.18 * z);
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+        ctx.fillStyle = '#E8E3D6';
+        ctx.fillRect(top.x - 1.1 * z, top.y - 0.8 * z, 2.2 * z, 1.3 * z);
+        break;
+      }
+      case 'mailbox': {
+        const top = cam.toScreen({ x: p.pos.x, y: p.pos.y - 1.1 }, w, h);
+        ctx.strokeStyle = '#9A8F7E'; ctx.lineWidth = Math.max(1, 0.13 * z);
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+        ctx.fillStyle = '#C7BDA8';
+        ctx.fillRect(top.x - 0.4 * z, top.y - 0.35 * z, 0.8 * z, 0.5 * z);
+        break;
+      }
+      case 'cone':
+        ctx.fillStyle = '#E07B3C';
+        ctx.beginPath(); ctx.arc(c.x, c.y, 0.34 * z, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'speaker': case 'ammoCache': {
+        ctx.fillStyle = p.kind === 'ammoCache' ? VENEER.warning : '#B9C0C6';
+        ctx.beginPath(); ctx.arc(c.x, c.y, 0.5 * z, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      default:
+        ctx.fillStyle = '#AEB6BC';
+        ctx.beginPath(); ctx.arc(c.x, c.y, 0.4 * z, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  /**
+   * Surveillance hardware, drawn as nice-looking consumer products. A porch
+   * camera looks like something you would be glad to own, which is why nobody
+   * in Bellhaven objects to them and why the player does not notice them at first.
+   */
+  drawSensors(ctx: CanvasRenderingContext2D, sim: Sim, cam: ViewCamera, w: number, h: number, view: Rect): void {
+    for (const s of sim.sensors) {
+      const d = s.data;
+      if (d.pos.x < view.x - 10 || d.pos.x > view.x + view.w + 10) continue;
+      if (d.pos.y < view.y - 10 || d.pos.y > view.y + view.h + 10) continue;
+      const base = cam.toScreen(d.pos, w, h);
+      const head = cam.toScreen({ x: d.pos.x, y: d.pos.y - d.height * ROOF_K }, w, h);
+      const z = cam.zoom;
+
+      ctx.strokeStyle = alpha('#9AA3A9', 0.9);
+      ctx.lineWidth = Math.max(1, 0.16 * z);
+      ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(head.x, head.y); ctx.stroke();
+
+      ctx.save();
+      ctx.translate(head.x, head.y);
+      ctx.rotate(s.facing);
+      const offline = s.state === 'OFFLINE';
+      ctx.fillStyle = offline ? '#8A8F93' : '#F4F2EC';
+      roundRect(ctx, -0.42 * z, -0.34 * z, 1.05 * z, 0.68 * z, 0.3 * z);
+      ctx.fill();
+      ctx.fillStyle = offline ? '#4A4E52' : (s.state === 'LOOPED' ? '#2C8C8C' : '#2A3138');
+      ctx.beginPath(); ctx.arc(0.42 * z, 0, 0.22 * z, 0, Math.PI * 2); ctx.fill();
+      if (!offline) {
+        ctx.fillStyle = alpha(VENEER.accent, 0.9);
+        ctx.beginPath(); ctx.arc(-0.28 * z, 0, 0.08 * z, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  polyPath(
+    ctx: CanvasRenderingContext2D, poly: Vec2[], cam: ViewCamera, w: number, h: number,
+    offset: Vec2 = { x: 0, y: 0 },
+  ): void {
+    ctx.beginPath();
+    for (let i = 0; i < poly.length; i++) {
+      const s = cam.toScreen({ x: poly[i].x + offset.x, y: poly[i].y + offset.y }, w, h);
+      if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
+    }
+    ctx.closePath();
+  }
+
+  /** Is a world point under a roof? Used to fade cover so the player can read it. */
+  covered(p: Vec2): boolean {
+    for (const c of this.world.data.covers) if (pointInPoly(c.poly, p)) return true;
+    return false;
+  }
+}
+
+export function roundRect(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number,
+): void {
+  const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
