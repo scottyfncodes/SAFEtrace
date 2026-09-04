@@ -17,7 +17,11 @@ export class ViewCamera {
   scripted: { pos: Vec2; zoom: number } | null = null;
 
   setViewport(w: number, h: number): void {
-    this.uiScale = clamp(Math.min(w, h) / 810, 0.7, 1.15);
+    // The floor used to be 0.7, which on a 390 px phone cancelled most of the
+    // zoom and left the character about twenty pixels long — a human could not
+    // read the rider or the board. A phone still sees a street's width and the
+    // houses either side of it.
+    this.uiScale = clamp(Math.min(w, h) / 810, 0.92, 1.15);
   }
 
   follow(target: Vec2, vel: Vec2, speed: number, maxSpeed: number, dt: number, shakeScale: number): void {
@@ -35,7 +39,9 @@ export class ViewCamera {
     this.pos = { x: damp(this.pos.x, want.x, 0.16, dt), y: damp(this.pos.y, want.y, 0.16, dt) };
 
     const t = clamp(speed / Math.max(maxSpeed, 0.001), 0, 1);
-    const wantZoom = lerp(13.4, 9.6, t) * this.uiScale;
+    // Closer than it was: a human could not read the character or the board at
+    // the old framing. Still wide enough to see a junction coming.
+    const wantZoom = lerp(16.4, 12.0, t) * this.uiScale;
     this.zoom = damp(this.zoom, wantZoom, 0.4, dt);
 
     if (this.shake > 0) {

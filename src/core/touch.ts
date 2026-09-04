@@ -112,6 +112,12 @@ export class TouchEngine {
   private lookDelta = { yaw: 0, pitch: 0 };
   private aiming = false;
   private canSling = true;
+  /**
+   * VISION does nothing until the story unlocks it, and a control that does
+   * nothing is worse than no control: a human pressed the eye repeatedly and
+   * concluded the game was broken. It is not drawn until it works.
+   */
+  private canVision = false;
   readonly tuning = { ...TOUCH_TUNING };
 
   /** True while any finger is on the screen; used to keep audio awake. */
@@ -128,6 +134,7 @@ export class TouchEngine {
   }
 
   setSlingAvailable(on: boolean): void { this.canSling = on; }
+  setVisionAvailable(on: boolean): void { this.canVision = on; }
 
   reset(): void {
     this.tracks.clear();
@@ -145,11 +152,14 @@ export class TouchEngine {
     const gap = this.tuning.buttonGap;
     const x = w - safe.right - r - 22;
     const y = h - safe.bottom - r - 26;
-    return [
+    const out: ControlButton[] = [
       { id: 'ollie', pos: { x, y }, radius: r, pressed: false, enabled: true },
       { id: 'sling', pos: { x, y: y - gap }, radius: r, pressed: false, enabled: this.canSling },
-      { id: 'vision', pos: { x: x - gap * 0.86, y: y - gap * 0.34 }, radius: r * 0.86, pressed: false, enabled: true },
     ];
+    if (this.canVision) {
+      out.push({ id: 'vision', pos: { x: x - gap * 0.86, y: y - gap * 0.34 }, radius: r * 0.86, pressed: false, enabled: true });
+    }
+    return out;
   }
 
   /** Which zone does a screen point belong to? */

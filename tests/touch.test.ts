@@ -26,6 +26,7 @@ let clock = 1000;
 function make(): TouchEngine {
   const e = new TouchEngine();
   e.setViewport(VIEWPORT);
+  e.setVisionAvailable(true);
   return e;
 }
 
@@ -50,7 +51,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
 const button = (e: TouchEngine, id: 'sling' | 'ollie' | 'vision') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
-beforeEach(() => { engine = make(); clock = 1000; });
+beforeEach(() => { engine = make(); clock = 1000; engine.setVisionAvailable(true); });
 
 describe('zones', () => {
   it('gives the movement thumb the bottom-left and the buttons the bottom-right', () => {
@@ -124,6 +125,14 @@ describe('the stick names a direction', () => {
 });
 
 describe('the buttons are the whole rest of the vocabulary', () => {
+  it('does not draw VISION before the story has given it to the player', () => {
+    const fresh = new TouchEngine();
+    fresh.setViewport(VIEWPORT);
+    expect(fresh.buttonLayout().map((b) => b.id)).toEqual(['ollie', 'sling']);
+    fresh.setVisionAvailable(true);
+    expect(fresh.buttonLayout().map((b) => b.id)).toContain('vision');
+  });
+
   it('ollies on a tap, with no flick to discover', () => {
     tap(engine, button(engine, 'ollie'));
     expect(engine.sample().olliePressed).toBe(true);

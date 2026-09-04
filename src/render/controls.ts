@@ -111,13 +111,17 @@ export class ControlsRenderer {
     ctx.textBaseline = 'middle';
     for (const b of v.buttons) {
       const on = b.pressed;
-      const dim = b.enabled ? 1 : 0.35;
-      ctx.fillStyle = alpha('#0E141B', (on ? 0.42 : 0.24) * a * dim);
+      const dim = b.enabled ? 1 : 0.4;
+      // Bellhaven is a bright green suburb and a translucent dark disc on it
+      // reads as a patch of grass, which is what happened on a real phone.
+      // These sit on a solid, dark ground with a light rim so they are legible
+      // over lawn, asphalt and concrete alike.
+      ctx.fillStyle = alpha('#121A22', (on ? 0.88 : 0.72) * a * dim);
       ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, b.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = alpha('#FFFFFF', (on ? 0.75 : 0.40) * a * dim);
-      ctx.lineWidth = on ? 2.2 : 1.5;
+      ctx.strokeStyle = alpha('#FFFFFF', (on ? 0.9 : 0.55) * a * dim);
+      ctx.lineWidth = on ? 2.6 : 1.8;
       ctx.stroke();
-      ctx.fillStyle = alpha('#FFFFFF', (on ? 0.95 : 0.72) * a * dim);
+      ctx.fillStyle = alpha('#F6F4EE', (on ? 1 : 0.9) * a * dim);
       this.glyph(ctx, b.id, b.pos.x, b.pos.y, b.radius);
     }
     ctx.restore();
@@ -129,7 +133,7 @@ export class ControlsRenderer {
    */
   private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
     const s = r * 0.5;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.4;
     ctx.strokeStyle = ctx.fillStyle as string;
     ctx.beginPath();
     if (id === 'ollie') {
@@ -139,11 +143,30 @@ export class ControlsRenderer {
       ctx.moveTo(x - s * 1.1, y + s * 1.1);
       ctx.lineTo(x + s * 1.1, y + s * 1.1);
     } else if (id === 'sling') {
-      // A Y-fork with the band pulled back.
-      ctx.moveTo(x - s * 0.8, y - s); ctx.lineTo(x, y);
-      ctx.moveTo(x + s * 0.8, y - s); ctx.lineTo(x, y);
-      ctx.moveTo(x, y); ctx.lineTo(x, y + s);
-      ctx.moveTo(x - s * 0.8, y - s); ctx.lineTo(x + s * 0.8, y - s);
+      // An actual slingshot, drawn upright: a forked handle, two prongs, the
+      // band slack between them, and the pouch drawn back with a ball in it.
+      // The previous glyph was a generic fork and read as anything but this.
+      const px = s * 0.62;      // prong half-width
+      const py = s * 0.95;      // prong tip height above the crotch
+      const crotch = y - s * 0.05;
+      // Handle.
+      ctx.moveTo(x, y + s * 1.05); ctx.lineTo(x, crotch);
+      // Prongs.
+      ctx.moveTo(x, crotch); ctx.lineTo(x - px, crotch - py);
+      ctx.moveTo(x, crotch); ctx.lineTo(x + px, crotch - py);
+      ctx.stroke();
+      // Band, drawn back to the pouch behind the fork.
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x - px, crotch - py);
+      ctx.lineTo(x, crotch - py * 0.18);
+      ctx.lineTo(x + px, crotch - py);
+      ctx.stroke();
+      // The ball in the pouch.
+      ctx.beginPath();
+      ctx.arc(x, crotch - py * 0.18, s * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      return;
     } else {
       // An eye.
       ctx.moveTo(x - s, y);

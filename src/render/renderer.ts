@@ -204,7 +204,7 @@ export class Renderer {
     for (let i = 0; i < sim.player.maxBearings; i++) {
       ctx.globalAlpha = i < sim.player.bearings ? 0.85 : 0.22;
       ctx.beginPath();
-      ctx.arc(this.w / 2 - sim.player.maxBearings * 6 + i * 12, this.h - 46, 3.4, 0, Math.PI * 2);
+      ctx.arc(this.w / 2 - sim.player.maxBearings * 3.5 + i * 7, this.h - 46, 2, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -455,18 +455,31 @@ export class Renderer {
     ctx.fill();
   }
 
+  /**
+   * The player, and the fact that they are skating.
+   *
+   * A human looked at this and read it as a vehicle rather than a person on a
+   * board, which it was: a rounded rectangle with an ellipse on it and no legs
+   * at all. There are legs now, and the back one comes off and pushes against
+   * the ground when the character actually pushes — driven by `pushPhase`, so
+   * it happens when a push happens and never loops on its own.
+   */
   private drawPlayer(ctx: CanvasRenderingContext2D): void {
     const sim = this.sim;
     const p = sim.player;
     const z = this.cam.zoom;
-    const c = this.cam.toScreen({ x: p.pos.x, y: p.pos.y - p.z * ROOF_K }, this.w, this.h);
+    // Height reads as very little in an oblique view, so the player's own hop
+    // is exaggerated. Nobody else's is: this is the one thing you are flying.
+    const lift = p.z * ROOF_K * 2.6;
+    const c = this.cam.toScreen({ x: p.pos.x, y: p.pos.y - lift }, this.w, this.h);
     const ground = this.cam.toScreen(p.pos, this.w, this.h);
 
-    // Airborne shadow tells you how high you are.
-    if (p.z > 0.05) {
+    // Airborne shadow tells you how high you are, and shrinks as you climb.
+    if (p.z > 0.03) {
+      const k = clamp01(p.z / 1.1);
       ctx.fillStyle = VENEER.shadowSoft;
       ctx.beginPath();
-      ctx.ellipse(ground.x, ground.y, 0.6 * z, 0.4 * z, 0, 0, Math.PI * 2);
+      ctx.ellipse(ground.x, ground.y, (0.75 - k * 0.2) * z, (0.5 - k * 0.14) * z, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -474,17 +487,47 @@ export class Renderer {
     ctx.translate(c.x, c.y);
     ctx.rotate(p.heading);
 
+    // How much of a push stride we are through, and how far the leg reaches.
+    const pushing = p.pushPhase > 0 && p.stance !== 'AIR';
+    const reach = pushing ? Math.sin(p.pushPhase * Math.PI) : 0;
+
     if (p.onBoard) {
       ctx.fillStyle = p.stance === 'BAIL' ? '#8A8F93' : '#2F343A';
       roundRect(ctx, -1.05 * z, -0.42 * z, 2.1 * z, 0.84 * z, 0.3 * z);
       ctx.fill();
-      // The board deck is the player's single identifying accent colour.
       ctx.fillStyle = VENEER.player;
       roundRect(ctx, -0.85 * z, -0.3 * z, 1.7 * z, 0.6 * z, 0.22 * z);
       ctx.fill();
     }
 
-    const lean = p.stance === 'SLIDE' ? 0.35 : 0;
+    // Legs, drawn under the body. The front foot stays planted across the deck;
+    // the back foot swings off the tail and reaches for the road.
+    const legW = 0.20 * z;
+    ctx.strokeStyle = shade(VENEER.player, -0.62);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = legW;
+    const side = p.lean >= 0 ? 1 : -1;
+
+    // Front foot: on the board, always.
+    ctx.beginPath();
+    ctx.moveTo(0.08 * z, -0.06 * z * side);
+    ctx.lineTo(0.52 * z, -0.24 * z * side);
+    ctx.stroke();
+
+    // Back foot: on the tail, or off and pushing.
+    ctx.beginPath();
+    ctx.moveTo(-0.06 * z, 0.06 * z * side);
+    if (pushing) {
+      // Off the board, out to the side and behind, planting on the ground.
+      ctx.lineTo((-0.55 - reach * 0.5) * z, (0.34 + reach * 0.72) * z * side);
+    } else {
+      ctx.lineTo(-0.58 * z, 0.22 * z * side);
+    }
+    ctx.stroke();
+
+    // The body: leans into the carve, and shifts forward over the pushing foot.
+    const lean = p.stance === 'SLIDE' ? 0.35 * side : p.lean * 0.42;
+    ctx.translate(reach * 0.30 * z, 0);
     ctx.rotate(lean);
     ctx.fillStyle = shade(VENEER.player, -0.42);
     ctx.beginPath();

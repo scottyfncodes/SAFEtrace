@@ -355,3 +355,120 @@ describe('the network stays shut until the game opens it', () => {
     expect(sim.focusNode?.id).toBe('JX-M1');
   });
 });
+
+describe('it handles like a skateboard, not a radio-controlled car', () => {
+  /*
+   * A human said the movement "feels too much like an RC car". Two causes, and
+   * both are asserted against here: the heading was set straight from the stick
+   * so the board pivoted instantly, and lateral velocity was scrubbed 86% every
+   * frame so there was no arc to a turn and nothing carried through it.
+   */
+  const hold = (sim: Sim, v: { x: number; y: number }, seconds: number) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) {
+      const it = emptyIntent();
+      it.moveVector = v;
+      it.push = true;
+      it.pushPressed = true;
+      sim.step(TICK_DT, it, null);
+    }
+  };
+
+  it('does not pivot on the spot: a standing board has to be pushed to turn', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    sim.player.heading = 0;
+    // A quarter turn demanded of a stationary board, for a third of a second.
+    for (let i = 0; i < 20; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 0, y: -1 };
+      sim.step(TICK_DT, it, null);
+    }
+    // It has begun to come round, but nothing like all the way.
+    expect(Math.abs(sim.player.heading)).toBeGreaterThan(0.02);
+    expect(Math.abs(sim.player.heading)).toBeLessThan(Math.PI / 4);
+  });
+
+  it('builds the turn up rather than snapping to it', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 }, { x: 6, y: 0 });
+    sim.player.heading = 0;
+    const rates: number[] = [];
+    for (let i = 0; i < 18; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 0, y: -1 };
+      sim.step(TICK_DT, it, null);
+      rates.push(Math.abs(sim.player.turnRate));
+    }
+    // The angular rate is still climbing several frames in: it has weight.
+    expect(rates[12]).toBeGreaterThan(rates[2]);
+    expect(rates[2]).toBeGreaterThan(0);
+  });
+
+  it('carries through a turn instead of the velocity snapping to the nose', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 8, y: 0 });   // Bellhaven Avenue: genuinely open road
+    sim.player.heading = 0;
+    hold(sim, { x: 0, y: -1 }, 0.25);
+    const heading = sim.player.heading;
+    const travel = Math.atan2(sim.player.vel.y, sim.player.vel.x);
+    // Mid-carve the board points further round than it is actually going.
+    expect(Math.abs(heading - travel)).toBeGreaterThan(0.02);
+  });
+
+  it('leans into the carve, and comes back level', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 8, y: 0 });
+    sim.player.heading = 0;
+    let peak = 0;
+    for (let i = 0; i < 40; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 0, y: -1 };
+      it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, null);
+      peak = Math.max(peak, Math.abs(sim.player.lean));
+    }
+    // Enough to see: a fifth of a radian is about twelve degrees of body.
+    expect(peak).toBeGreaterThan(0.18);
+    for (let i = 0; i < 120; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(Math.abs(sim.player.lean)).toBeLessThan(0.05);
+  });
+
+  it('still goes where it is pointed, given a moment', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 6, y: 0 });
+    sim.player.heading = 0;
+    hold(sim, { x: 0, y: -1 }, 1.6);
+    expect(Math.abs(sim.player.heading + Math.PI / 2)).toBeLessThan(0.6);
+  });
+
+  it('pushes visibly, and only while pushing', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 });
+    let sawPush = false;
+    let sawRest = false;
+    for (let i = 0; i < 120; i++) {
+      const it = emptyIntent();
+      it.moveVector = { x: 1, y: 0 };
+      it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, null);
+      if (sim.player.pushPhase > 0) sawPush = true; else sawRest = true;
+    }
+    expect(sawPush).toBe(true);
+    expect(sawRest).toBe(true);
+  });
+
+  it('pops high enough that the shadow separates from the board', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 6, y: 0 });
+    const it = emptyIntent();
+    it.olliePressed = true;
+    it.ollieReleased = true;
+    sim.step(TICK_DT, it, null);
+    let apex = 0;
+    for (let i = 0; i < 60; i++) {
+      sim.step(TICK_DT, emptyIntent(), null);
+      apex = Math.max(apex, sim.player.z);
+    }
+    expect(apex).toBeGreaterThan(0.35);
+  });
+});

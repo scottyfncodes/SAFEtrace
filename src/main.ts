@@ -315,6 +315,7 @@ class Game {
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
     this.touch.setSlingAvailable(this.sim.player.bearings > 0 && !this.sim.hack);
+    this.touch.setVisionAvailable(this.sim.visionUnlocked);
 
     if (this.sim.aimMode) {
       // Dragging swings the view. The reticle stays in the middle of the

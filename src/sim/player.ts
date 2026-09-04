@@ -43,21 +43,29 @@ export const TUNE = {
   carveLow: 3.4,
   carveHigh: 1.1,
   /**
-   * How hard the board can be swung around when it is barely moving.
+   * The board leans into a turn and leans out of it. It does not snap.
    *
-   * A skateboard at a standstill turns by the rider stepping it round, which is
-   * quick. The carve curve alone made a stationary player feel welded to a
-   * heading, and "navigate around objects without fighting the control" is
-   * exactly where a human said it stopped being fun.
+   * Setting the heading straight from the stick made a skateboard handle like
+   * a radio-controlled car: point, and the whole thing pivots. Steering now
+   * drives an angular *velocity* that has to be built up and bled off, which is
+   * where the weight of the thing lives.
    */
-  pivotRate: 5.6,
-  /** Below this, a stick pointed backwards turns the board rather than braking. */
-  pivotSpeed: 2.4,
+  turnAccel: 11.0,
+  turnDamp: 7.5,
   /**
-   * How far off the desired heading counts as full deflection. Small, so the
-   * board answers a small correction with a small correction.
+   * A board at walking pace is redirected by the foot that is pushing it, not
+   * by wishing. Redirecting during a push is most of how a skater turns around
+   * in a driveway, and it is coupled to an animation the player can see.
    */
-  headingBand: 0.55,
+  pushSteerBoost: 2.6,
+  /** Visible body lean, radians at full carve. */
+  leanMax: 0.42,
+  /**
+   * How far off the desired heading counts as full deflection. Wide enough that
+   * a small correction is a small correction and the board is not always
+   * fighting for the last few degrees.
+   */
+  headingBand: 0.85,
   carveAimPenalty: 0.65,
   /**
    * Drawing the sling settles the board.
@@ -69,8 +77,17 @@ export const TUNE = {
    * switch, a menu, or taking the board away.
    */
   aimSettleDecel: 7.0,
-  lateralGrip: 0.86,
-  ollieImpulse: 3.6,
+  /**
+   * How fast sideways speed is scrubbed off, per frame at 60 Hz.
+   *
+   * At 0.86 the velocity snapped onto the heading inside a single frame, so
+   * there was no arc to a turn and nothing to carry through it — the other half
+   * of why this felt like an RC car. Lower, and the board holds a line through
+   * the turn and washes out a little when you ask too much of it.
+   */
+  lateralGrip: 0.34,
+  /** Enough pop that the shadow visibly separates from the board. */
+  ollieImpulse: 4.5,
   ollieMaxLoad: 0.25,
   gravity: 21,
   slideFriction: 6.5,
@@ -99,6 +116,12 @@ export interface PlayerState {
   pushTimer: number;
   pushCooldown: number;
   ollieLoad: number;
+  /** Angular velocity of the board, radians per second. */
+  turnRate: number;
+  /** Visible lean, -1..1, following the turn under load. */
+  lean: number;
+  /** 0..1 through a push stride; drives the pushing leg. */
+  pushPhase: number;
   bailTimer: number;
   onBoard: boolean;
   /** Ammunition. A physical count, not an economy. */
@@ -136,6 +159,9 @@ export function makePlayer(spawn: Vec2): PlayerState {
     pushTimer: 0,
     pushCooldown: 0,
     ollieLoad: -1,
+    turnRate: 0,
+    lean: 0,
+    pushPhase: 0,
     bailTimer: 0,
     onBoard: true,
     bearings: 12,
@@ -209,16 +235,25 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
    */
   const steerInput = steerOf(p, intent);
 
-  // Turning radius grows with speed. This single curve is the whole feel —
-  // with a floor, because a board that is barely rolling gets stepped around.
+  // Turning radius grows with speed. This single curve is the whole feel.
   let carveRate = remap(speed, 1.5, cap, TUNE.carveLow, TUNE.carveHigh);
-  if (speed < TUNE.pivotSpeed) {
-    carveRate = Math.max(carveRate, remap(speed, 0, TUNE.pivotSpeed, TUNE.pivotRate, TUNE.carveLow));
-  }
+  // Mid-push, the foot on the ground can point the board somewhere new. It is
+  // the only way to turn sharply at walking pace, and you can see it happen.
+  if (p.pushTimer > 0) carveRate *= TUNE.pushSteerBoost;
   if (p.aiming) carveRate *= TUNE.carveAimPenalty;
   if (p.stance === 'AIR') carveRate *= 0.28;
   if (p.stance === 'SLIDE') carveRate = TUNE.slideSteer;
-  p.heading = wrapAngle(p.heading + steerInput * carveRate * dt);
+
+  // The board has to be leaned into a turn and let out of it again.
+  const wantTurn = steerInput * carveRate;
+  const accel = Math.sign(wantTurn - p.turnRate) * TUNE.turnAccel * dt;
+  p.turnRate += Math.abs(wantTurn - p.turnRate) < Math.abs(accel) ? wantTurn - p.turnRate : accel;
+  if (Math.abs(steerInput) < 0.02) p.turnRate = damp(p.turnRate, 0, 1 / TUNE.turnDamp, dt);
+  p.heading = wrapAngle(p.heading + p.turnRate * dt);
+
+  // Lean follows the turn, loaded by speed. This is what the eye reads as carve.
+  const loaded = clamp(p.turnRate / Math.max(0.001, TUNE.carveLow), -1, 1) * clamp01(speed / 4);
+  p.lean = damp(p.lean, loaded, 0.09, dt);
 
   // --- slide ------------------------------------------------------------
   const wantSlide = intent.brake && speed > 3.2 && p.stance !== 'AIR';
@@ -238,6 +273,9 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   // --- push -------------------------------------------------------------
   p.pushCooldown = Math.max(0, p.pushCooldown - dt);
   p.pushTimer = Math.max(0, p.pushTimer - dt);
+  // 0 at the start of a stride, 1 at the end. The renderer reads this rather
+  // than a looping clock, so the leg only moves when a push is happening.
+  p.pushPhase = p.pushTimer > 0 ? 1 - p.pushTimer / TUNE.pushDuration : 0;
   p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
   if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL' && !p.aiming) {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
