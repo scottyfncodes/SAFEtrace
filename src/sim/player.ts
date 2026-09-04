@@ -124,7 +124,12 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   }
 
   p.aiming = intent.aim && p.bearings > 0;
-  p.draw = p.aiming ? clamp01(p.draw + dt / 0.55) : 0;
+  // A device with a continuous draw axis — a thumb pulling the pouch back —
+  // sets the draw directly. Everything else loads it at the character's own
+  // rate, which is what a key held down means.
+  if (!p.aiming) p.draw = 0;
+  else if (intent.drawAmount !== null) p.draw = clamp01(intent.drawAmount);
+  else p.draw = clamp01(p.draw + dt / 0.55);
 
   if (!p.onBoard) { updateFoot(p, intent, world, dt); return; }
 

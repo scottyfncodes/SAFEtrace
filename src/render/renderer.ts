@@ -7,10 +7,12 @@
  * around them rather than being covered by it.
  */
 import { type Rect, type Vec2, clamp01, easeInOutCubic, smoothstep } from '../core/math';
+import type { ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import type { Sim } from '../sim/sim';
 import { predictArc } from '../sim/slingshot';
 import { ViewCamera } from './camera';
+import { ControlsRenderer } from './controls';
 import { MachineRenderer } from './machine';
 import { VeneerRenderer, ROOF_K, roundRect } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
@@ -19,6 +21,9 @@ export class Renderer {
   readonly cam = new ViewCamera();
   private veneer: VeneerRenderer;
   private machine: MachineRenderer;
+  readonly controls: ControlsRenderer;
+  /** Set each frame by the host so the controls can be drawn last. */
+  controlVisual: ControlVisual | null = null;
   private ctx: CanvasRenderingContext2D;
   w = 0; h = 0; dpr = 1;
   /** 0..1 wavefront progress, separate from sim.visionBlend so it can overshoot. */
@@ -43,18 +48,28 @@ export class Renderer {
     this.ctx = ctx;
     this.veneer = new VeneerRenderer(sim.world);
     this.machine = new MachineRenderer(sim);
+    this.controls = new ControlsRenderer(settings);
     this.veneer.prepare();
     this.resize();
     this.cam.pos = { ...sim.player.pos };
   }
 
   resize(): void {
+    // CSS pixels are not canvas pixels. The backing store follows the device
+    // ratio; everything the game measures stays in CSS pixels.
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.w = this.canvas.clientWidth;
-    this.h = this.canvas.clientHeight;
-    this.canvas.width = Math.round(this.w * this.dpr);
-    this.canvas.height = Math.round(this.h * this.dpr);
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    if (w === this.w && h === this.h && this.canvas.width === Math.round(w * this.dpr)) return;
+    this.w = w;
+    this.h = h;
+    this.canvas.width = Math.round(w * this.dpr);
+    this.canvas.height = Math.round(h * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.cam.setViewport(w, h);
+    // The reveal mask is viewport-sized and must follow.
+    this.mask = null;
+    this.maskCtx = null;
   }
 
   private ensureMask(): HTMLCanvasElement | null {
@@ -109,6 +124,11 @@ export class Renderer {
     this.drawAimAid(ctx);
     this.drawRipples(ctx, dt);
     this.drawVignette(ctx);
+
+    if (this.controlVisual) {
+      this.controls.update(this.controlVisual, dt);
+      this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+    }
   }
 
   // ------------------------------------------------------------------ layers

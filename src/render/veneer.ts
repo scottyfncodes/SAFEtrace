@@ -21,8 +21,17 @@ const STATIC_SCALE = 6;
 export class VeneerRenderer {
   private ground: HTMLCanvasElement | null = null;
   private groundOrigin: Vec2 = { x: 0, y: 0 };
+  /** Depth order is fixed: nothing in the veneer moves. Sorted once. */
+  private sortedBuildings: Building[] = [];
+  private buildingBounds = new Map<string, Rect>();
+  private sortedProps: Prop[] = [];
 
-  constructor(private world: World) {}
+  constructor(private world: World) {
+    this.sortedBuildings = [...world.data.buildings]
+      .sort((a, b) => polyBounds(a.poly).y - polyBounds(b.poly).y);
+    for (const b of this.sortedBuildings) this.buildingBounds.set(b.id, polyBounds(b.poly));
+    this.sortedProps = [...world.data.props].sort((a, b) => a.pos.y - b.pos.y);
+  }
 
   /** Composite all static ground surfaces once. */
   prepare(): void {
@@ -132,14 +141,14 @@ export class VeneerRenderer {
   /** Shadows for every solid, drawn before any body so they never overlap wrongly. */
   drawShadows(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect, sim: Sim): void {
     ctx.fillStyle = VENEER.shadow;
-    for (const b of this.world.data.buildings) {
-      const bb = polyBounds(b.poly);
+    for (const b of this.sortedBuildings) {
+      const bb = this.buildingBounds.get(b.id)!;
       if (!rectsOverlap(bb, view)) continue;
       this.polyPath(ctx, b.poly, cam, w, h, { x: SHADOW_K.x * b.height, y: SHADOW_K.y * b.height });
       ctx.fill();
     }
     ctx.fillStyle = VENEER.shadowSoft;
-    for (const p of this.world.data.props) {
+    for (const p of this.sortedProps) {
       if (p.pos.x < view.x || p.pos.x > view.x + view.w || p.pos.y < view.y || p.pos.y > view.y + view.h) continue;
       if (p.kind === 'fenceGate') continue;
       const hgt = p.kind === 'tree' ? 6 : p.kind === 'pole' || p.kind === 'sign' ? 3.4 : 0.9;
@@ -161,11 +170,10 @@ export class VeneerRenderer {
   }
 
   drawBuildings(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect): void {
-    const list = this.world.data.buildings
-      .filter((b) => rectsOverlap(polyBounds(b.poly), view))
-      .sort((a, b) => polyBounds(a.poly).y - polyBounds(b.poly).y);
-
-    for (const b of list) this.drawBuilding(ctx, b, cam, w, h);
+    for (const b of this.sortedBuildings) {
+      if (!rectsOverlap(this.buildingBounds.get(b.id)!, view)) continue;
+      this.drawBuilding(ctx, b, cam, w, h);
+    }
   }
 
   private drawBuilding(ctx: CanvasRenderingContext2D, b: Building, cam: ViewCamera, w: number, h: number): void {
@@ -240,10 +248,13 @@ export class VeneerRenderer {
   }
 
   drawProps(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect): void {
-    const props = this.world.data.props
-      .filter((p) => p.pos.x > view.x - 8 && p.pos.x < view.x + view.w + 8 && p.pos.y > view.y - 8 && p.pos.y < view.y + view.h + 8)
-      .sort((a, b) => a.pos.y - b.pos.y);
-    for (const p of props) this.drawProp(ctx, p, cam, w, h);
+    for (const p of this.sortedProps) {
+      if (p.pos.y < view.y - 8) continue;
+      // Sorted by y, so once past the bottom of the view there is nothing left.
+      if (p.pos.y > view.y + view.h + 8) break;
+      if (p.pos.x < view.x - 8 || p.pos.x > view.x + view.w + 8) continue;
+      this.drawProp(ctx, p, cam, w, h);
+    }
   }
 
   private propRadius(p: Prop): number {

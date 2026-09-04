@@ -37,6 +37,7 @@ export class Advertisement {
     host: HTMLElement,
     private renderer: Renderer,
     private audio: Audio,
+    private touch = false,
   ) {
     this.el = document.createElement('div');
     this.el.id = 'ad';
@@ -108,7 +109,7 @@ export class Advertisement {
           <div class="tagline">Nothing should go unseen.</div>
           ${this.annotation()}
         </div>
-        <div class="skip">Esc to skip</div>`;
+        <div class="skip">${this.skipHint}</div>`;
       return;
     }
 
@@ -126,8 +127,10 @@ export class Advertisement {
         <p>${beat.sub ?? ''}</p>
         ${this.annotation()}
       </div>
-      <div class="skip">Esc to skip</div>`;
+      <div class="skip">${this.skipHint}</div>`;
   }
+
+  private get skipHint(): string { return this.touch ? 'Tap to skip' : 'Esc to skip'; }
 
   /**
    * On the reprise the words do not change. Only a line of the system's own

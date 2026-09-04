@@ -5,7 +5,11 @@
  * this file exists.
  */
 import './ui/styles.css';
-import { InputManager, emptyIntent, type Intent } from './core/input';
+// Imported after the base sheet: media queries carry no extra specificity, so
+// the mobile overrides only win if they come later in source order.
+import './ui/mobile.css';
+import { InputManager, emptyIntent, mergeIntent, type Intent } from './core/input';
+import { TouchAdapter, TouchEngine, isTouchPrimary } from './core/touch';
 import { Loop } from './core/loop';
 import { loadSettings, saveSettings, type Settings } from './core/settings';
 import { buildBellhaven } from './content/bellhaven';
@@ -17,6 +21,10 @@ import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
 import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
+import { dist } from './core/math';
+
+/** How close the player must be to reach into a node, in metres. */
+const NODE_REACH = 16;
 
 type Phase = 'prefs' | 'ad' | 'play' | 'reprise';
 
@@ -29,7 +37,10 @@ class Game {
   private ad: Advertisement;
   private story: StoryDirector;
   private input = new InputManager();
+  private touch = new TouchEngine();
+  private touchAdapter = new TouchAdapter(this.touch);
   private loop: Loop;
+  private touchPrimary = isTouchPrimary();
   private phase: Phase = 'prefs';
   private intent: Intent = emptyIntent();
   private verbKeys = new Map<string, number>();
@@ -48,8 +59,11 @@ class Game {
     this.sim = new Sim(worldData);
     this.renderer = new Renderer(canvas, this.sim, this.settings);
     this.audio = new Audio(this.settings);
-    this.hud = new Hud(uiRoot, this.sim, this.settings);
-    this.ad = new Advertisement(document.body, this.renderer, this.audio);
+    this.hud = new Hud(uiRoot, this.sim, this.settings, this.touchPrimary, (verb, nodeId) => {
+      if (this.sim.hack) this.sim.cancelHack();
+      else this.sim.startHack(verb, nodeId);
+    });
+    this.ad = new Advertisement(document.body, this.renderer, this.audio, this.touchPrimary);
     this.story = new StoryDirector({
       sim: this.sim,
       hud: this.hud,
@@ -58,14 +72,31 @@ class Game {
       playReprise: () => this.playReprise(),
     });
 
+    // Touch is another adapter, not a different game. Keyboard and mouse stay
+    // attached so a phone with a keyboard, or a desktop with a touchscreen,
+    // both simply work.
     this.input.attach(window);
     this.input.options.holdToAim = this.settings.holdToAim;
     this.input.options.holdForVision = this.settings.holdForVision;
+    this.touchAdapter.attach(window);
+    this.syncViewport();
 
     this.bindAudio();
     this.bindKeys();
 
-    window.addEventListener('resize', () => this.renderer.resize());
+    const onViewportChange = () => this.syncViewport();
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', onViewportChange);
+    // Browser chrome sliding in and out changes the usable height without a
+    // resize event on iOS, so the visual viewport is the authority.
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    window.visualViewport?.addEventListener('scroll', onViewportChange);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { this.touch.reset(); } else { this.audio.resume(); }
+    });
+    // iOS suspends the audio context aggressively, and only a real gesture may
+    // wake it. Every touch is one.
+    window.addEventListener('pointerdown', () => this.audio.resume(), { passive: true });
 
     this.loop = new Loop({
       fixed: (dt) => this.fixed(dt),
@@ -79,6 +110,28 @@ class Game {
     }
 
     this.showPrefs();
+  }
+
+  /**
+   * One place that owns the relationship between the CSS viewport, the canvas
+   * backing store, and the touch zones. Everything downstream measures in CSS
+   * pixels, so device pixel ratio never leaks into gameplay.
+   */
+  private syncViewport(): void {
+    this.renderer.resize();
+    const cs = getComputedStyle(document.documentElement);
+    const inset = (name: string) => parseFloat(cs.getPropertyValue(name)) || 0;
+    this.touch.setViewport({
+      w: this.renderer.w,
+      h: this.renderer.h,
+      safe: {
+        top: inset('--safe-top'),
+        right: inset('--safe-right'),
+        bottom: inset('--safe-bottom'),
+        left: inset('--safe-left'),
+      },
+    });
+    document.documentElement.classList.toggle('touch', this.touchPrimary);
   }
 
   // ------------------------------------------------------------------ startup
@@ -222,24 +275,58 @@ class Game {
   // --------------------------------------------------------------------- tick
 
   private fixed(dt: number): void {
-    this.intent = this.input.sample();
+    this.intent = mergeIntent(this.input.sample(), this.touch.sample());
+    const tap = this.touch.takeTap();
 
     if (this.phase === 'ad' || this.phase === 'reprise') {
-      // The world keeps running underneath the advertisement, because it is
-      // the same world.
+      // A tap anywhere skips, the same as Escape. The world keeps running
+      // underneath the advertisement, because it is the same world.
+      if (this.intent.skip) this.ad.skip();
       this.sim.step(dt, emptyIntent(), null);
       return;
     }
 
-    const pointer = this.intent.pointerActive
-      ? this.renderer.screenToWorld(this.intent.pointer)
-      : null;
-    this.sim.step(dt, this.intent, pointer);
+    if (tap) this.resolveTap(tap);
+    this.sim.step(dt, this.intent, this.aimPoint());
     this.story.update();
+  }
+
+  /**
+   * Where the player is aiming, in world space.
+   *
+   * A pointer device names a place. A drawn slingshot names a direction, so the
+   * point is projected out from the player along it — which is what the
+   * ballistic solver wants either way.
+   */
+  private aimPoint(): { x: number; y: number } | null {
+    const v = this.intent.aimVector;
+    if (v) {
+      const origin = this.renderer.cam.toScreen(this.sim.player.pos, this.renderer.w, this.renderer.h);
+      return this.renderer.screenToWorld({ x: origin.x + v.x * 320, y: origin.y + v.y * 320 });
+    }
+    return this.intent.pointerActive ? this.renderer.screenToWorld(this.intent.pointer) : null;
+  }
+
+  /**
+   * A tap in the world is a request to touch a piece of the network. The graph
+   * is a place, so reaching into it is a matter of putting a finger on it.
+   */
+  private resolveTap(screen: { x: number; y: number }): void {
+    const world = this.renderer.screenToWorld(screen);
+    const node = this.sim.network.nearest(world, 90 / Math.max(1, this.renderer.cam.zoom) + 3);
+    if (node && dist(node.pos, this.sim.player.pos) <= NODE_REACH) {
+      this.sim.selectNode(node.id);
+      this.audio.hackTick();
+    } else if (this.sim.hack) {
+      this.sim.cancelHack();
+    } else {
+      this.sim.selectNode(null);
+    }
   }
 
   private render(dt: number): void {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
+    this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
     this.renderer.render(dt);
     this.hud.update(dt);
 

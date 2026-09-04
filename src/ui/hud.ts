@@ -9,8 +9,23 @@ import type { Sim } from '../sim/sim';
 import type { Settings } from '../core/settings';
 import type { SafetraceMessage } from '../sim/events';
 import { VERBS, type HackVerb, type NetworkNode } from '../sim/surveillance/network';
+
+const KEY_PROMPTS = [
+  '<span><kbd>W</kbd>push</span>',
+  '<span><kbd>A D</kbd>carve</span>',
+  '<span><kbd>Space</kbd>ollie</span>',
+  '<span><kbd>S</kbd>slide</span>',
+  '<span><kbd>RMB</kbd>aim</span>',
+  '<span><kbd>E</kbd>inspect</span>',
+].join('');
+
+// Deliberately three lines, not six. The rest is discovered by moving.
+const TOUCH_PROMPTS = [
+  '<span>drag to carve</span>',
+  '<span>forward to push</span>',
+  '<span>flick up to ollie</span>',
+].join('');
 import { riskLabel } from '../sim/surveillance/risk';
-import { CARE } from '../content/copy';
 
 const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
 
@@ -30,7 +45,13 @@ export class Hud {
   private promptFade = 0;
   private dialogueTimer = 0;
 
-  constructor(private root: HTMLElement, private sim: Sim, private settings: Settings) {
+  constructor(
+    private root: HTMLElement,
+    private sim: Sim,
+    private settings: Settings,
+    private touch = false,
+    private onVerb: (verb: HackVerb, nodeId: string) => void = () => {},
+  ) {
     root.innerHTML = `
       <div id="phone">
         <div class="wordmark">${WORDMARK}</div>
@@ -47,20 +68,14 @@ export class Hud {
         <div id="bearings"></div>
         <div class="cap">Bearings</div>
       </div>
-      <div id="prompts">
-        <span><kbd>W</kbd>push</span>
-        <span><kbd>A D</kbd>carve</span>
-        <span><kbd>Space</kbd>ollie</span>
-        <span><kbd>S</kbd>slide</span>
-        <span><kbd>RMB</kbd>aim</span>
-        <span><kbd>E</kbd>inspect</span>
-      </div>
+      <div id="prompts"></div>
       <div id="dialogue"></div>
       <div id="debug"></div>
     `;
     this.notifications = root.querySelector('#notifications')!;
     this.inspect = root.querySelector('#inspect')!;
     this.prompts = root.querySelector('#prompts')!;
+    this.prompts.innerHTML = touch ? TOUCH_PROMPTS : KEY_PROMPTS;
     this.bearings = root.querySelector('#bearings')!;
     this.dialogue = root.querySelector('#dialogue')!;
     this.debug = root.querySelector('#debug')!;
@@ -72,6 +87,19 @@ export class Hud {
       const el = document.createElement('i');
       this.bearings.appendChild(el);
     }
+
+    // Verb chips are the one place the HUD accepts input. Delegated, so the
+    // panel can re-render freely underneath.
+    this.inspect.addEventListener('pointerup', (e) => {
+      const target = (e.target as HTMLElement).closest('.verb') as HTMLElement | null;
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const verb = target.dataset.verb as HackVerb | undefined;
+      const nodeId = this.inspect.dataset.node;
+      if (verb && nodeId) this.onVerb(verb, nodeId);
+    });
+    this.inspect.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     sim.bus.on('safetrace:message', (m) => this.queue.push(m));
     document.documentElement.style.setProperty('--text-scale', String(settings.textScale));
@@ -152,7 +180,6 @@ export class Hud {
       rows.push(['ANOMALY', `${Math.round(t.predictionError * 100)}%`]);
     }
     if (flags.length) rows.push(['FLAGS', flags.join(', ')]);
-    if (risk < 12 && flags.length === 0 && !this.sim.visionUnlocked) rows.push(['', CARE.weather]);
 
     this.phoneRows.innerHTML = rows
       .map(([k, v]) => `<div class="phone-row"><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`)
@@ -182,9 +209,14 @@ export class Hud {
         verbs.map((v, i) => {
           const busy = hack?.verb === v;
           const pct = busy ? ` ${Math.round(progress * 100)}%` : '';
-          return `<span class="verb${busy ? ' busy' : ''}">${i + 1} ${v}${pct}</span>`;
+          const label = this.touch ? `${v}${pct}` : `${i + 1} ${v}${pct}`;
+          return `<button class="verb${busy ? ' busy' : ''}" data-verb="${v}">${label}</button>`;
         }).join('')
       }</div>`;
+
+    // Rebinding every frame would fight the touch layer, so the panel owns one
+    // delegated handler for the life of the HUD.
+    this.inspect.dataset.node = node.id;
   }
 
   private updateBearings(): void {

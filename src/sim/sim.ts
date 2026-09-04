@@ -34,6 +34,9 @@ import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track }
 import { levelFor } from './surveillance/types';
 import { SYSTEM, CARE } from '../content/copy';
 
+/** How far the player can reach into the network without walking to it. */
+export const SELECT_RANGE = 16;
+
 export interface HackAction {
   verb: HackVerb;
   nodeId: string;
@@ -82,6 +85,11 @@ export class Sim {
 
   hack: HackAction | null = null;
   focusNode: NetworkNode | null = null;
+  /**
+   * A node the player has deliberately reached for, which outranks whatever
+   * happens to be nearest. Touch selects; a keyboard simply walks up to things.
+   */
+  selectedNodeId: string | null = null;
   discoveredNodes = new Set<string>();
 
   escalation: EscalationLevel = 'PASSIVE';
@@ -169,6 +177,9 @@ export class Sim {
       this.npcTracks.push(makeTrack(s));
     }
 
+    this._allSubjects.push(this.playerSubject, this.devon, ...this.npcSubjects);
+    this._allTracks.push(this.playerTrack, this.devonTrack, ...this.npcTracks);
+
     worldData.droneRoutes.forEach((route, i) => {
       const pad = worldData.spawns.dronePads[i] ?? route[0];
       const d = makeDrone(`UAV-${(i + 1).toString().padStart(2, '0')}`, route, pad);
@@ -184,8 +195,16 @@ export class Sim {
     });
   }
 
-  get allTracks(): Track[] { return [this.playerTrack, this.devonTrack, ...this.npcTracks]; }
-  get allSubjects(): Subject[] { return [this.playerSubject, this.devon, ...this.npcSubjects]; }
+  /**
+   * Membership never changes after construction, so these are built once. They
+   * are read several times per tick and again per frame; rebuilding them was
+   * the largest single source of garbage in the hot path.
+   */
+  private readonly _allTracks: Track[] = [];
+  private readonly _allSubjects: Subject[] = [];
+
+  get allTracks(): Track[] { return this._allTracks; }
+  get allSubjects(): Subject[] { return this._allSubjects; }
 
   message(register: 'SYSTEM' | 'CARE', lines: string[], duration = 4.2, emphasis: 'normal' | 'strong' = 'normal'): void {
     this.bus.emit('safetrace:message', { id: `MSG-${++msgId}`, register, lines, duration, emphasis });
@@ -754,8 +773,29 @@ export class Sim {
 
   /** The node the player could act on right now. */
   updateFocus(): void {
-    const near = this.network.nearest(this.player.pos, 14);
-    this.focusNode = near ?? null;
+    if (this.selectedNodeId) {
+      const chosen = this.network.get(this.selectedNodeId);
+      if (chosen && dist(chosen.pos, this.player.pos) <= SELECT_RANGE) {
+        this.focusNode = chosen;
+        return;
+      }
+      // Skating away from a node lets it go, without a menu to dismiss.
+      this.selectedNodeId = null;
+      if (this.hack) this.cancelHack();
+    }
+    this.focusNode = this.network.nearest(this.player.pos, 14) ?? null;
+  }
+
+  /** Reach for a specific node, or let go of the one being held. */
+  selectNode(id: string | null): void {
+    if (id === null) {
+      this.selectedNodeId = null;
+      return;
+    }
+    const node = this.network.get(id);
+    if (!node || dist(node.pos, this.player.pos) > SELECT_RANGE) return;
+    this.selectedNodeId = id;
+    this.focusNode = node;
   }
 
   canHack(verb: HackVerb): boolean {

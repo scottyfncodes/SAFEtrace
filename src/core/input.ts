@@ -23,6 +23,17 @@ export interface Intent {
   /** Aim target in screen pixels; the renderer converts to world space. */
   pointer: { x: number; y: number };
   pointerActive: boolean;
+  /**
+   * Screen-space unit direction to aim along, from the player. Touch supplies
+   * this because a drawn slingshot has a direction rather than a cursor;
+   * pointer devices leave it null and supply `pointer` instead.
+   */
+  aimVector: { x: number; y: number } | null;
+  /**
+   * How far the slingshot is drawn, 0..1. `null` means the device has no
+   * continuous draw axis, so the character loads it at their own rate.
+   */
+  drawAmount: number | null;
   skip: boolean;
 }
 
@@ -31,8 +42,35 @@ export const emptyIntent = (): Intent => ({
   ollieHeld: false, olliePressed: false, ollieReleased: false,
   toggleStance: false, aim: false, fire: false, firePressed: false,
   vision: false, interact: false, interactPressed: false,
-  pointer: { x: 0, y: 0 }, pointerActive: false, skip: false,
+  pointer: { x: 0, y: 0 }, pointerActive: false,
+  aimVector: null, drawAmount: null, skip: false,
 });
+
+/**
+ * Fold one intent into another. Adapters are additive: a player may hold a key
+ * while touching the screen, and neither should cancel the other.
+ */
+export function mergeIntent(base: Intent, add: Intent): Intent {
+  base.steer = Math.abs(add.steer) > Math.abs(base.steer) ? add.steer : base.steer;
+  base.push ||= add.push;
+  base.pushPressed ||= add.pushPressed;
+  base.brake ||= add.brake;
+  base.ollieHeld ||= add.ollieHeld;
+  base.olliePressed ||= add.olliePressed;
+  base.ollieReleased ||= add.ollieReleased;
+  base.toggleStance ||= add.toggleStance;
+  base.aim ||= add.aim;
+  base.fire ||= add.fire;
+  base.firePressed ||= add.firePressed;
+  base.vision ||= add.vision;
+  base.interact ||= add.interact;
+  base.interactPressed ||= add.interactPressed;
+  base.skip ||= add.skip;
+  if (add.pointerActive) { base.pointer = add.pointer; base.pointerActive = true; }
+  if (add.aimVector) base.aimVector = add.aimVector;
+  if (add.drawAmount !== null) base.drawAmount = add.drawAmount;
+  return base;
+}
 
 export interface InputOptions {
   holdToAim: boolean;

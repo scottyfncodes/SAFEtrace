@@ -4,16 +4,26 @@ import { type Vec2, clamp, damp, lerp } from '../core/math';
 export class ViewCamera {
   pos: Vec2 = { x: 0, y: 0 };
   zoom = 13.0;
+  /**
+   * Pixels-per-metre scales with the screen, so a phone shows a comparable
+   * slice of Bellhaven to a desktop instead of a keyhole. Clamped at the bottom
+   * so the player never becomes too small to read.
+   */
+  private uiScale = 1;
   private shake = 0;
   private shakeSeed = 0;
   offset: Vec2 = { x: 0, y: 0 };
   /** Set by cinematics to take manual control. */
   scripted: { pos: Vec2; zoom: number } | null = null;
 
+  setViewport(w: number, h: number): void {
+    this.uiScale = clamp(Math.min(w, h) / 810, 0.7, 1.15);
+  }
+
   follow(target: Vec2, vel: Vec2, speed: number, maxSpeed: number, dt: number, shakeScale: number): void {
     if (this.scripted) {
       this.pos = { x: damp(this.pos.x, this.scripted.pos.x, 0.28, dt), y: damp(this.pos.y, this.scripted.pos.y, 0.28, dt) };
-      this.zoom = damp(this.zoom, this.scripted.zoom, 0.32, dt);
+      this.zoom = damp(this.zoom, this.scripted.zoom * this.uiScale, 0.32, dt);
       return;
     }
     // Look ahead along travel: speed reads as speed.
@@ -25,7 +35,7 @@ export class ViewCamera {
     this.pos = { x: damp(this.pos.x, want.x, 0.16, dt), y: damp(this.pos.y, want.y, 0.16, dt) };
 
     const t = clamp(speed / Math.max(maxSpeed, 0.001), 0, 1);
-    const wantZoom = lerp(13.4, 9.6, t);
+    const wantZoom = lerp(13.4, 9.6, t) * this.uiScale;
     this.zoom = damp(this.zoom, wantZoom, 0.4, dt);
 
     if (this.shake > 0) {
