@@ -86,6 +86,11 @@ export class World {
 
   surfaceProps(p: Vec2): SurfaceProps { return SURFACE[this.surfaceAt(p)]; }
 
+  /** Surfaces overlapping a view rectangle, for per-frame linework. */
+  surfacesIn(r: Rect): SurfacePatch[] {
+    return unique(this.surfaceHash.queryRect(r, this.scratch as SurfacePatch[]));
+  }
+
   // --- occlusion ---------------------------------------------------------
 
   /** Does anything block sight from a to b? `viewerHeight` lets tall cameras see over low walls. */
@@ -113,9 +118,14 @@ export class World {
     return null;
   }
 
-  /** Solid collision resolution against building footprints. Returns a corrected position. */
-  resolveCollision(from: Vec2, to: Vec2, radius = 0.45): Vec2 {
-    const cands = unique(this.buildingHash.queryRadius(to, radius + 2, this.scratch as Building[]));
+  /**
+   * Solid collision against building footprints, ignoring anything shorter than
+   * `clearHeight`. That is what makes an ollie mean something: a ledge, a curb
+   * and a low wall are obstacles on the ground and gaps in the air.
+   */
+  resolveCollision(from: Vec2, to: Vec2, radius = 0.45, clearHeight = 0): Vec2 {
+    const cands = unique(this.buildingHash.queryRadius(to, radius + 2, this.scratch as Building[]))
+      .filter((b) => b.height > clearHeight);
     let p = { x: to.x, y: to.y };
     for (let iter = 0; iter < 3; iter++) {
       let moved = false;

@@ -333,6 +333,36 @@ export class TownBuilder {
     return this.feature('kicker', poly, facing, 1.2, boost);
   }
 
+  /**
+   * A ledge: knee-high, solid on the ground, and clear in the air. The single
+   * most useful piece of geometry in a plaza, for skating and for cover alike.
+   */
+  ledge(a: Vec2, b: Vec2, thickness = 0.8, height = 0.45): Building {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l * (thickness / 2), ny = dx / l * (thickness / 2);
+    const poly = [
+      P(a.x + nx, a.y + ny), P(b.x + nx, b.y + ny),
+      P(b.x - nx, b.y - ny), P(a.x - nx, a.y - ny),
+    ];
+    const built = this.building('structure', poly, {
+      height, wall: '#CFC8B8', roof: '#DDD6C6', label: 'LEDGE',
+    });
+    this.features.push({
+      id: this.id('FT'), kind: 'curb', poly, facing: Math.atan2(dy, dx),
+      rise: height, boost: 0, district: this.currentDistrict,
+    });
+    return built;
+  }
+
+  /** A stair set with a run-out, plus the kicker beside it for the gap. */
+  stairs(centre: Vec2, w: number, d: number, facing: number, drop: number): this {
+    const poly = rectPoly(centre, w, d, facing * DEG);
+    this.surface(poly, 'roughConcrete', 5);
+    this.feature('drop', poly, facing, drop, 0);
+    return this;
+  }
+
   ammoCache(pos: Vec2, label: string): this {
     this.prop('ammoCache', pos, 0, { tint: label });
     return this;

@@ -55,6 +55,8 @@ export const SYSTEM = {
   matchSubject: (name: string) => `SUBJECT: ${name}`,
   incidentReported: (kind: string, where: string) => `${kind} REPORTED — ${where}`,
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
+  identityUnresolved: 'IDENTITY UNRESOLVED',
+  interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
 };
 

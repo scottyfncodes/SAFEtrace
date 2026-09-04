@@ -8,6 +8,7 @@
 import { type Vec2, dist } from '../../core/math';
 import { forecastPoint } from './prediction';
 import { levelFor, type EscalationLevel, type Task, type Track } from './types';
+import { SYSTEM } from '../../content/copy';
 
 export interface Asset {
   id: string;
@@ -75,6 +76,9 @@ export class Dispatcher {
       if (lvl === 'PASSIVE' || lvl === 'MONITORING') continue;
       const last = this.lastTaskTick.get(t.id) ?? -9999;
       if (tick - last < RETASK_COOLDOWN) continue;
+      // One asset per track. Attention is finite, and committing the whole
+      // pool to a single subject is what a decoy is supposed to achieve.
+      if (assets.some((a) => a.task?.trackId === t.id)) continue;
 
       // Aim at the forecast, not the truth. This is the whole game.
       const lead = lvl === 'INTERVENTION' ? 2.5 : 5.0;
@@ -94,7 +98,7 @@ export class Dispatcher {
         target,
         trackId: t.id,
         reason: lvl === 'INTERVENTION'
-          ? 'INTERVENTION AUTHORIZED'
+          ? SYSTEM.interventionAuthorized
           : `SUBJECT MONITORING — PREDICTIVE RISK ${Math.round(t.risk.total)}%`,
         issuedTick: tick,
         expiresTick: tick + (lvl === 'INTERVENTION' ? 60 * 40 : 60 * 22),

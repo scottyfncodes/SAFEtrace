@@ -117,8 +117,11 @@ export interface Evidence {
   kind: EvidenceKind;
   pos: Vec2;
   tick: number;
-  /** Velocity of the projectile at impact, for back-projection. */
+  /** Horizontal velocity of the projectile at impact, for back-projection. */
   impactVel?: Vec2;
+  /** Vertical velocity and height at impact; together these solve for range. */
+  impactVz?: number;
+  impactZ?: number;
   observedBy: string[];
   stage: EvidenceStage;
   analysisCompleteTick: number;

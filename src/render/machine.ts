@@ -15,6 +15,7 @@ import { coneRadius } from '../sim/drone';
 import type { ViewCamera } from './camera';
 import { MACHINE, MACHINE_SAFE, alpha, riskColour } from './palette';
 import { ROOF_K } from './veneer';
+import { SYSTEM } from '../content/copy';
 
 export interface MachineOptions { colourSafe: boolean; }
 
@@ -299,7 +300,7 @@ export class MachineRenderer {
       }
 
       const lines = [
-        t.attributedIdentity === 'UNKNOWN' ? 'IDENTITY UNRESOLVED' : t.attributedIdentity,
+        t.attributedIdentity === 'UNKNOWN' ? SYSTEM.identityUnresolved : t.attributedIdentity,
         `${[...t.flags].join(' / ')}`,
       ];
       if (held) lines.push(`PREDICTIVE RISK ${Math.round(t.risk.total)}%`);

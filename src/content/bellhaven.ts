@@ -174,24 +174,53 @@ export function buildBellhaven(): WorldData {
   });
   b.cover([pt(268, 48), pt(500, 48), pt(500, 53), pt(268, 53)], 'awning', 3.6);
 
-  // The plaza: ledges, planters, smooth ground. The best flat ground in town.
-  b.rectSurface(280, 72, 170, 46, 'smoothConcrete', 3);
-  for (const x of [296, 330, 364, 398, 432]) {
-    b.prop('planter', pt(x, 78), 0, { scale: 1.1 });
-    b.prop('planter', pt(x, 112), 0, { scale: 1.1 });
+  /*
+   * The plaza. Ledges, planters, a stair set and smooth ground: the best flat
+   * in Bellhaven, and the most heavily covered ground in the district. Being
+   * here is fine, because everyone is here. The cost is that your behaviour is
+   * scored precisely.
+   */
+  b.rectSurface(300, 66, 112, 50, 'smoothConcrete', 3);
+  // Flanking blocks, so the plaza is a room rather than a field.
+  b.building('civic', [pt(262, 64), pt(296, 64), pt(296, 116), pt(262, 116)], {
+    height: 8, wall: WALL_CREAM, roof: ROOF_SAND, label: 'BELLHAVEN LIBRARY',
+  });
+  b.building('shop', [pt(416, 64), pt(468, 64), pt(468, 116), pt(416, 116)], {
+    height: 8.5, wall: WALL_COOL, roof: ROOF_SLATE, label: 'BELLHAVEN CINEMA',
+  });
+  b.camera({ pos: pt(296, 90), facing: 0, kind: 'plaza', fov: 76, range: 30, sweep: 20, sweepPeriod: 10, height: 5.0, bias: 0.95, label: 'LIBRARY FORECOURT' });
+  b.camera({ pos: pt(416, 90), facing: 180, kind: 'plaza', fov: 76, range: 30, sweep: 20, sweepPeriod: 10, sweepPhase: 0.5, height: 5.0, bias: 0.95, label: 'CINEMA FORECOURT' });
+
+  // Ledges, a fountain, a stair set, and a bank against the library wall: the
+  // best flat in Bellhaven, and its most heavily covered ground.
+  b.ledge(pt(306, 76), pt(340, 76));
+  b.ledge(pt(352, 76), pt(386, 76));
+  b.ledge(pt(306, 106), pt(340, 106));
+  b.ledge(pt(352, 106), pt(386, 106));
+  b.ledge(pt(398, 78), pt(398, 104));
+  b.stairs(pt(356, 120), 24, 9, 90, 1.1);
+  b.kicker(pt(356, 131), 14, 6, 90, 4.0);
+  b.bank(pt(300, 91), 9, 22, 0, 2.0, 3.2);
+  b.prop('planter', pt(356, 91), 0, { scale: 2.0, tint: '#7FB2C4' });
+  for (const [x, y] of [[314, 91], [330, 91], [382, 91], [398, 91]] as Array<[number, number]>) {
+    b.prop('planter', pt(x, y), 0, { scale: 0.9 });
   }
-  b.prop('bench', pt(313, 95), 0);
-  b.prop('bench', pt(415, 95), 0);
-  b.speaker(pt(365, 70), 'COMMONS PLAZA — PUBLIC ADDRESS');
+  b.prop('bench', pt(322, 84), 0);
+  b.prop('bench', pt(390, 84), 0);
+  b.prop('bench', pt(322, 99), 0);
+  b.prop('bench', pt(390, 99), 0);
+  for (const x of [304, 309, 314, 319]) b.prop('mailbox', pt(x, 68), Math.PI / 2);
+  b.trees([pt(346, 68), pt(370, 68), pt(346, 114), pt(370, 114)], 0.8);
+  b.speaker(pt(356, 70), 'COMMONS PLAZA — PUBLIC ADDRESS');
   b.ammoCache(pt(400, 55), 'OKONJO CYCLE & BOARD');
 
-  b.camera({ pos: pt(300, 70), facing: 55, kind: 'plaza', fov: 78, range: 40, sweep: 34, sweepPeriod: 12, height: 5.4, bias: 0.96, label: 'PLAZA WEST' });
-  b.camera({ pos: pt(438, 70), facing: 125, kind: 'plaza', fov: 78, range: 40, sweep: 34, sweepPeriod: 12, sweepPhase: 0.5, height: 5.4, bias: 0.96, label: 'PLAZA EAST' });
-  b.camera({ pos: pt(365, 120), facing: 270, kind: 'plaza', fov: 90, range: 34, sweep: 0, height: 5.0, bias: 0.94, label: 'PLAZA SOUTH' });
+  b.camera({ pos: pt(306, 68), facing: 55, kind: 'plaza', fov: 78, range: 38, sweep: 34, sweepPeriod: 12, height: 5.4, bias: 0.96, label: 'PLAZA WEST' });
+  b.camera({ pos: pt(406, 68), facing: 125, kind: 'plaza', fov: 78, range: 38, sweep: 34, sweepPeriod: 12, sweepPhase: 0.5, height: 5.4, bias: 0.96, label: 'PLAZA EAST' });
+  b.camera({ pos: pt(356, 114), facing: 270, kind: 'plaza', fov: 90, range: 32, sweep: 0, height: 5.0, bias: 0.94, label: 'PLAZA SOUTH' });
   b.camera({ pos: pt(272, 50), facing: 20, kind: 'street', fov: 66, range: 30, sweep: 18, sweepPeriod: 9, height: 4.4, label: 'MARKET ST WEST' });
   b.camera({ pos: pt(498, 50), facing: 160, kind: 'street', fov: 66, range: 30, sweep: 18, sweepPeriod: 9, sweepPhase: 0.33, height: 4.4, label: 'MARKET ST EAST' });
   b.plateReader(pt(302, 140), 'COMMONS WAY — PLATE READER');
-  b.junction(pt(392, 96), 'COMMONS JUNCTION', 'JX-C1');
+  b.junction(pt(392, 122), 'COMMONS JUNCTION', 'JX-C1');
   b.link('JX-C1', 'TX-1');
 
   /**
@@ -207,9 +236,12 @@ export function buildBellhaven(): WorldData {
   b.prop('car', pt(486, 108), 0, { tint: '#8C6BB1' });
   b.prop('car', pt(518, 88), Math.PI, { tint: '#E0A83D' });
   b.camera({ pos: pt(472, 128), facing: 20, kind: 'facility', fov: 60, range: 22, height: 3.2, bias: 0.7, label: 'PARKING — DECK 2 SW' });
-  b.trees([pt(262, 100), pt(262, 62), pt(456, 108)]);
+  b.trees([pt(252, 100), pt(252, 62), pt(478, 100), pt(478, 62)]);
   b.prop('bin', pt(345, 55), 0);
   b.prop('bin', pt(462, 55), 0);
+  b.prop('bin', pt(300, 124), 0);
+  b.prop('hydrant', pt(268, 118));
+  b.prop('hydrant', pt(452, 62));
   b.prop('sign', pt(330, 132), 0, { tint: 'SAFEtrace CITY' });
   b.prop('car', pt(285, 132), 0, { tint: '#4FA39B' });
   b.prop('car', pt(420, 132), Math.PI, { tint: '#C9576F' });
@@ -262,6 +294,8 @@ export function buildBellhaven(): WorldData {
   b.prop('car', pt(176, 262), Math.PI / 2, { tint: '#E0A83D' });
   b.prop('hoop', pt(196, 300), 0);
   b.kicker(pt(126, 252), 7, 5, 90, 3.6);
+  b.ledge(pt(140, 200), pt(140, 226));
+  b.ledge(pt(170, 274), pt(170, 298));
 
   // ---------------------------------------------------------------- ridgeline
   b.in('ridgeline').useSegment('S-R1');
@@ -297,40 +331,75 @@ export function buildBellhaven(): WorldData {
   b.junction(pt(452, 320), 'RIDGELINE JUNCTION', 'JX-R1');
   b.link('JX-R1', 'TX-1');
   b.prop('sign', pt(349, 288), 0, { tint: 'SAFEtrace SCHOOL' });
+  b.ledge(pt(280, 344), pt(324, 344));
+  b.ledge(pt(376, 344), pt(420, 344));
+  b.stairs(pt(349, 342), 22, 7, 90, 0.9);
+  for (const x of [292, 298, 304, 310]) b.prop('mailbox', pt(x, 296), Math.PI / 2);
   b.trees([pt(262, 350), pt(262, 386), pt(470, 350), pt(470, 386), pt(440, 296)]);
   b.cover([pt(268, 336), pt(430, 336), pt(430, 344), pt(268, 344)], 'awning', 4);
 
   // ---------------------------------------------------------------- the channel
+  /*
+   * The Channel is the fastest route in Bellhaven and almost uncovered — not
+   * because it is hidden, but because it is not a place anyone is supposed to
+   * be, so nobody specified cameras for it. Its walls are 2.4 m of concrete:
+   * they defeat a street camera's line of sight completely, and they mean the
+   * only ways in or out are the four aprons.
+   */
   b.in('channel').useSegment('S-CH');
   const chanPts: Array<[number, number]> = [[20, 400], [150, 420], [280, 440], [400, 450], [545, 456]];
+  const aprons: Array<[number, number, number]> = [[62, 406, 90], [196, 428, 90], [330, 444, 270], [470, 452, 270]];
+  const HALF = 9;
+
   for (let i = 1; i < chanPts.length; i++) {
     const [x0, y0] = chanPts[i - 1];
     const [x1, y1] = chanPts[i];
-    b.surface([pt(x0, y0 - 9), pt(x1, y1 - 9), pt(x1, y1 + 9), pt(x0, y0 + 9)], 'smoothConcrete', 6);
-    // Channel walls. 2.4 m: they block a street camera's line of sight entirely.
-    b.fence(pt(x0, y0 - 9), pt(x1, y1 - 9), 2.4);
-    b.fence(pt(x0, y0 + 9), pt(x1, y1 + 9), 2.4);
+    b.surface([pt(x0, y0 - HALF), pt(x1, y1 - HALF), pt(x1, y1 + HALF), pt(x0, y0 + HALF)], 'smoothConcrete', 6);
+    // The low-flow trickle down the invert, and the expansion joints across it.
+    b.surface([pt(x0, y0 - 1.1), pt(x1, y1 - 1.1), pt(x1, y1 + 1.1), pt(x0, y0 + 1.1)], 'roughConcrete', 7);
+
+    // Walls, in segments, with gaps at the aprons.
+    const span = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.round(span / 16));
+    for (let k = 0; k < steps; k++) {
+      const t0 = k / steps, t1 = (k + 1) / steps;
+      const ax = x0 + (x1 - x0) * t0, ay = y0 + (y1 - y0) * t0;
+      const bx = x0 + (x1 - x0) * t1, by = y0 + (y1 - y0) * t1;
+      const mx = (ax + bx) / 2;
+      const atApron = aprons.some(([px]) => Math.abs(mx - px) < 12);
+      if (atApron) continue;
+      for (const side of [-1, 1]) {
+        b.building('structure', [
+          pt(ax, ay + side * HALF), pt(bx, by + side * HALF),
+          pt(bx, by + side * (HALF + 1.6)), pt(ax, ay + side * (HALF + 1.6)),
+        ], { height: 2.4, wall: '#BDB9AC', roof: '#A9A497', label: 'CHANNEL WALL' });
+      }
+    }
   }
+
   // Four access aprons. Committing to the Channel is a real decision because
   // you can only leave it in four places.
-  const aprons: Array<[number, number, number]> = [[62, 406, 90], [196, 428, 90], [330, 444, 270], [470, 452, 270]];
   for (const [x, y, facing] of aprons) {
-    b.surface([pt(x - 9, y - 16), pt(x + 9, y - 16), pt(x + 9, y + 16), pt(x - 9, y + 16)], 'smoothConcrete', 7);
-    b.feature('bank', [pt(x - 9, y - 16), pt(x + 9, y - 16), pt(x + 9, y + 16), pt(x - 9, y + 16)], facing, 2.6, 3.2);
+    b.surface([pt(x - 11, y - 18), pt(x + 11, y - 18), pt(x + 11, y + 18), pt(x - 11, y + 18)], 'smoothConcrete', 7);
+    b.feature('bank', [pt(x - 11, y - 18), pt(x + 11, y - 18), pt(x + 11, y + 18), pt(x - 11, y + 18)], facing, 2.6, 3.2);
   }
+
   // Footbridges: the covered sections. The culvert defeats drones outright.
   for (const [x, y] of [[150, 420], [400, 450]] as Array<[number, number]>) {
     b.building('structure', [pt(x - 5, y - 13), pt(x + 5, y - 13), pt(x + 5, y + 13), pt(x - 5, y + 13)], {
       height: 4.2, wall: '#C6C0B2', roof: '#9E9788', label: 'FOOTBRIDGE',
     });
-    b.cover([pt(x - 14, y - 11), pt(x + 14, y - 11), pt(x + 14, y + 11), pt(x - 14, y + 11)], 'tunnel', 4.2);
+    b.cover([pt(x - 15, y - 11), pt(x + 15, y - 11), pt(x + 15, y + 11), pt(x - 15, y + 11)], 'tunnel', 4.2);
   }
+
   // One camera. It watches the apron, because that is where a planner assumed
   // people would enter. Nobody specified the Channel itself.
-  b.camera({ pos: pt(196, 410), facing: 90, kind: 'facility', fov: 58, range: 26, height: 4.0, bias: 0.72, label: 'DRAINAGE ACCESS — SOUTH MAPLE' });
-  b.junction(pt(330, 428), 'DRAINAGE JUNCTION', 'JX-CH');
+  b.camera({ pos: pt(196, 406), facing: 90, kind: 'facility', fov: 58, range: 26, height: 4.0, bias: 0.72, label: 'DRAINAGE ACCESS — SOUTH MAPLE' });
+  b.junction(pt(330, 426), 'DRAINAGE JUNCTION', 'JX-CH');
   b.link('JX-CH', 'TX-2');
-  b.prop('cone', pt(210, 424)); b.prop('cone', pt(184, 424));
+  b.prop('cone', pt(212, 424)); b.prop('cone', pt(182, 424));
+  b.prop('bin', pt(268, 434));
+  b.trees([pt(90, 384), pt(240, 412), pt(360, 428), pt(500, 438), pt(140, 462), pt(300, 470)]);
 
   // ---------------------------------------------------------------- relay 12
   b.in('relay').useSegment('S-X1');

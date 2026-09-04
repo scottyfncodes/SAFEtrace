@@ -17,7 +17,7 @@ import type { SimEvents } from './events';
 import { makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
-  collectBearings, type DroppedBearing,
+  collectBearings, type DroppedBearing, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
@@ -290,24 +290,35 @@ export class Sim {
     } else if (this.player.speed > 0.5) {
       this.aimAngle = angleOf(this.player.vel);
     }
-    // Elevation is implicit: aim high enough to reach a pole-mounted camera.
-    const targets = this.ballisticTargets();
-    let bestPitch = 0.14;
-    let bestD = Infinity;
+
+    // Elevation is implicit. The player points at a thing; the character works
+    // out the arc, the way someone who has done this a thousand times would.
+    const muzzle = MUZZLE_MIN + clamp01(this.player.draw) * (MUZZLE_MAX - MUZZLE_MIN);
     const dir = fromAngle(this.aimAngle);
-    for (const t of targets) {
+    let best: BallisticTarget | null = null;
+    let bestAlong = Infinity;
+
+    for (const t of this.ballisticTargets()) {
       const rel = { x: t.pos.x - this.player.pos.x, y: t.pos.y - this.player.pos.y };
       const along = rel.x * dir.x + rel.y * dir.y;
-      if (along < 2) continue;
+      if (along < 2 || along > 70) continue;
+      // Lateral tolerance widens with distance, so distant targets stay pickable.
       const lateral = Math.abs(rel.x * -dir.y + rel.y * dir.x);
-      if (lateral > 3.5) continue;
-      if (along < bestD) {
-        bestD = along;
-        // Aim the flat arc that reaches this target's height.
-        bestPitch = Math.atan2(t.z - 1.45 + 0.045 * along * along / 6, along);
-      }
+      if (lateral > Math.max(2.2, along * 0.11) + t.radius) continue;
+      if (along < bestAlong) { bestAlong = along; best = t; }
     }
-    this.aimPitch = bestPitch;
+
+    if (best) {
+      const solved = solvePitch(bestAlong, best.z - LAUNCH_Z, muzzle);
+      this.aimPitch = solved ?? Math.atan2(best.z - LAUNCH_Z, bestAlong);
+    } else if (pointerWorld) {
+      // No target on the line: put the bearing on the ground where they pointed.
+      const d = dist(this.player.pos, pointerWorld);
+      const solved = d > 2 ? solvePitch(d, -LAUNCH_Z, muzzle) : null;
+      this.aimPitch = solved ?? 0.1;
+    } else {
+      this.aimPitch = 0.14;
+    }
     void intent;
   }
 
@@ -341,9 +352,7 @@ export class Sim {
   private updateProjectiles(dt: number, intent: Intent): void {
     if (intent.firePressed && this.player.aiming && this.player.bearings > 0 && this.player.draw > 0.12) {
       this.player.bearings--;
-      const speed = 18 + this.player.draw * 16;
       const proj = fire(this.player.pos, this.aimAngle, this.player.draw, this.aimPitch, this.rng);
-      void speed;
       this.projectiles.push(proj);
       this.player.draw = 0;
       this.bus.emit('player:fire', { pos: this.player.pos, draw: this.player.draw });
@@ -360,7 +369,10 @@ export class Sim {
     const keep: Projectile[] = [];
     for (const proj of this.projectiles) {
       const impact = stepProjectile(proj, ctx, dt);
-      if (impact) { this.resolveImpact(impact.kind, impact.pos, impact.vel, impact.targetId); continue; }
+      if (impact) {
+        this.resolveImpact(impact.kind, impact.pos, impact.vel, impact.vz, impact.z, impact.targetId);
+        continue;
+      }
       if (proj.life > 0) keep.push(proj);
     }
     this.projectiles = keep;
@@ -383,7 +395,9 @@ export class Sim {
     }
   }
 
-  private resolveImpact(kind: string, pos: Vec2, vel: Vec2, targetId?: string): void {
+  private resolveImpact(
+    kind: string, pos: Vec2, vel: Vec2, vz: number, z: number, targetId?: string,
+  ): void {
     this.bus.emit('projectile:impact', { kind: kind as never, pos, targetId });
     this.droppedBearings.push({ pos: { ...pos }, tick: this.tick });
     if (this.droppedBearings.length > 40) this.droppedBearings.shift();
@@ -399,20 +413,20 @@ export class Sim {
         s.stateUntil = this.tick + 60 * 360;
         this.bus.emit('sensor:offline', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraOffline(s.data.id)], 3.4);
-        this.addEvidence('NODE_OFFLINE', pos, `NODE ${s.data.id} OFFLINE`, vel, observedBy);
+        this.addEvidence('NODE_OFFLINE', pos, `NODE ${s.data.id} OFFLINE`, { vel, vz, z }, observedBy);
       } else if (result === 'cameraMotor') {
         s.state = 'FROZEN';
         s.stateUntil = this.tick + 60 * 90;
         this.bus.emit('sensor:misaligned', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraFault(s.data.id)], 3.0);
-        this.addEvidence('PROJECTILE_IMPACT', pos, `PTZ FAULT — ${s.data.id}`, vel, observedBy);
+        this.addEvidence('PROJECTILE_IMPACT', pos, `PTZ FAULT — ${s.data.id}`, { vel, vz, z }, observedBy);
       } else {
         s.state = 'MISALIGNED';
         s.knockOffset = this.rng.sign() * (0.7 + this.rng.next() * 1.2);
         s.stateUntil = this.tick + 60 * 75;
         this.bus.emit('sensor:misaligned', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraFault(s.data.id)], 3.0);
-        this.addEvidence('PROJECTILE_IMPACT', pos, `ALIGNMENT FAULT — ${s.data.id}`, vel, observedBy);
+        this.addEvidence('PROJECTILE_IMPACT', pos, `ALIGNMENT FAULT — ${s.data.id}`, { vel, vz, z }, observedBy);
       }
       return;
     }
@@ -424,7 +438,7 @@ export class Sim {
       this.releaseAsset(d.id);
       this.bus.emit('drone:destabilised', { droneId: d.id });
       this.message('SYSTEM', [SYSTEM.droneFault], 3.4);
-      this.addEvidence('DRONE_INTERFERENCE', pos, `UNIT ${d.id} FAULT`, vel, observedBy);
+      this.addEvidence('DRONE_INTERFERENCE', pos, `UNIT ${d.id} FAULT`, { vel, vz, z }, observedBy);
       return;
     }
 
@@ -441,7 +455,7 @@ export class Sim {
         }
       }
       this.message('SYSTEM', [SYSTEM.segmentDegraded(n.segmentId)], 3.6);
-      this.addEvidence('NODE_TAMPER', pos, `JUNCTION ${n.id} FAULT`, vel, observedBy);
+      this.addEvidence('NODE_TAMPER', pos, `JUNCTION ${n.id} FAULT`, { vel, vz, z }, observedBy);
       return;
     }
 
@@ -455,7 +469,7 @@ export class Sim {
       // The most powerful use of the slingshot: making a sound somewhere you are not.
       this.bus.emit('noise:event', { pos, label });
       this.dispatcher.flagAnomaly(pos, this.tick, label, isCar ? 60 * 20 : 60 * 12);
-      this.addEvidence('NOISE', pos, label, undefined, observedBy);
+      this.addEvidence('NOISE', pos, label, null, observedBy);
       return;
     }
   }
@@ -472,9 +486,16 @@ export class Sim {
   }
 
   private addEvidence(
-    kind: Evidence['kind'], pos: Vec2, label: string, vel?: Vec2, observedBy: string[] = [],
+    kind: Evidence['kind'], pos: Vec2, label: string,
+    ballistics: { vel: Vec2; vz: number; z: number } | null = null,
+    observedBy: string[] = [],
   ): void {
-    const e = makeEvidence(kind, pos, this.tick, label, { impactVel: vel, observedBy });
+    const e = makeEvidence(kind, pos, this.tick, label, {
+      impactVel: ballistics?.vel,
+      impactVz: ballistics?.vz,
+      impactZ: ballistics?.z,
+      observedBy,
+    });
     this.evidence.set(e.id, e);
     this.bus.emit('evidence:created', { evidence: e });
     if (kind !== 'NOISE') {
@@ -595,7 +616,7 @@ export class Sim {
     for (const f of t.flags) {
       if (f === 'NORMAL_TRANSIT') continue;
       const last = this.lastFlagAnnounce.get(f) ?? -9999;
-      if (this.tick - last < 60 * 14) continue;
+      if (this.tick - last < 60 * 20) continue;
       this.lastFlagAnnounce.set(f, this.tick);
       const line =
         f === 'UNUSUAL_ROUTE' ? SYSTEM.unusualRoute
@@ -824,7 +845,7 @@ export class Sim {
         this.playerTrack.maskedUntil = this.tick + 60 * 30;
         this.playerTrack.attributedIdentity = 'UNKNOWN';
         this.message('SYSTEM', [SYSTEM.maskActive], 3.4);
-        this.addEvidence('NODE_TAMPER', node.pos, `IDENTITY SERVICE ANOMALY — ${nodeId}`, undefined, this.sensorsObserving(node.pos));
+        this.addEvidence('NODE_TAMPER', node.pos, `IDENTITY SERVICE ANOMALY — ${nodeId}`, null, this.sensorsObserving(node.pos));
         break;
       }
     }
@@ -835,7 +856,7 @@ export class Sim {
     for (const n of this.network.dueChecks(this.tick)) {
       // The loop is discovered after the fact, creating evidence where it happened.
       this.message('SYSTEM', [SYSTEM.integrityFail(n.id), SYSTEM.tamperLogged], 4.0, 'strong');
-      this.addEvidence('NODE_TAMPER', n.pos, `TAMPER — ${n.id}`, undefined, []);
+      this.addEvidence('NODE_TAMPER', n.pos, `TAMPER — ${n.id}`, null, []);
     }
   }
 
@@ -891,8 +912,10 @@ export class Sim {
       const prior = s.districtPriors[incident.district] ?? 0;
       if (prior > bestPrior) { bestPrior = prior; bestIdentity = s.identity; }
     }
-    // Reported confidence is the system's internal agreement, not its correctness.
-    const confidence = 90 + bestPrior * 9 + this.rng.range(-0.4, 0.4);
+    // Reported confidence is the system's internal agreement, not its
+    // correctness. A 0.97 prior reports as 98.7%, and that number is the whole
+    // problem: it is high enough that the town has agreed to act on it.
+    const confidence = 90 + bestPrior * 9 + this.rng.range(-0.03, 0.03);
     incident.associated.push(bestIdentity);
     return { identity: bestIdentity, confidence: Math.min(99.4, confidence) };
   }

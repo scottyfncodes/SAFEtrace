@@ -106,6 +106,7 @@ export class Renderer {
   private drawVeneerLayer(ctx: CanvasRenderingContext2D, view: Rect): void {
     const sim = this.sim;
     this.veneer.drawGround(ctx, this.cam, this.w, this.h);
+    this.veneer.drawGroundDetail(ctx, this.cam, this.w, this.h, view);
     this.veneer.drawShadows(ctx, this.cam, this.w, this.h, view, sim);
 
     // The residual: a few cones still faintly visible on the beautiful world

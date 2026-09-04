@@ -35,7 +35,19 @@ describe('Bellhaven content validation', () => {
     const world = new World(data);
     // Deep inside the drainage channel, far from any modelled route.
     expect(world.distanceToRoad({ x: 280, y: 440 })).toBeGreaterThan(40);
-    expect(world.surfaceAt({ x: 280, y: 440 })).toBe('smoothConcrete');
+    // The running surface beside the invert is the fastest ground in town.
+    expect(world.surfaceAt({ x: 280, y: 434 })).toBe('smoothConcrete');
+    // The low-flow trickle down the middle is rougher, so the good line is
+    // beside it rather than down it.
+    expect(world.surfaceAt({ x: 280, y: 440 })).toBe('roughConcrete');
+  });
+
+  it('walls the Channel so street cameras cannot see into it, except at the aprons', () => {
+    const world = new World(data);
+    // A street camera at ground level above the channel, looking in.
+    expect(world.blocked({ x: 280, y: 415 }, { x: 280, y: 434 }, 4.2)).toBe(true);
+    // The apron is deliberately open: it is the one place a planner modelled.
+    expect(world.blocked({ x: 196, y: 412 }, { x: 196, y: 428 }, 4.2)).toBe(false);
   });
 
   it('provides overhead cover that defeats drones', () => {

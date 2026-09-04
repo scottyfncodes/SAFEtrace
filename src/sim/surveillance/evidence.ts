@@ -4,7 +4,8 @@
  * The analysis delay is deliberate: it gives the player a window in which to
  * leave the estimated origin, which turns every shot into a small route problem.
  */
-import { type Vec2, clamp01, dist, norm } from '../../core/math';
+import { type Vec2, dist, norm } from '../../core/math';
+import { LAUNCH_Z } from '../slingshot';
 import type { Rng } from '../../core/rng';
 import type { Evidence, EvidenceKind, Track } from './types';
 
@@ -26,7 +27,7 @@ export function makeEvidence(
   pos: Vec2,
   tick: number,
   label: string,
-  opts: { impactVel?: Vec2; observedBy?: string[] } = {},
+  opts: { impactVel?: Vec2; impactVz?: number; impactZ?: number; observedBy?: string[] } = {},
 ): Evidence {
   return {
     id: `EV-${(++counter).toString().padStart(4, '0')}`,
@@ -34,6 +35,8 @@ export function makeEvidence(
     pos: { x: pos.x, y: pos.y },
     tick,
     impactVel: opts.impactVel,
+    impactVz: opts.impactVz,
+    impactZ: opts.impactZ,
     observedBy: opts.observedBy ?? [],
     stage: 'NEW',
     analysisCompleteTick: tick + ANALYSIS_TICKS,
@@ -79,15 +82,15 @@ export function analyse(
   }
 
   const dir = norm(e.impactVel);
-  const speed = Math.hypot(e.impactVel.x, e.impactVel.y);
-  // Range estimate from impact energy; the faster it hit, the closer the shooter.
-  const estRange = clamp01((speed - 8) / 26) * 34 + 8;
+  const estRange = solveRange(e);
 
   const origin: Vec2 = { x: e.pos.x - dir.x * estRange, y: e.pos.y - dir.y * estRange };
 
-  // Uncertainty: unobserved impacts back-project badly.
-  const observedBonus = e.observedBy.length > 0 ? 0.45 : 1.0;
-  const uncertainty = (7 + estRange * 0.42) * observedBonus + rng.range(-1.5, 2.5);
+  // Uncertainty grows with range and shrinks when a sensor actually saw the
+  // impact. An unobserved shot from cover back-projects into a disc wide
+  // enough to hold half a street, which is exactly the skill the player learns.
+  const observedBonus = e.observedBy.length > 0 ? 0.32 : 0.85;
+  const uncertainty = (5 + estRange * 0.34) * observedBonus + rng.range(-1, 2);
 
   e.originEstimate = origin;
   e.originUncertainty = Math.max(4, uncertainty);
@@ -105,6 +108,35 @@ export function analyse(
   }
 
   return { evidence: e, linked: false, candidateCount: candidates.length };
+}
+
+/**
+ * Reconstruct how far the projectile flew, from the ballistics of the impact.
+ *
+ * Horizontal speed is constant in flight, so range cannot be read from speed
+ * alone. It comes from the drop: given the launch height, the impact height and
+ * the vertical velocity at impact, the time of flight is determined, and range
+ * is that time times the horizontal speed. The system is competent at this.
+ * The player beats it with geometry and cover, not because its arithmetic is bad.
+ */
+export function solveRange(e: Evidence): number {
+  if (!e.impactVel) return 0;
+  const vh = Math.hypot(e.impactVel.x, e.impactVel.y);
+  if (vh < 0.5) return 0;
+  const vz1 = e.impactVz ?? 0;
+  const dz = (e.impactZ ?? 0) - LAUNCH_Z;
+  const g = 9.81;
+  // (g/2) t^2 + vz1 t - dz = 0, taking the positive root.
+  const disc = vz1 * vz1 + 2 * g * dz;
+  let t: number;
+  if (disc < 0) {
+    // Geometry the model cannot reconcile; fall back to a flat-arc assumption.
+    t = Math.abs(vz1) / g * 2;
+  } else {
+    t = (-vz1 + Math.sqrt(disc)) / g;
+  }
+  if (!Number.isFinite(t) || t <= 0) t = Math.max(0.2, Math.abs(vz1) / g);
+  return Math.min(90, Math.max(2, vh * t));
 }
 
 /** Where the system believed this track was at a past tick. */

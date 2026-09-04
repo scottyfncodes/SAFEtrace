@@ -16,7 +16,7 @@ import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
 export const ROOF_K = 0.42;
 /** Shadow offset per metre of height. */
 export const SHADOW_K = { x: 0.55, y: 0.34 };
-const STATIC_SCALE = 4;
+const STATIC_SCALE = 6;
 
 export class VeneerRenderer {
   private ground: HTMLCanvasElement | null = null;
@@ -56,22 +56,6 @@ export class VeneerRenderer {
       }
     }
 
-    // Road centre markings.
-    g.lineWidth = 1.4;
-    g.setLineDash([9, 11]);
-    g.strokeStyle = VENEER.roadMark;
-    for (const e of this.world.data.roadEdges) {
-      if (e.width < 8) continue;
-      const a = this.world.roadNodeById.get(e.a);
-      const b = this.world.roadNodeById.get(e.b);
-      if (!a || !b) continue;
-      g.beginPath();
-      g.moveTo((a.pos.x - min.x) * STATIC_SCALE, (a.pos.y - min.y) * STATIC_SCALE);
-      g.lineTo((b.pos.x - min.x) * STATIC_SCALE, (b.pos.y - min.y) * STATIC_SCALE);
-      g.stroke();
-    }
-    g.setLineDash([]);
-
     this.ground = c;
   }
 
@@ -84,6 +68,64 @@ export class VeneerRenderer {
     ctx.translate(o.x, o.y);
     ctx.scale(s, s);
     ctx.drawImage(this.ground, 0, 0);
+    ctx.restore();
+  }
+
+  /**
+   * Ground linework, drawn per frame in vector so it stays a hairline at any
+   * zoom. Flat colour tolerates being a bitmap; edges do not.
+   */
+  drawGroundDetail(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, view: Rect): void {
+    const z = cam.zoom;
+
+    // Paving joints. A plaza is not a flat colour field, and at street scale
+    // the joints are what tell you how big the space is.
+    ctx.save();
+    ctx.lineWidth = Math.max(0.5, z * 0.035);
+    ctx.strokeStyle = 'rgba(96,102,100,0.16)';
+    for (const s of this.world.surfacesIn(view)) {
+      if (s.kind !== 'smoothConcrete' && s.kind !== 'roughConcrete' && s.kind !== 'tile') continue;
+      const bb = polyBounds(s.poly);
+      if (bb.w * bb.h < 150) continue;
+      ctx.save();
+      this.polyPath(ctx, s.poly, cam, w, h);
+      ctx.clip();
+      const pitch = s.kind === 'tile' ? 2.5 : 5;
+      const x0 = Math.max(bb.x, view.x), x1 = Math.min(bb.x + bb.w, view.x + view.w);
+      const y0 = Math.max(bb.y, view.y), y1 = Math.min(bb.y + bb.h, view.y + view.h);
+      ctx.beginPath();
+      for (let x = Math.ceil(x0 / pitch) * pitch; x <= x1; x += pitch) {
+        const a = cam.toScreen({ x, y: y0 }, w, h);
+        const b = cam.toScreen({ x, y: y1 }, w, h);
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      }
+      for (let y = Math.ceil(y0 / pitch) * pitch; y <= y1; y += pitch) {
+        const a = cam.toScreen({ x: x0, y }, w, h);
+        const b = cam.toScreen({ x: x1, y }, w, h);
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // Road centre markings.
+    ctx.save();
+    ctx.lineWidth = Math.max(1, z * 0.14);
+    ctx.setLineDash([z * 1.6, z * 2.0]);
+    ctx.strokeStyle = VENEER.roadMark;
+    ctx.beginPath();
+    for (const e of this.world.data.roadEdges) {
+      if (e.width < 8) continue;
+      const a = this.world.roadNodeById.get(e.a);
+      const b = this.world.roadNodeById.get(e.b);
+      if (!a || !b) continue;
+      if (Math.max(a.pos.x, b.pos.x) < view.x || Math.min(a.pos.x, b.pos.x) > view.x + view.w) continue;
+      if (Math.max(a.pos.y, b.pos.y) < view.y || Math.min(a.pos.y, b.pos.y) > view.y + view.h) continue;
+      const sa = cam.toScreen(a.pos, w, h), sb = cam.toScreen(b.pos, w, h);
+      ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y);
+    }
+    ctx.stroke();
     ctx.restore();
   }
 

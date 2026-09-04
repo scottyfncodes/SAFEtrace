@@ -37,6 +37,8 @@ export interface Impact {
   pos: Vec2;
   z: number;
   vel: Vec2;
+  /** Vertical velocity at impact. Trajectory analysis needs it to solve range. */
+  vz: number;
   targetId?: string;
 }
 
@@ -114,18 +116,19 @@ export function stepProjectile(p: Projectile, ctx: StepContext, dt: number): Imp
         pos: { x: t.pos.x, y: t.pos.y },
         z: t.z,
         vel: { x: p.vel.x, y: p.vel.y },
+        vz: p.vz,
         targetId: t.id,
       };
     }
   }
 
   if (p.z <= 0) {
-    return { projectile: p, kind: 'ground', pos: { x: p.pos.x, y: p.pos.y }, z: 0, vel: { x: p.vel.x, y: p.vel.y } };
+    return { projectile: p, kind: 'ground', pos: { x: p.pos.x, y: p.pos.y }, z: 0, vel: { x: p.vel.x, y: p.vel.y }, vz: p.vz };
   }
 
   const bh = ctx.heightAt(p.pos);
   if (bh > 0 && p.z < bh) {
-    return { projectile: p, kind: 'building', pos: { x: p.pos.x, y: p.pos.y }, z: p.z, vel: { x: p.vel.x, y: p.vel.y } };
+    return { projectile: p, kind: 'building', pos: { x: p.pos.x, y: p.pos.y }, z: p.z, vel: { x: p.vel.x, y: p.vel.y }, vz: p.vz };
   }
 
   return null;

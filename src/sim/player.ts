@@ -277,7 +277,9 @@ function integrate(p: PlayerState, world: World, dt: number): void {
 
   const from = { x: p.pos.x, y: p.pos.y };
   const to = { x: p.pos.x + p.vel.x * dt, y: p.pos.y + p.vel.y * dt };
-  const resolved = p.z > 0.9 ? to : world.resolveCollision(from, to, 0.45);
+  // Board deck rides a little above the wheels, so a clean ollie clears a
+  // ledge the same height as the pop.
+  const resolved = world.resolveCollision(from, to, 0.45, p.z + 0.14);
 
   // If collision pushed us back hard while fast, that is a crash.
   const wanted = Math.hypot(to.x - from.x, to.y - from.y);
