@@ -26,6 +26,7 @@ const TOUCH_PROMPTS = [
   '<span>flick up to ollie</span>',
 ].join('');
 import { riskLabel } from '../sim/surveillance/risk';
+import { SYSTEM } from '../content/copy';
 
 const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
 
@@ -195,6 +196,8 @@ export class Hud {
     const progress = hack ? 1 - hack.ticksRemaining / hack.ticksTotal : 0;
     const verbs = availableVerbs(node);
 
+    const rolling = this.sim.player.speed > 1.4;
+
     this.inspect.innerHTML =
       `<div class="node-id">${escapeHtml(node.id)}</div>` +
       `<div>${escapeHtml(node.label)}</div>` +
@@ -205,12 +208,14 @@ export class Hud {
       (node.discovered && node.edges.length
         ? `<div class="rec">EDGES: ${node.edges.map(escapeHtml).join(', ')}</div>`
         : '') +
+      (rolling ? `<div class="rec hold">${escapeHtml(SYSTEM.holdStill)}</div>` : '') +
       `<div class="verbs">${
         verbs.map((v, i) => {
           const busy = hack?.verb === v;
           const pct = busy ? ` ${Math.round(progress * 100)}%` : '';
           const label = this.touch ? `${v}${pct}` : `${i + 1} ${v}${pct}`;
-          return `<button class="verb${busy ? ' busy' : ''}" data-verb="${v}">${label}</button>`;
+          const cls = `verb${busy ? ' busy' : ''}${rolling ? ' waiting' : ''}`;
+          return `<button class="${cls}" data-verb="${v}">${label}</button>`;
         }).join('')
       }</div>`;
 

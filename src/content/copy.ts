@@ -56,6 +56,7 @@ export const SYSTEM = {
   incidentReported: (kind: string, where: string) => `${kind} REPORTED — ${where}`,
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
   identityUnresolved: 'IDENTITY UNRESOLVED',
+  holdStill: 'COME TO A STOP TO INTERFERE',
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
 };
