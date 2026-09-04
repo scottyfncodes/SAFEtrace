@@ -12,7 +12,6 @@ import { easeInOutCubic } from '../core/math';
 import type { Renderer } from '../render/renderer';
 import type { Audio } from '../audio/audio';
 import { AD_SCRIPT, AD_REPRISE_ANNOTATIONS, type AdBeat } from '../content/copy';
-import type { Sim } from '../sim/sim';
 
 const MARK = `
 <svg class="mark" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -37,7 +36,6 @@ export class Advertisement {
   constructor(
     host: HTMLElement,
     private renderer: Renderer,
-    private sim: Sim,
     private audio: Audio,
   ) {
     this.el = document.createElement('div');
@@ -82,9 +80,11 @@ export class Advertisement {
       zoom: beat.look.zoom * drift,
     };
 
-    // The reprise runs with machine vision held open the whole way.
+    // The reprise runs with the surveillance reading laid over the same warm
+    // pictures. Nothing is peeled away, because nothing about the
+    // advertisement has changed.
     if (this.reprise) {
-      this.sim.visionBlend = Math.min(1, this.sim.visionBlend + dt * 1.6);
+      this.renderer.annotationOverlay = Math.min(1, this.renderer.annotationOverlay + dt * 0.7);
     }
 
     if (this.t >= beat.seconds) {
@@ -145,6 +145,7 @@ export class Advertisement {
     this.running = false;
     this.el.classList.add('hidden');
     this.renderer.cam.scripted = null;
+    this.renderer.annotationOverlay = 0;
     this.onDone?.();
   }
 }

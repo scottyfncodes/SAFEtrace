@@ -25,6 +25,15 @@ export class Renderer {
   private peel = 0;
   private residual = 0;
   private ripples: Array<{ pos: Vec2; t: number; life: number }> = [];
+  /**
+   * The reprise overlay, 0..1.
+   *
+   * The advertisement must return unchanged: the same pictures, the same words,
+   * the same music. So this does not peel anything. It lays the surveillance
+   * reading over the beautiful world without removing it, because the payoff is
+   * that nothing about the advertisement changed — only the player did.
+   */
+  annotationOverlay = 0;
   private mask: HTMLCanvasElement | null = null;
   private maskCtx: CanvasRenderingContext2D | null = null;
 
@@ -93,6 +102,7 @@ export class Renderer {
     this.drawVeneerLayer(ctx, view);
 
     if (this.peel > 0.001) this.drawMachineLayer(ctx, view);
+    else if (this.annotationOverlay > 0.001) this.drawAnnotationOverlay(ctx, view);
 
     this.drawActors(ctx, view);
     this.drawProjectiles(ctx);
@@ -211,6 +221,17 @@ export class Renderer {
       ctx.arc(centre.x, centre.y, Math.max(0, r - 8), 0, Math.PI * 2);
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  /** The surveillance reading, laid over the veneer rather than replacing it. */
+  private drawAnnotationOverlay(ctx: CanvasRenderingContext2D, view: Rect): void {
+    const opts = { colourSafe: this.settings.colourSafeMachine };
+    ctx.save();
+    ctx.globalAlpha = easeInOutCubic(clamp01(this.annotationOverlay));
+    this.machine.drawSurveillance(ctx, this.cam, this.w, this.h, view, opts);
+    this.machine.drawAerial(ctx, this.cam, this.w, this.h, opts);
+    this.machine.drawSubjects(ctx, this.cam, this.w, this.h, view, opts);
     ctx.restore();
   }
 

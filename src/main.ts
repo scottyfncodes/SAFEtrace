@@ -49,7 +49,7 @@ class Game {
     this.renderer = new Renderer(canvas, this.sim, this.settings);
     this.audio = new Audio(this.settings);
     this.hud = new Hud(uiRoot, this.sim, this.settings);
-    this.ad = new Advertisement(document.body, this.renderer, this.sim, this.audio);
+    this.ad = new Advertisement(document.body, this.renderer, this.audio);
     this.story = new StoryDirector({
       sim: this.sim,
       hud: this.hud,
