@@ -185,3 +185,109 @@ Worth recording, because this is what the validator is for:
 - **Still unresolved: the human playtest criterion** from
   `18-phase-8-readiness.md` §8. Nothing in this slice bears on it, and nothing
   here should be read as evidence for it.
+
+---
+
+# Integration Gate
+
+Run after Northgate was built, to check that the district is production-safe
+before any further content is considered.
+
+## What the re-audit found
+
+Four issues, all in the district rather than the engine, and all now fixed.
+
+**Three cameras did not observe what they were named after.**
+
+| Camera | Fault | Fix |
+|---|---|---|
+| `NORTHGATE LN — WEST` | Faced across the lane rather than along it; covered a narrow band at its own x and nothing else | Moved west and re-aimed east along the street |
+| `SUBSTATION — PERIMETER` | Aimed south-west, away from the yard it perimeters | Re-aimed south-east, into the yard |
+| `VINE ST — SHELTER` | Mounted behind its own bus shelter, which blocked every sightline it had | Moved to the shelter's south-west corner |
+
+The first two are naming-plausibility faults: the geometry was legal and the
+camera saw *something*, just not the thing on its label. No engine check can
+know what `SUBSTATION — PERIMETER` means, so this class belongs in a content
+test, and there is now one that asserts each named camera can see its named
+place at some point in its sweep.
+
+**A player-facing dead end in the record chain.** `QUERY` names a node's edges;
+only `TRACE` reveals what is on the other end. The traced-record list was built
+from *named* nodes, so after a `QUERY` a player could jump to a record and find
+an empty panel. The list now offers only records that have actually been traced,
+which restores the documented distinction between the two verbs.
+
+**One camera promised coverage it did not have.** `SABLE LANE — MID` was
+authored with a 20 m range while watching a 6 m-deep alley across its width; the
+cone drew a long wedge into the back of a garage. Range reduced to 12 m so the
+machine-vision cone tells the truth.
+
+## Guardrails made general
+
+The Northgate slice caught four authoring failures by hand. Three of those
+classes are now checked for every district, forever:
+
+| Guardrail | Failure it would have caught |
+|---|---|
+| **Blind sensor** — every non-interior camera must see open ground somewhere in its sweep, traced from just in front of the housing so a wall mount is not mistaken for a blockage | The bus-shelter camera boxed in by its own shelter |
+| **Duplicated geometry** — no two buildings may occupy substantially the same ground | The terrace row authored twice when it moved between modules |
+| **Stable identifiers** — everything the story or the tests name must be authored with an explicit id, never a generated one | Generated ids shifting when content is reordered |
+| **District coverage** *(warning)* — a district with buildings and no sensors is half-authored | — |
+
+`tests/guardrails.test.ts` breaks the shipped town in each of those exact ways
+and asserts the validator notices. A guardrail that only ever passes proves
+nothing.
+
+**One guardrail was deliberately not built.** A per-district road-reachability
+check sounds obvious and is unsound: the Channel has no roads *on purpose*, so
+the rule would only encode an exception. Global road-graph connectivity is
+already checked, which is the property that actually matters.
+
+**Naming plausibility stays a content test.** The engine cannot know what a
+label means. The convention for future districts is the one Northgate now
+follows: assert that each named camera sees its named place.
+
+## Architecture
+
+Reusable, and reused: the district interface, the builder, all seven sensor
+kinds, the network model, the road graph, `distanceOffModel`, prediction, risk,
+dispatch, both renderers, the inspect panel.
+
+Bespoke to Northgate: **nothing in the simulation.** No Northgate-only rule, no
+duplicated surveillance logic, no special-case rendering, no hard-coded district
+assumption in a global system. `Sim.readNodes` and the traced-record chips are
+general mechanisms that Northgate happens to be the first to use; a second
+district authoring a chain needs no further code.
+
+Other districts were verified unchanged: commons 14, maple 26, ridgeline 6,
+channel 58, relay 1 — identical to their pre-slice counts.
+
+## Known limitations
+
+- The inspect panel shows `SEGMENT SVC` for a service record. A record is not on
+  a segment; the label is cosmetically wrong and left alone rather than polished.
+- The parade service yard is the tightest space in the district — escapable in
+  4 of 12 directions at speed. It is a yard between two shops, so this is
+  intended, but it is the closest thing to a pocket in Northgate.
+- Northgate still has no interiors and no NPC schedules.
+- `TX-2` still serves both Northgate and Relay 12, and that consequence is still
+  latent: uplinks are not ballistic targets. Relay 12 work, out of scope.
+
+## Gate results
+
+| | |
+|---|---|
+| Tests | **146** passing, 9 files |
+| Typecheck | clean |
+| Production build | clean, 159 kB JS (53 kB gzipped) |
+| Console | no errors, no warnings, desktop and mobile |
+| Determinism | unchanged; seeded replay still hashes identically |
+| Performance | 60 fps desktop 1280×760, 60 fps iPhone 15 viewport at DPR 3 |
+| Dev hooks | absent from the production bundle |
+| Navigability | no movement traps at nine sampled points |
+| Vertical slice | false positive intact at 98.7% with Devon 5.1 m away; VISION still suppresses aim and fire; skating untouched |
+
+**P0 — HUMAN PLAYTEST REQUIRED. Still unresolved.** Nothing in this gate bears
+on it. No automated check, frame-rate reading or developer playthrough can
+answer whether a cold player begins enjoying the skating without being told how
+the game works.

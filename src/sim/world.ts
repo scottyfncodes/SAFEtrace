@@ -4,12 +4,12 @@
  */
 import {
   type Vec2, type Rect, dist2, pointInPoly, polyBounds, segmentsIntersect,
-  rectExpand, closestOnSegment,
+  rectExpand, closestOnSegment, rectsOverlap,
 } from '../core/math';
 import { SpatialHash, unique } from '../core/spatial';
 import type {
   WorldData, SurfaceKind, SurfacePatch, Building, Occluder, Cover, Prop,
-  SkateFeature, RoadNode, RoadEdge, District,
+  SkateFeature, RoadNode, RoadEdge, District, SensorData,
 } from './worldTypes';
 
 export interface SurfaceProps { friction: number; grip: number; bailRisk: number; }
@@ -369,8 +369,108 @@ export function validateWorld(data: WorldData): ValidationIssue[] {
     }
   }
 
+  // --- guardrails earned by real authoring failures ------------------------
+  //
+  // Each of these exists because a hand-authored district actually broke this
+  // way. They are general on purpose: the next district gets the check for
+  // free, which is the whole point of hand-authoring content at scale.
+
+  // A camera that can see nothing is either buried, boxed in by the thing it is
+  // mounted on, or aimed into a wall. This caught a bus-shelter camera mounted
+  // behind its own shelter.
+  const world = new World(data);
+  for (const s of data.sensors) {
+    if (s.interior) continue;
+    if (!sensorHasVisibleGround(s, world)) {
+      err(`sensor ${s.id} (${s.label}) can see no open ground: buried, boxed in, or aimed at a wall`);
+    }
+  }
+
+  // Two buildings occupying the same ground means a district was authored twice.
+  // This is exactly how a duplicated terrace row got shipped.
+  const bounds = data.buildings.map((b) => ({ b, r: polyBounds(b.poly) }));
+  for (let i = 0; i < bounds.length; i++) {
+    for (let j = i + 1; j < bounds.length; j++) {
+      const a = bounds[i], c = bounds[j];
+      if (!rectsOverlap(a.r, c.r)) continue;
+      const ox = Math.min(a.r.x + a.r.w, c.r.x + c.r.w) - Math.max(a.r.x, c.r.x);
+      const oy = Math.min(a.r.y + a.r.h, c.r.y + c.r.h) - Math.max(a.r.y, c.r.y);
+      const smaller = Math.min(a.r.w * a.r.h, c.r.w * c.r.h);
+      if (smaller > 0 && ox * oy > smaller * 0.6) {
+        err(`buildings ${a.b.id} and ${c.b.id} occupy the same ground: content authored twice?`);
+      }
+    }
+  }
+
+  // A district with buildings but no coverage, or with no way to reach it, is
+  // half-authored. Better to fail loudly than to ship a hole in the town.
+  const districtBuildings = new Map<string, number>();
+  for (const b of data.buildings) {
+    districtBuildings.set(b.district, (districtBuildings.get(b.district) ?? 0) + 1);
+  }
+  //
+  // Road reachability is deliberately *not* checked per district. The Channel
+  // has no roads on purpose — being unmodelled is the whole point of it — so a
+  // per-district rule would only encode an exception. Global graph connectivity
+  // is checked above, which is the property that actually matters.
+  const districtSensors = new Set(data.sensors.map((s) => s.district));
+  for (const [id, count] of districtBuildings) {
+    if (count < 3) continue;
+    if (!districtSensors.has(id)) warn(`district ${id} has ${count} buildings and no sensors`);
+  }
+
+  // Generated ids shift whenever content is reordered, so anything the story or
+  // a test names must be authored with an explicit, stable id.
+  for (const id of STABLE_IDS) {
+    const found = data.network.nodes.some((n) => n.id === id) || data.sensors.some((s) => s.id === id);
+    if (!found) err(`stable identifier ${id} is missing: story and tests reference it by name`);
+  }
+
   if (data.spawns.dronePads.length === 0) warn('no drone pads defined');
   if (data.covers.length < 3) warn('fewer than three overhead cover areas: drone counterplay will be thin');
 
   return issues;
+}
+
+/**
+ * Identifiers that must never be generated, because something outside the
+ * content layer refers to them.
+ */
+export const STABLE_IDS = [
+  'CM-207', 'JX-207', 'JX-N3', 'TX-1', 'TX-2',
+  'SVC-VISION', 'SVC-REVIEW', 'SVC-PREDICT', 'SVC-RECORD',
+];
+
+/**
+ * Can this sensor see any open ground at all, anywhere in its sweep?
+ *
+ * Sight is traced from a point just in front of the housing rather than from
+ * the housing itself, because almost every camera in Bellhaven is bolted to a
+ * wall and would otherwise be reported as blocked by the building it is mounted
+ * on. What this catches is the real failure: a camera boxed in by the structure
+ * it is supposed to be looking past.
+ */
+function sensorHasVisibleGround(s: SensorData, world: World): boolean {
+  const half = s.fov / 2;
+  const steps = s.sweep > 0 ? 7 : 1;
+  const standoff = Math.min(2, s.range * 0.2);
+
+  for (let k = 0; k < steps; k++) {
+    const facing = s.facing + (steps === 1 ? 0 : (k / (steps - 1) - 0.5) * 2 * s.sweep);
+    for (const off of [-half * 0.7, -half * 0.3, 0, half * 0.3, half * 0.7]) {
+      const a = facing + off;
+      const from = { x: s.pos.x + Math.cos(a) * standoff, y: s.pos.y + Math.sin(a) * standoff };
+      // Still inside a structure a couple of metres out: genuinely boxed in.
+      if (world.buildingAt(from)) continue;
+      // Near-field first: a tripwire camera watching a six-metre alley across
+      // its width is legitimate, and sampling only the far field would call it
+      // blind.
+      for (const d of [s.range * 0.15, s.range * 0.35, s.range * 0.6, s.range * 0.85]) {
+        const p = { x: s.pos.x + Math.cos(a) * d, y: s.pos.y + Math.sin(a) * d };
+        if (world.buildingAt(p)) continue;
+        if (!world.blocked(from, p, s.height)) return true;
+      }
+    }
+  }
+  return false;
 }

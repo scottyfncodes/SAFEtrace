@@ -85,13 +85,13 @@ export function authorNorthgate(b: TownBuilder): void {
   // Two street cameras, half a cycle out of phase, so the seam between them
   // travels. Learning where it is at a given moment is the whole skill.
   b.camera({
-    pos: pt(74, 52), facing: 90, kind: 'street', fov: 78, range: 30,
-    sweep: 30, sweepPeriod: 11, sweepPhase: 0, height: 4.4, bias: 0.94,
+    pos: pt(44, 50), facing: 22, kind: 'street', fov: 76, range: 34,
+    sweep: 26, sweepPeriod: 11, sweepPhase: 0, height: 4.4, bias: 0.94,
     label: 'NORTHGATE LN — WEST',
   });
   b.camera({
-    pos: pt(200, 52), facing: 90, kind: 'street', fov: 78, range: 30,
-    sweep: 30, sweepPeriod: 11, sweepPhase: 0.5, height: 4.4, bias: 0.94,
+    pos: pt(212, 50), facing: 158, kind: 'street', fov: 76, range: 34,
+    sweep: 26, sweepPeriod: 11, sweepPhase: 0.5, height: 4.4, bias: 0.94,
     label: 'NORTHGATE LN — EAST',
   });
 
@@ -147,8 +147,8 @@ export function authorNorthgate(b: TownBuilder): void {
   b.junction(pt(232, 36), 'REAR SERVICE JUNCTION', 'JX-N3');
   b.link('JX-N3', 'TX-2');
   b.camera({
-    pos: pt(226, 16), facing: 135, kind: 'facility', fov: 66, range: 24,
-    sweep: 28, sweepPeriod: 8, height: 4.4, bias: 0.88,
+    pos: pt(226, 16), facing: 45, kind: 'facility', fov: 70, range: 24,
+    sweep: 26, sweepPeriod: 8, height: 4.4, bias: 0.88,
     label: 'SUBSTATION — PERIMETER',
   });
   b.prop('sign', pt(226, 12), 0, { tint: 'SAFEtrace CITY — RESTRICTED' });
@@ -185,7 +185,7 @@ export function authorNorthgate(b: TownBuilder): void {
   // where the gap in the garages happens to be.
   b.useSegment('S-N3');
   b.camera({
-    pos: pt(111, 115), facing: 270, kind: 'facility', fov: 60, range: 20,
+    pos: pt(111, 115), facing: 270, kind: 'facility', fov: 70, range: 12,
     height: 3.4, bias: 0.80, label: 'SABLE LANE — MID',
   });
   // Angled across the mouth rather than straight down the lane, so it covers
@@ -203,10 +203,10 @@ export function authorNorthgate(b: TownBuilder): void {
     height: 2.8, wall: '#C6C0B2', roof: '#9E9788', label: 'VINE ST SHELTER',
   });
   b.camera({
-    pos: pt(81, 98), facing: 150, kind: 'street', fov: 70, range: 24,
+    pos: pt(75, 104), facing: 150, kind: 'street', fov: 70, range: 24,
     height: 3.8, bias: 0.88, label: 'VINE ST — SHELTER',
   });
-  b.speaker(pt(81, 97), 'VINE ST — PUBLIC ADDRESS');
+  b.speaker(pt(84, 97), 'VINE ST — PUBLIC ADDRESS');
 
   b.useSegment('S-N2');
   b.building('civic', [pt(20, 66), pt(32, 66), pt(32, 80), pt(20, 80)], {

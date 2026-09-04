@@ -836,17 +836,23 @@ export class Sim {
     const node = this.network.get(id);
     if (!node) return;
     if (node.kind !== 'SERVICE' && dist(node.pos, this.player.pos) > SELECT_RANGE) return;
-    if (node.kind === 'SERVICE' && !this.discoveredNodes.has(id)) return;
+    if (node.kind === 'SERVICE' && !node.discovered) return;
     this.selectedNodeId = id;
     this.focusNode = node;
   }
 
-  /** Services this player has followed an edge to, and may now read. */
+  /**
+   * Services this player has followed an edge to, and may now read.
+   *
+   * QUERY names a node's edges; only TRACE reveals what is on the other end.
+   * A record the player has merely heard the name of is not offered, because
+   * opening it would show an empty panel.
+   */
   reachableServices(): NetworkNode[] {
     const out: NetworkNode[] = [];
     for (const id of this.discoveredNodes) {
       const n = this.network.get(id);
-      if (n && n.kind === 'SERVICE') out.push(n);
+      if (n && n.kind === 'SERVICE' && n.discovered) out.push(n);
     }
     return out;
   }
