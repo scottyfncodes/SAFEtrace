@@ -8,6 +8,7 @@
  */
 import { TownBuilder, pt } from './builder';
 import { authorNorthgate } from './northgate';
+import { authorRelay12, TX2_RECORDS } from './relay12';
 import type { WorldData } from '../sim/worldTypes';
 
 const ROOF_TERRACOTTA = '#C4714E';
@@ -26,11 +27,14 @@ export function buildBellhaven(): WorldData {
   b.district('maple', 'Maple Court', pt(140, 230), 130);
   b.district('ridgeline', 'Ridgeline Secondary', pt(370, 330), 150);
   b.district('channel', 'The Channel', pt(280, 430), 280);
-  b.district('relay', 'Relay 12', pt(515, 210), 60);
+  b.district('relay', 'Relay 12', pt(515, 234), 92);
 
   // ---------------------------------------------------------------- network
   b.uplink('TX-1', pt(392, 82), 'BELLHAVEN CENTRAL UPLINK');
-  b.uplink('TX-2', pt(514, 206), 'RELAY 12 — DISTRICT UPLINK');
+  // On the outside of the hall's west wall, where a carrier cabinet actually
+  // lives. Inside the building it was scenery; on the wall it is a thing you
+  // can walk up to and read, which is the only interaction it will ever have.
+  b.uplink('TX-2', pt(494.2, 216), 'RELAY 12 — DISTRICT UPLINK', TX2_RECORDS);
 
   /*
    * The six records the investigation walks, in causal order:
@@ -142,7 +146,9 @@ export function buildBellhaven(): WorldData {
   b.joinRoad(school[2], ridge[6], 0.55);
 
   b.in('relay');
-  const relay = b.road('Service Access', [pt(505, 206), pt(528, 178)], { width: 5, prior: 0.15, sidewalk: false });
+  // Stops at the north gate. Nothing inside the compound is on the road graph,
+  // so the forecast has nothing to run along once you are through the fence.
+  const relay = b.road('Service Access', [pt(512, 164), pt(534, 152)], { width: 5, prior: 0.15, sidewalk: false });
   b.joinRoad(relay[1], ave[7], 0.15);
 
   // Northgate lives in its own module. Districts are content, not architecture.
@@ -429,24 +435,31 @@ export function buildBellhaven(): WorldData {
   // One camera. It watches the apron, because that is where a planner assumed
   // people would enter. Nobody specified the Channel itself.
   b.camera({ pos: pt(196, 406), facing: 90, kind: 'facility', fov: 58, range: 26, height: 4.0, bias: 0.72, label: 'DRAINAGE ACCESS — SOUTH MAPLE' });
-  b.junction(pt(330, 426), 'DRAINAGE JUNCTION', 'JX-CH');
+  b.junction(pt(330, 426), 'DRAINAGE JUNCTION', 'JX-CH', [
+    'SEGMENT RELAY — S-CH UTILITY / DRAINAGE',
+    'INSTALLED 2027: FLOOD TELEMETRY, 4 DEPTH GAUGES',
+    'CAMERAS AT INSTALL: 0',
+    'CAMERAS NOW: 1',
+    'PARENT UPLINK: TX-2',
+    'SELF-HEAL: 90S',
+  ]);
   b.link('JX-CH', 'TX-2');
   b.prop('cone', pt(212, 424)); b.prop('cone', pt(182, 424));
   b.prop('bin', pt(268, 434));
   b.trees([pt(90, 384), pt(240, 412), pt(360, 428), pt(500, 438), pt(140, 462), pt(300, 470)]);
 
   // ---------------------------------------------------------------- relay 12
+  // Relay 12 lives in its own module, like Northgate. Second district, same
+  // builder, no new architecture.
+  authorRelay12(b);
+
+  // The maintenance track: the Channel's east apron to the compound outfall.
+  // Paved, obvious on the ground, and deliberately not a road, so PREDICT has
+  // nothing to forecast along it.
+  b.path([pt(472, 446), pt(482, 414), pt(490, 372), pt(494, 332), pt(502, 312), pt(524, 306), pt(541, 303)], 3.4);
+  b.path([pt(541, 303), pt(541, 288), pt(539, 278)], 3.0);
+
   b.in('relay').useSegment('S-X1');
-  b.rectSurface(486, 176, 62, 66, 'gravel', 3);
-  b.fence(pt(486, 176), pt(548, 176));
-  b.fence(pt(486, 176), pt(486, 242));
-  b.fence(pt(486, 242), pt(548, 242));
-  b.building('utility', [pt(500, 196), pt(530, 196), pt(530, 220), pt(500, 220)], {
-    height: 4.5, wall: '#D8D3C4', roof: '#9AA0A6', label: 'RELAY 12',
-  });
-  b.camera({ pos: pt(498, 192), facing: 315, kind: 'facility', fov: 70, range: 30, sweep: 30, sweepPeriod: 8, height: 4.6, bias: 0.9, label: 'RELAY 12 — PERIMETER NW' });
-  b.camera({ pos: pt(532, 224), facing: 135, kind: 'facility', fov: 70, range: 30, sweep: 30, sweepPeriod: 8, sweepPhase: 0.5, height: 4.6, bias: 0.9, label: 'RELAY 12 — PERIMETER SE' });
-  b.prop('sign', pt(494, 180), 0, { tint: 'SAFEtrace CITY — RESTRICTED' });
   b.link('TX-2', 'SVC-VISION');
   b.link('TX-1', 'SVC-VISION');
   b.link('TX-1', 'SVC-PREDICT');
@@ -508,12 +521,13 @@ export function buildBellhaven(): WorldData {
     [pt(475, 84), pt(528, 84), pt(528, 124), pt(475, 124)],
     [pt(60, 155), pt(60, 240), pt(60, 155)],
     [pt(410, 296), pt(410, 344), pt(410, 296)],
+    [pt(496, 244), pt(530, 244), pt(530, 236), pt(496, 236)],
   ];
 
   const droneRoutes: Array<Array<{ x: number; y: number }>> = [
     [pt(120, 90), pt(240, 120), pt(160, 220), pt(70, 180)],
     [pt(320, 80), pt(460, 90), pt(470, 160), pt(330, 140)],
-    [pt(300, 300), pt(450, 320), pt(430, 390), pt(290, 370)],
+    [pt(300, 300), pt(440, 300), pt(488, 258), pt(498, 322), pt(452, 392), pt(300, 372)],
   ];
 
   const patrolRoutes: Array<Array<{ x: number; y: number }>> = [

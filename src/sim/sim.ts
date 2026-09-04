@@ -28,7 +28,7 @@ import { classify, resetBehaviourMemory } from './surveillance/behavior';
 import { measureError, predict } from './surveillance/prediction';
 import { scoreRisk } from './surveillance/risk';
 import { analyse, makeEvidence, resetEvidenceIds } from './surveillance/evidence';
-import { Network, VERBS, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
+import { Network, VERBS, permits, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
 import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
 import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track } from './surveillance/types';
 import type { RecordContext } from './worldTypes';
@@ -860,6 +860,7 @@ export class Sim {
 
   canHack(verb: HackVerb): boolean {
     if (!this.focusNode) return false;
+    if (!permits(this.focusNode.kind, verb)) return false;
     if (verb === 'LOOP') return this.focusNode.kind === 'CAMERA';
     return true;
   }
@@ -867,6 +868,8 @@ export class Sim {
   startHack(verb: HackVerb, nodeId?: string): boolean {
     const id = nodeId ?? this.focusNode?.id;
     if (!id) return false;
+    const target = this.network.get(id);
+    if (target && !permits(target.kind, verb)) return false;
     const spec = VERBS[verb];
     this.hack = { verb, nodeId: id, ticksRemaining: Math.round(spec.seconds * 60), ticksTotal: Math.round(spec.seconds * 60) };
     this.bus.emit('hack:started', { verb, nodeId: id, seconds: spec.seconds });
@@ -899,6 +902,7 @@ export class Sim {
   applyHack(verb: HackVerb, nodeId: string): void {
     const node = this.network.get(nodeId);
     if (!node) return;
+    if (!permits(node.kind, verb)) return;
     node.discovered = true;
     this.discoveredNodes.add(nodeId);
 

@@ -386,6 +386,28 @@ export function validateWorld(data: WorldData): ValidationIssue[] {
     }
   }
 
+  // A node the player is meant to walk up to, inside a building they cannot walk
+  // into, is dead content that still validates and still draws. TX-2 shipped
+  // this way: authored in the middle of the relay hut, selectable from exactly
+  // one point on its boundary. Cameras are exempt because a camera is *supposed*
+  // to be bolted to a facade, and the inset check above already covers those.
+  const sensorNodeIds = new Set(data.sensors.map((s) => s.nodeId));
+  for (const n of data.network.nodes) {
+    if (n.kind === 'SERVICE' || sensorNodeIds.has(n.id)) continue;
+    for (const b of data.buildings) {
+      if (!pointInPoly(b.poly, n.pos)) continue;
+      const bb = polyBounds(b.poly);
+      const inset = Math.min(
+        n.pos.x - bb.x, bb.x + bb.w - n.pos.x,
+        n.pos.y - bb.y, bb.y + bb.h - n.pos.y,
+      );
+      if (inset > 0.9) {
+        err(`node ${n.id} (${n.label}) is ${inset.toFixed(1)}m inside building ${b.id}: unreachable`);
+      }
+      break;
+    }
+  }
+
   // Two buildings occupying the same ground means a district was authored twice.
   // This is exactly how a duplicated terrace row got shipped.
   const bounds = data.buildings.map((b) => ({ b, r: polyBounds(b.poly) }));

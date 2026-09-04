@@ -3,7 +3,7 @@
  * QUERY and TRACE are free; interference costs time, proximity, and evidence.
  */
 import { type Vec2, dist } from '../../core/math';
-import type { NetworkData, NetworkNodeData, NetworkSegmentData } from '../worldTypes';
+import type { NetworkData, NetworkNodeData, NetworkNodeKind, NetworkSegmentData } from '../worldTypes';
 
 export type NodeState = 'NOMINAL' | 'LOOPED' | 'DEGRADED' | 'OFFLINE' | 'TAMPERED';
 
@@ -36,6 +36,28 @@ export const VERBS: Record<HackVerb, VerbSpec> = {
   REROUTE:  { verb: 'REROUTE',  seconds: 2.0, label: 'REROUTE',  description: 'Flag a location as anomalous. Assets will investigate.', detectable: false },
   MASK:     { verb: 'MASK',     seconds: 4.0, label: 'MASK',     description: 'Drop your identity attribution to UNKNOWN.', detectable: true },
 };
+
+/**
+ * Which verbs a node kind will accept.
+ *
+ * An uplink is a sealed carrier cabinet. It aggregates and it carries; it holds
+ * nothing, decides nothing, and there is no lever inside it. Splicing happens
+ * at junctions, which is where SUPPRESS and MASK live. This is the rule, not
+ * the button layout: the simulation refuses the verb, so an uplink cannot be
+ * turned into a switch by reaching around the interface.
+ */
+export function verbsFor(kind: NetworkNodeKind): HackVerb[] {
+  if (kind === 'UPLINK') return ['QUERY', 'TRACE'];
+  const out: HackVerb[] = ['QUERY', 'TRACE'];
+  if (kind === 'CAMERA') out.push('LOOP');
+  out.push('REROUTE');
+  if (kind === 'JUNCTION') { out.push('SUPPRESS', 'MASK'); }
+  return out;
+}
+
+export function permits(kind: NetworkNodeKind, verb: HackVerb): boolean {
+  return verbsFor(kind).includes(verb);
+}
 
 export const LOOP_DURATION_TICKS = 60 * 22;
 export const INTEGRITY_CHECK_MIN = 60 * 45;

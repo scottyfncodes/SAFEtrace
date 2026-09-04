@@ -9,7 +9,8 @@
 import { type Vec2, DEG, norm, perp, rectPoly, sub } from '../core/math';
 import type {
   Building, BuildingKind, Cover, District, NetworkNodeData, NetworkNodeKind,
-  NetworkSegmentData, NodeRecords, Prop, PropKind, RoadEdge, RoadNode, SensorData, SensorKind,
+  NetworkSegmentData, NodeRecords, Prop, PropKind, RecordContext, RoadEdge, RoadNode,
+  SensorData, SensorKind,
   SkateFeature, SurfaceKind, SurfacePatch, WorldData, FeatureKind,
 } from '../sim/worldTypes';
 
@@ -441,3 +442,58 @@ function halfExtent(w: number, d: number, rot: number, dir: number): number {
 }
 
 export const pt = P;
+
+/**
+ * The town's clock. Play opens at 04:38 on the morning of the match, and the
+ * simulation's tick is the only time anything in Bellhaven has, so every
+ * timestamp the machine writes is derived from it. Nothing here reads a wall
+ * clock: a replayed seed produces a byte-identical log.
+ */
+const SHIFT_OPENS_S = 4 * 3600 + 38 * 60;
+
+export function stampOf(tick: number): string {
+  const t = SHIFT_OPENS_S + Math.floor(tick / 60);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(Math.floor(t / 3600) % 24)}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`;
+}
+
+/**
+ * Records for an uplink: what it is, and what it has actually carried.
+ *
+ * An uplink is a pipe. It has no opinion, no store and no switch — the one
+ * thing it can honestly tell you is which frames went through it, and the only
+ * sound way to know that is to walk the same structure the town is authored
+ * with: sensor -> segment -> uplink. So a camera hanging on a different
+ * uplink's segment cannot appear here even if it is bolted to the same fence,
+ * and that absence is the whole point. It is also why this is derived rather
+ * than written: an authored list would be a claim, and the player would be
+ * right not to believe it.
+ */
+export function uplinkRecords(
+  uplinkId: string, preamble: string[], archived: string[] = [],
+): (ctx: RecordContext) => string[] {
+  return (ctx: RecordContext): string[] => {
+    const segments = ctx.network.segments.filter((s) => s.uplinkId === uplinkId);
+    const carried = new Set<string>();
+    for (const seg of segments) for (const id of seg.nodeIds) carried.add(id);
+
+    const lines = [...preamble];
+    lines.push(`CARRYING: ${segments.map((s) => s.id).join(', ')}`);
+    lines.push(`NODES ON THIS UPLINK: ${carried.size}`);
+    lines.push('--- FRAME DELIVERY ---');
+    lines.push(...archived);
+
+    const log: Array<{ tick: number; line: string }> = [];
+    for (const e of ctx.evidence) {
+      for (const id of e.observedBy) {
+        if (!carried.has(id)) continue;
+        log.push({ tick: e.tick, line: `${stampOf(e.tick)}  ${id}  DELIVERED  ${e.label}` });
+      }
+    }
+    log.sort((a, b) => a.tick - b.tick || (a.line < b.line ? -1 : 1));
+    for (const l of log.slice(-6)) lines.push(l.line);
+
+    lines.push('NO FRAMES HELD. NO FRAMES DROPPED. NO FRAMES READ HERE.');
+    return lines;
+  };
+}

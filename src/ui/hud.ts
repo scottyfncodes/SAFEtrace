@@ -8,7 +8,7 @@
 import type { Sim } from '../sim/sim';
 import type { Settings } from '../core/settings';
 import type { SafetraceMessage } from '../sim/events';
-import { VERBS, type HackVerb, type NetworkNode } from '../sim/surveillance/network';
+import { VERBS, verbsFor, type HackVerb, type NetworkNode } from '../sim/surveillance/network';
 
 const KEY_PROMPTS = [
   '<span><kbd>W</kbd>push</span>',
@@ -280,18 +280,9 @@ export class Hud {
   }
 }
 
-/**
- * An uplink is a sealed carrier cabinet: you can read it and follow it, and
- * that is all. Splicing happens at junctions, which is where SUPPRESS and MASK
- * now live. Nothing the player can do makes an uplink a switch.
- */
+/** What this node will accept. The rule lives in the simulation, not here. */
 export function availableVerbs(node: NetworkNode): HackVerb[] {
-  const out: HackVerb[] = ['QUERY', 'TRACE'];
-  if (node.kind === 'UPLINK') return out;
-  if (node.kind === 'CAMERA') out.push('LOOP');
-  out.push('REROUTE');
-  if (node.kind === 'JUNCTION') { out.push('SUPPRESS'); out.push('MASK'); }
-  return out;
+  return verbsFor(node.kind);
 }
 
 export const VERB_SPECS = VERBS;

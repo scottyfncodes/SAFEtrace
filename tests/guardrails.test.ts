@@ -8,8 +8,12 @@ import type { WorldData } from '../src/sim/worldTypes';
  * shipped town in the exact way a hand-authoring mistake breaks it, and asserts
  * the validator notices.
  *
- * All four failure modes below are real: every one of them shipped at least
- * once during the Northgate slice and was caught by hand, not by the tooling.
+ * Every failure mode below is real: each shipped at least once while a district
+ * was being authored by hand, and each was caught by eye rather than by tooling.
+ *
+ * The clone below goes through JSON, so a node whose records are computed at
+ * read time loses them. That is fine and deliberate: the validator checks
+ * structure, and structure is exactly what survives the round trip.
  */
 const clone = (): WorldData => JSON.parse(JSON.stringify(buildBellhaven())) as WorldData;
 const errorsOf = (d: WorldData) => validateWorld(d).filter((i) => i.severity === 'error').map((i) => i.message);
@@ -33,6 +37,21 @@ describe('authoring guardrails fail on bad content', () => {
       ],
     });
     expect(errorsOf(d).some((m) => m.includes('can see no open ground'))).toBe(true);
+  });
+
+  it('catches a node authored inside the building it is meant to hang on', () => {
+    const d = clone();
+    // TX-2 shipped in the middle of the relay hut: it drew, it validated, and
+    // it was selectable from one point on the hut's boundary. Put it back.
+    const hall = d.buildings.find((b) => b.label === 'RELAY 12')!;
+    const c = hall.poly.reduce((a, p) => ({ x: a.x + p.x / 4, y: a.y + p.y / 4 }), { x: 0, y: 0 });
+    d.network.nodes.find((n) => n.id === 'TX-2')!.pos = c;
+    expect(errorsOf(d).some((m) => m.includes('TX-2') && m.includes('unreachable'))).toBe(true);
+  });
+
+  it('does not mistake a junction on a wall for one buried in it', () => {
+    // MT-R12 hangs on the hall's east face. That is a mount, not a mistake.
+    expect(errorsOf(clone()).some((m) => m.includes('unreachable'))).toBe(false);
   });
 
   it('catches a district authored twice', () => {
