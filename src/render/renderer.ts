@@ -26,6 +26,10 @@ export class Renderer {
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
   private readonly perspective = new PerspectiveRenderer();
+  /** Where the sling is being held, from the touch layer. Null when slack. */
+  slingGrip: { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null = null;
+  /** Where to hint that the sling can be picked up. */
+  slingZoneHint: { x: number; y: number } | null = null;
   readonly chase = new ChaseCamera();
   private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
@@ -268,14 +272,17 @@ export class Renderer {
    * projection, and this way it costs nothing and never clips into a wall.
    */
   private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
-    const cx = this.w / 2;
+    const grip = this.slingGrip;
     const base = this.h + 18;
-    // The fork sits below and left of centre, the way a right-hander holds it.
-    const fx = cx - this.w * 0.20;
-    const forkY = this.h * 0.70;
+    // The fork rests low and left. The pouch is wherever the thumb is holding
+    // it, so the thing on screen is the thing under the finger.
+    const fx = grip ? grip.grab.x : this.w * 0.30;
+    const forkY = grip ? grip.grab.y - 54 : this.h * 0.74;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
     const skin = '#E8BE9B';
+    const pullX = grip ? grip.thumb.x : fx + 26;
+    const pullY = grip ? grip.thumb.y : forkY + prong * 0.4;
 
     ctx.save();
     ctx.lineCap = 'round';
@@ -285,13 +292,13 @@ export class Renderer {
     ctx.strokeStyle = shade(VENEER.player, -0.34);
     ctx.lineWidth = 22;
     ctx.beginPath();
-    ctx.moveTo(fx - 46, base);
+    ctx.moveTo(fx - 52, base);
     ctx.lineTo(fx, forkY + prong * 0.9);
     ctx.stroke();
     ctx.fillStyle = skin;
     ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.72, 13, 0, Math.PI * 2); ctx.fill();
 
-    // The fork itself.
+    // The fork.
     ctx.strokeStyle = '#8A6A4A';
     ctx.lineWidth = 8;
     ctx.beginPath();
@@ -301,28 +308,40 @@ export class Renderer {
     ctx.moveTo(fx, forkY); ctx.lineTo(fx + span, forkY - prong);
     ctx.stroke();
 
-    // The band, pulled back toward the drawing hand. Its reach is the draw.
-    const pullX = fx + 26 + draw * 74;
-    const pullY = forkY - prong * 0.1 + draw * 26;
+    // The band. It thins as it stretches, which is the whole read on tension.
     ctx.strokeStyle = '#3B4149';
-    ctx.lineWidth = Math.max(2, 5 - draw * 2.2);
+    ctx.lineWidth = Math.max(1.8, 5.2 - draw * 2.6);
     ctx.beginPath();
     ctx.moveTo(fx - span, forkY - prong);
     ctx.lineTo(pullX, pullY);
     ctx.lineTo(fx + span, forkY - prong);
     ctx.stroke();
 
-    // The bearing sitting in the pouch, and the hand around it.
+    // The bearing in the pouch, and the hand around it.
     ctx.fillStyle = '#C9CDD2';
     ctx.beginPath(); ctx.arc(pullX, pullY, 6.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = shade(VENEER.player, -0.34);
-    ctx.lineWidth = 22;
-    ctx.beginPath();
-    ctx.moveTo(this.w * 0.5 + 60, base);
-    ctx.lineTo(pullX + 10, pullY + 16);
-    ctx.stroke();
-    ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(pullX + 8, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
+    if (grip) {
+      ctx.strokeStyle = shade(VENEER.player, -0.34);
+      ctx.lineWidth = 22;
+      ctx.beginPath();
+      ctx.moveTo(this.w * 0.55, base);
+      ctx.lineTo(pullX + 8, pullY + 16);
+      ctx.stroke();
+      ctx.fillStyle = skin;
+      ctx.beginPath(); ctx.arc(pullX + 6, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // Not held: a quiet ring where the sling is waiting to be picked up.
+      const z = this.slingZoneHint;
+      if (z) {
+        ctx.strokeStyle = alpha('#F6F4EE', 0.20);
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 7]);
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, 42, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
     ctx.restore();
   }
 

@@ -68,9 +68,26 @@ export const TOUCH_TUNING = {
   lookScale: 260,
   /** A drag this small on release is a cancel, not a shot. */
   aimTapSlop: 10,
+  /**
+   * The slingshot's grab area, as a fraction of the viewport, measured from the
+   * bottom-left. The sling is drawn here, so putting a thumb on it is putting a
+   * thumb on the sling: there is no button and nothing to be told about.
+   */
+  slingZoneW: 0.5,
+  slingZoneH: 0.34,
+  /** Pull this far back from the grab for a full draw. */
+  pullFull: 118,
+  pullMin: 14,
+  /**
+   * How much the pull's sideways component swings the shot, in radians at full
+   * lateral travel. A sling pulled to the left throws to the right, and this is
+   * small on purpose: it is a last adjustment, not a second aiming stick.
+   */
+  pullAimYaw: 0.20,
+  pullAimPitch: 0.14,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'ollie' | 'vision' | 'aim' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'ollie' | 'vision' | 'look' | 'pull' | 'idle';
 
 interface Track {
   id: number;
@@ -117,6 +134,10 @@ export class TouchEngine {
   private pendingFire = false;
   /** Accumulated look delta while aiming, consumed once per frame. */
   private lookDelta = { yaw: 0, pitch: 0 };
+  /** Aim offset contributed by where the sling is pulled to. */
+  private pullAim = { yaw: 0, pitch: 0 };
+  /** The draw at the moment of release, so the shot frame still has it. */
+  private firedDraw = 0;
   private aiming = false;
   private canSling = true;
   /**
@@ -150,6 +171,7 @@ export class TouchEngine {
     this.pendingAimMode = false;
     this.pendingFire = false;
     this.lookDelta = { yaw: 0, pitch: 0 };
+    this.pullAim = { yaw: 0, pitch: 0 };
   }
 
   /** Button centres, laid out from the bottom-right corner. */
@@ -173,9 +195,22 @@ export class TouchEngine {
     return out;
   }
 
+  /** The rectangle the slingshot is held in, bottom-left of the view. */
+  slingZone(): { x: number; y: number; w: number; h: number } {
+    const { w, h, safe } = this.viewport;
+    const zw = w * this.tuning.slingZoneW;
+    const zh = h * this.tuning.slingZoneH;
+    return { x: safe.left, y: h - safe.bottom - zh, w: zw, h: zh };
+  }
+
   /** Which zone does a screen point belong to? */
   zoneAt(x: number, y: number): TouchRole {
-    if (this.aiming) return 'aim';
+    if (this.aiming) {
+      const z = this.slingZone();
+      const onSling = x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h;
+      // Everything that is not the sling is somewhere to look.
+      return onSling ? 'pull' : 'look';
+    }
     for (const b of this.buttonLayout()) {
       // A generous target: a thumb is eleven millimetres wide.
       if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.radius * 1.35) return b.id;
@@ -216,12 +251,14 @@ export class TouchEngine {
     track.cur = { x: s.x, y: s.y, t: s.t };
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
-    if (track.role === 'aim') {
+    if (track.role === 'look') {
       // Dragging moves the view under a fixed reticle, the way a hand does.
+      // Nothing else happens: looking around never fires anything.
       this.lookDelta.yaw += dxs / this.tuning.lookScale;
       this.lookDelta.pitch -= dys / this.tuning.lookScale;
       return;
     }
+    if (track.role === 'pull') return;   // read from its position on sample()
 
     if (track.role === 'stick') {
       // The anchor follows a thumb that has run out of room, so the stick can
@@ -243,13 +280,21 @@ export class TouchEngine {
     const isTap = !cancelled && held <= this.tuning.tapMs && track.moved <= this.tuning.tapSlop;
 
     switch (track.role) {
-      case 'aim':
-        if (cancelled) break;
-        // Letting go is the shot. A release that never moved is a change of
-        // mind, and puts the player back on the board.
-        if (track.moved > this.tuning.aimTapSlop || held > 320) this.pendingFire = true;
-        else this.pendingAimMode = true;
+      case 'look':
+        // Looking around is looking around. A tap on nothing leaves the mode.
+        if (!cancelled && isTap) this.pendingAimMode = true;
         break;
+      case 'pull': {
+        if (cancelled) break;
+        // Letting go of a loaded sling is the shot. Letting go of one that was
+        // never drawn is putting it down again.
+        const pull = Math.hypot(s.x - track.start.x, s.y - track.start.y);
+        if (pull > this.tuning.pullMin) {
+          this.firedDraw = clamp01((pull - this.tuning.pullMin) / (this.tuning.pullFull - this.tuning.pullMin));
+          this.pendingFire = true;
+        }
+        break;
+      }
       case 'sling':
         if (isTap) this.pendingAimMode = true;
         break;
@@ -272,6 +317,11 @@ export class TouchEngine {
     return undefined;
   }
 
+  private get pullTrack(): Track | undefined {
+    for (const t of this.tracks.values()) if (t.role === 'pull') return t;
+    return undefined;
+  }
+
   private get visionHeld(): boolean {
     for (const t of this.tracks.values()) if (t.role === 'vision') return true;
     return false;
@@ -283,8 +333,34 @@ export class TouchEngine {
     const t = this.tuning;
 
     if (this.aiming) {
-      i.aim = true;
-      if (this.pendingFire) { i.fire = true; i.firePressed = true; this.pendingFire = false; }
+      const pull = this.pullTrack;
+      if (pull) {
+        // Tension is how far back the thumb has come from where it grabbed.
+        const dx = pull.cur.x - pull.start.x;
+        const dy = pull.cur.y - pull.start.y;
+        const d = Math.hypot(dx, dy);
+        i.aim = true;
+        i.drawAmount = clamp01((d - t.pullMin) / (t.pullFull - t.pullMin));
+        // And the last few degrees of aim come from where it was pulled to: a
+        // sling drawn left throws right.
+        this.pullAim = {
+          yaw: -(dx / Math.max(t.pullFull, d)) * t.pullAimYaw,
+          pitch: -(dy / Math.max(t.pullFull, d)) * t.pullAimPitch,
+        };
+      } else {
+        this.pullAim = { yaw: 0, pitch: 0 };
+        // Not holding the sling: the band is slack and nothing is loaded.
+        i.aim = true;
+        i.drawAmount = 0;
+      }
+      if (this.pendingFire) {
+        // The release frame still has to describe a loaded sling, because the
+        // simulation only fires while the character is actually drawing.
+        i.drawAmount = Math.max(i.drawAmount ?? 0, this.firedDraw);
+        i.fire = true;
+        i.firePressed = true;
+        this.pendingFire = false;
+      }
       if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
       if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
       return i;
@@ -320,6 +396,21 @@ export class TouchEngine {
     const l = this.lookDelta;
     this.lookDelta = { yaw: 0, pitch: 0 };
     return l;
+  }
+
+  /** The aim offset the drawn sling is contributing right now, in radians. */
+  get pullOffset(): { yaw: number; pitch: number } { return this.pullAim; }
+
+  /** Where the sling is being held and pulled to, for drawing it. */
+  get slingGrip(): { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null {
+    const p = this.pullTrack;
+    if (!p) return null;
+    const d = Math.hypot(p.cur.x - p.start.x, p.cur.y - p.start.y);
+    return {
+      grab: { x: p.start.x, y: p.start.y },
+      thumb: { x: p.cur.x, y: p.cur.y },
+      draw: clamp01((d - this.tuning.pullMin) / (this.tuning.pullFull - this.tuning.pullMin)),
+    };
   }
 
   /** A world-space tap the caller should resolve against the network. */

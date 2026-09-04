@@ -9,7 +9,7 @@
 import { EventBus } from '../core/events';
 import type { Intent } from '../core/input';
 import {
-  type Vec2, angleOf, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds,
+  type Vec2, angleOf, clamp, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds, wrapAngle,
 } from '../core/math';
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
@@ -38,6 +38,12 @@ import { SYSTEM, CARE, SHOT } from '../content/copy';
 
 /** How far the player can reach into the network without walking to it. */
 export const SELECT_RANGE = 16;
+
+/**
+ * The most a shot will be bent toward something the player is nearly pointing
+ * at. Six degrees is a nudge; anything more starts aiming for them.
+ */
+const MAGNET_MAX = (6 * Math.PI) / 180;
 
 /**
  * You only hear a camera's servo if you are close and moving slowly, which is
@@ -424,7 +430,9 @@ export class Sim {
       // A thumb drag sets this angle, and it also sets the draw, so the two
       // fight each other. The cone is generous on purpose; the lock indicator
       // is what makes it honest rather than mysterious.
-      if (lateral > Math.max(2.6, along * 0.14) + t.radius) continue;
+      // The cone is exactly what magnetism can reach: sin(MAGNET_MAX) of the
+      // distance, plus the target's own size. Show a lock, land the shot.
+      if (lateral > Math.sin(MAGNET_MAX) * along + t.radius) continue;
       if (along < bestAlong) { bestAlong = along; best = t; }
     }
 
@@ -446,8 +454,23 @@ export class Sim {
        * still decides whether they get it, so this buys a fair shot, not a
        * free one.
        */
+      /*
+       * Magnetism, not a snap.
+       *
+       * The shot used to be rotated straight onto whatever the solver had
+       * found, from as much as sixteen degrees away. That is target snapping:
+       * the player points vaguely and the game does the aiming, and it takes
+       * the skill out of a thumb. The bearing now bends toward a target by at
+       * most MAGNET_MAX, and the acquisition cone is narrowed to match — so the
+       * bracket appears exactly when magnetism can close the gap, and never
+       * promises a hit it cannot deliver.
+       *
+       * The camera is never touched. Nothing here rotates the view.
+       */
       const toTarget = { x: best.pos.x - this.player.pos.x, y: best.pos.y - this.player.pos.y };
-      this.aimAngle = angleOf(toTarget);
+      const want = angleOf(toTarget);
+      const off = wrapAngle(want - this.aimAngle);
+      this.aimAngle = wrapAngle(this.aimAngle + clamp(off, -MAGNET_MAX, MAGNET_MAX));
       const flat = Math.hypot(toTarget.x, toTarget.y);
       const solved = solvePitch(flat, best.z - LAUNCH_Z, muzzle);
       this.aimPitch = solved ?? Math.atan2(best.z - LAUNCH_Z, flat);

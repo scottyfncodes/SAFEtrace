@@ -196,33 +196,99 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   });
 });
 
-describe('aiming is a different vocabulary', () => {
+describe('aiming: look, grab, pull, release', () => {
+  /*
+   * The old model made the whole screen one gesture: any drag looked *and* any
+   * release fired, so a player could not look around without shooting. Looking
+   * and firing are now separate things, and which one you get is decided by
+   * where your thumb lands — the sling is drawn in the bottom-left, so putting
+   * a finger on the sling is putting a finger on the sling.
+   */
   beforeEach(() => { engine.setAiming(true); });
 
-  it('turns the whole screen into the aim surface', () => {
-    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('aim');
-    expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('aim');
+  const slingAt = (e: TouchEngine) => {
+    const z = e.slingZone();
+    return { x: z.x + z.w * 0.3, y: z.y + z.h * 0.5 };
+  };
+
+  it('makes everywhere but the sling a place to look', () => {
+    expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('look');
+    expect(engine.zoneAt(360, 120)).toBe('look');
+    expect(engine.zoneAt(slingAt(engine).x, slingAt(engine).y)).toBe('pull');
   });
 
-  it('swings the view by dragging, right and left, up and down', () => {
-    drag(engine, 1, [WORLD, { x: WORLD.x + 130, y: WORLD.y }]);
-    const a = engine.takeLook();
-    expect(a.yaw).toBeGreaterThan(0);
-    drag(engine, 2, [WORLD, { x: WORLD.x, y: WORLD.y - 130 }]);
-    const b = engine.takeLook();
-    expect(b.pitch).toBeGreaterThan(0);
+  it('looks all the way round, without limit, on horizontal swipes', () => {
+    let total = 0;
+    for (let i = 0; i < 12; i++) {
+      drag(engine, i + 1, [WORLD, { x: WORLD.x + 300, y: WORLD.y }]);
+      engine.handle('up', at({ x: WORLD.x + 300, y: WORLD.y }, i + 1, clock));
+      total += engine.takeLook().yaw;
+    }
+    // Comfortably past a full turn: nothing clamps the horizontal.
+    expect(Math.abs(total)).toBeGreaterThan(Math.PI * 2);
   });
 
-  it('fires on release after a real drag', () => {
+  it('moves the view in proportion to the thumb, both ways', () => {
     drag(engine, 1, [WORLD, { x: WORLD.x + 60, y: WORLD.y }]);
+    const small = engine.takeLook().yaw;
+    drag(engine, 2, [WORLD, { x: WORLD.x + 180, y: WORLD.y }]);
+    const big = engine.takeLook().yaw;
+    expect(small).toBeGreaterThan(0);
+    expect(big / small).toBeGreaterThan(2.5);
+    drag(engine, 3, [WORLD, { x: WORLD.x, y: WORLD.y - 90 }]);
+    expect(engine.takeLook().pitch).toBeGreaterThan(0);
+  });
+
+  it('never fires from looking around, however far you swipe', () => {
+    drag(engine, 1, [WORLD, { x: WORLD.x + 240, y: WORLD.y - 60 }]);
     clock += 16;
-    engine.handle('up', at({ x: WORLD.x + 60, y: WORLD.y }, 1, clock));
+    engine.handle('up', at({ x: WORLD.x + 240, y: WORLD.y - 60 }, 1, clock));
+    expect(engine.sample().fire).toBe(false);
+  });
+
+  it('builds tension as the sling is pulled back', () => {
+    const g = slingAt(engine);
+    // One continuous thumb: grab, then draw it further and further back.
+    engine.handle('down', at(g, 1, clock));
+    expect(engine.sample().drawAmount).toBe(0);
+    clock += 16;
+    engine.handle('move', at({ x: g.x + 30, y: g.y + 20 }, 1, clock));
+    const part = engine.sample().drawAmount!;
+    clock += 16;
+    engine.handle('move', at({ x: g.x + 120, y: g.y + 80 }, 1, clock));
+    const full = engine.sample().drawAmount!;
+    expect(part).toBeGreaterThan(0);
+    expect(full).toBeGreaterThan(part);
+    expect(full).toBeCloseTo(1, 1);
+  });
+
+  it('lets the pull swing the aim, opposite the way the band is drawn', () => {
+    const g = slingAt(engine);
+    drag(engine, 1, [g, { x: g.x + 100, y: g.y }]);
+    engine.sample();
+    // Drawn to the right, so the shot goes left.
+    expect(engine.pullOffset.yaw).toBeLessThan(0);
+  });
+
+  it('fires on release of a drawn sling, and reports the draw it was let go at', () => {
+    const g = slingAt(engine);
+    drag(engine, 1, [g, { x: g.x + 90, y: g.y + 40 }]);
+    engine.sample();
+    clock += 16;
+    engine.handle('up', at({ x: g.x + 90, y: g.y + 40 }, 1, clock));
     const i = engine.sample();
     expect(i.fire).toBe(true);
     expect(i.firePressed).toBe(true);
+    expect(i.drawAmount).toBeGreaterThan(0.4);
   });
 
-  it('treats a tap as a change of mind and leaves the mode instead', () => {
+  it('does not fire a sling that was touched and let go without drawing', () => {
+    const g = slingAt(engine);
+    tap(engine, g);
+    expect(engine.sample().fire).toBe(false);
+  });
+
+  it('leaves the mode on a tap out in the world', () => {
     tap(engine, WORLD);
     const i = engine.sample();
     expect(i.fire).toBe(false);
@@ -230,7 +296,7 @@ describe('aiming is a different vocabulary', () => {
   });
 
   it('never asks the character to move while a shot is being lined up', () => {
-    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 80 }]);
+    drag(engine, 1, [WORLD, { x: WORLD.x, y: WORLD.y - 80 }]);
     const i = engine.sample();
     expect(i.moveVector).toBeNull();
     expect(i.push).toBe(false);

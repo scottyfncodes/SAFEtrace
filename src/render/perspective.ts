@@ -425,7 +425,19 @@ export class PerspectiveRenderer {
      * way, the heel edge the other — and the rider follows it rather than the
      * other way round.
      */
-    const roll = lean * 0.30;
+    /*
+     * A skateboard turns on its trucks, and the trucks pivot: the deck tilts
+     * over them and all four wheels stay on the road. Rolling the whole thing
+     * about its long axis was lifting two wheels clear of the pavement, which
+     * reads as tipping over rather than carving.
+     *
+     * So the deck tilts modestly — about ten degrees at full lock — the wheels
+     * are pinned to the ground whatever the deck is doing, and the rider leans
+     * more than the board does, which is where most of the carve is read from
+     * anyway. None of this touches steering: the turning radius is a simulation
+     * number and it has not moved.
+     */
+    const roll = lean * 0.035;
     /*
      * A pop, not a hop. The knees fold as it loads, the body extends through
      * the rise, the tail snaps down and the nose comes up, and the landing is
@@ -447,7 +459,8 @@ export class PerspectiveRenderer {
       ], VENEER.player, alpha('#2E3944', 0.45), 1.4);
       for (const [f, r] of [[0.66, 0.22], [0.66, -0.22], [-0.66, 0.22], [-0.66, -0.22]] as Array<[number, number]>) {
         const w = at(f, r);
-        this.card(cam, w, z + 0.045 + roll * Math.sign(r) + (f < 0 ? tail : tail * 0.35), 0.07, 0.045, '#2A3038');
+        // Planted. The only thing that lifts a wheel is leaving the ground.
+        this.card(cam, w, z + 0.045 + (f < 0 ? tail : tail * 0.35), 0.07, 0.045, '#2A3038');
       }
     }
 
@@ -464,7 +477,7 @@ export class PerspectiveRenderer {
 
     // Left foot: forward on the deck, always, riding the roll.
     const leftFoot = at(0.40, -0.15);
-    this.limb(cam, leftFoot, z + 0.12 + roll * -1 + tail * 0.35, at(0.12, -0.07), legTop, 0.075, legCol);
+    this.limb(cam, leftFoot, z + 0.12 - roll + tail * 0.35, at(0.12, -0.07), legTop, 0.075, legCol);
 
     // Right foot: on the tail, or off it and pushing.
     const rightFoot = reach > 0.02
@@ -474,11 +487,15 @@ export class PerspectiveRenderer {
     this.limb(cam, rightFoot, rightZ, at(-0.1, 0.07), legTop, 0.075, legCol);
     this.card(cam, rightFoot, rightZ + 0.02, 0.11, 0.05, shade(VENEER.player, -0.7));
 
-    // The rider follows the board: leaned over its banked edge, and shifted
-    // forward over the pushing foot.
-    const bodyAt = at(reach * 0.22, lean * 0.20);
-    this.card(cam, bodyAt, legTop + 0.34 - crouch, 0.24, 0.34, shade(VENEER.player, -0.42));
-    this.card(cam, bodyAt, legTop + 0.78 - crouch, 0.15, 0.15, '#F2D3B8');
+    /*
+     * The rider is where the carve actually reads. Weight goes over the edge
+     * being turned on and the knees compress into it, which is a bigger visual
+     * signal than the deck angle and costs the board nothing.
+     */
+    const dip = Math.abs(lean) * 0.06;
+    const bodyAt = at(reach * 0.22, lean * 0.26);
+    this.card(cam, bodyAt, legTop + 0.34 - crouch - dip, 0.24, 0.34 - dip * 0.4, shade(VENEER.player, -0.42));
+    this.card(cam, bodyAt, legTop + 0.78 - crouch - dip * 1.6, 0.15, 0.15, '#F2D3B8');
   }
 
   /** A leg: a narrow quad from a foot on the ground up to the hip. */

@@ -23,7 +23,7 @@ import { Advertisement } from './ui/ad';
 import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
 import { HINTS } from './content/copy';
-import { dist } from './core/math';
+import { dist, damp } from './core/math';
 
 /** How close the player must be to reach into a node, in metres. */
 const NODE_REACH = 16;
@@ -43,6 +43,9 @@ class Game {
   private touchAdapter = new TouchAdapter(this.touch);
   /** Where the character is looking while stood still, in world radians. */
   private aimYaw = 0;
+  /** Where the thumb has asked them to look. The view eases onto this. */
+  private lookTargetYaw = 0;
+  private lookTargetPitch = 0.06;
   private loop: Loop;
   private touchPrimary = isTouchPrimary();
   private phase: Phase = 'prefs';
@@ -288,6 +291,8 @@ class Game {
       this.aimYaw = this.sim.player.speed > 0.4
         ? Math.atan2(this.sim.player.vel.y, this.sim.player.vel.x)
         : this.sim.player.heading;
+      this.lookTargetYaw = this.aimYaw;
+      this.lookTargetPitch = 0.06;
       this.sim.lookPitch = 0.06;
       this.audio.hackTick();
     });
@@ -318,11 +323,21 @@ class Game {
     this.touch.setVisionAvailable(this.sim.visionUnlocked);
 
     if (this.sim.aimMode) {
-      // Dragging swings the view. The reticle stays in the middle of the
-      // screen, which is what makes the shot predictable.
+      /*
+       * Look is integrated into a target, and the view eases onto it.
+       *
+       * The raw deltas used to be applied straight to the camera, so a pointer
+       * stream that arrives in bursts — which is what a phone gives you —
+       * showed up as judder. A short half-life keeps the finger-to-camera
+       * relationship one to one over any movement a thumb can actually make,
+       * while smoothing the sampling underneath it. Ten pixels is still ten
+       * pixels; it just does not arrive in one lump.
+       */
       const look = this.touch.takeLook();
-      this.aimYaw += look.yaw;
-      this.sim.lookPitch = PerspectiveRenderer.clampPitch(this.sim.lookPitch + look.pitch);
+      this.lookTargetYaw += look.yaw;
+      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + look.pitch);
+      this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.028, dt);
+      this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.028, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
       this.story.update();
       return;
@@ -360,7 +375,11 @@ class Game {
    */
   private aimTargetPoint(): { x: number; y: number } {
     const p = this.sim.aimAnchor ?? this.sim.player.pos;
-    return { x: p.x + Math.cos(this.aimYaw) * 34, y: p.y + Math.sin(this.aimYaw) * 34 };
+    // Plus the last few degrees the drawn sling is contributing: a band pulled
+    // to the left throws to the right, and that is an adjustment the player
+    // makes with the same thumb that is holding the tension.
+    const yaw = this.aimYaw + this.touch.pullOffset.yaw;
+    return { x: p.x + Math.cos(yaw) * 34, y: p.y + Math.sin(yaw) * 34 };
   }
 
   /**
@@ -399,6 +418,13 @@ class Game {
   private render(dt: number): void {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
+    this.renderer.slingGrip = this.sim.aimMode ? this.touch.slingGrip : null;
+    if (this.sim.aimMode && this.touchPrimary) {
+      const z = this.touch.slingZone();
+      this.renderer.slingZoneHint = { x: z.x + z.w * 0.34, y: z.y + z.h * 0.52 };
+    } else {
+      this.renderer.slingZoneHint = null;
+    }
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;

@@ -99,13 +99,31 @@ describe('the lock tells the truth', () => {
    * about six degrees the reticle sat on the drone and the bearing went past
    * it. A lock that appears and then misses is worse than no lock.
    */
+  /*
+   * The contract changed when the hard snap was replaced by bounded magnetism.
+   * The shot used to be rotated straight onto a target from as much as sixteen
+   * degrees away, which is the game aiming rather than the player. It now bends
+   * by at most six, and the acquisition cone was narrowed to match — so the
+   * bracket appears less often, and still never promises a hit it cannot make.
+   */
   it('hits at every angle at which it offers a lock', () => {
-    for (const deg of [0, 4, 8, 12, 16]) {
+    for (const deg of [0, 3, 6, 9]) {
       const sim = makeSim();
       const d = parkedDrone(sim);
       dragShoot(sim, toward(sim, d.pos, deg));
       expect({ deg, lock: sim.aimTarget?.id, state: d.state })
         .toEqual({ deg, lock: 'UAV-01', state: 'DESTABILISED' });
+    }
+  });
+
+  it('stops offering one once the player is further off than a nudge', () => {
+    // Six degrees of bend plus the drone's own metre and a bit of width; past
+    // that the cone does not claim it, so there is no bracket and no hit.
+    for (const deg of [16, 24]) {
+      const sim = makeSim();
+      const d = parkedDrone(sim);
+      dragShoot(sim, toward(sim, d.pos, deg));
+      expect({ deg, lock: sim.aimTarget?.id ?? null }).toEqual({ deg, lock: null });
     }
   });
 
