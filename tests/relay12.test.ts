@@ -243,6 +243,56 @@ describe('TX-2 is infrastructure, and stays infrastructure', () => {
   });
 });
 
+describe('a segment is the blast radius, and the player can aim at it', () => {
+  it('is legible before the shot: the yard advertises which cameras share a relay', () => {
+    // Both the VISION world-label and the inspect panel read node.segmentId, and
+    // the panel shows it with no hack at all. Segment topology is free.
+    for (const s of relay.sensors) expect(node(s.id).segmentId).toBeTruthy();
+    const onX3 = relay.sensors.filter((s) => node(s.id).segmentId === 'S-X3').map((s) => s.id);
+    expect(onX3.sort()).toEqual(['CM-R03', 'CM-R04', 'CM-R05', 'CM-R06']);
+    expect(node('JX-R12').segmentId).toBe('S-X3');
+  });
+
+  it('takes down exactly that segment when a bearing lands on JX-R12, and nothing else', () => {
+    const sim = makeSim();
+    const jx = sim.network.get('JX-R12')!;
+    // Standing in the lock-up lane, which is where a player reading segments ends up.
+    place(sim, { x: 495, y: 266 });
+    step(sim, 0.3);
+    let shots = 0;
+    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos); shots++; }
+    expect(sim.network.get('JX-R12')!.state).toBe('DEGRADED');
+
+    const st = (id: string) => sim.sensorById.get(id)!.state;
+    for (const id of ['CM-R03', 'CM-R04', 'CM-R05', 'CM-R06']) expect({ id, st: st(id) }).toEqual({ id, st: 'DEGRADED' });
+    for (const id of ['CM-R01', 'CM-R02', 'CM-R07', 'CM-R08']) expect({ id, st: st(id) }).toEqual({ id, st: 'ONLINE' });
+
+    // Town-wide: no camera off S-X3 is touched.
+    const onX3 = new Set(['CM-R03', 'CM-R04', 'CM-R05', 'CM-R06']);
+    for (const s of data.sensors) {
+      if (onX3.has(s.id)) continue;
+      expect({ id: s.id, degraded: st(s.id) === 'DEGRADED' }).toEqual({ id: s.id, degraded: false });
+    }
+
+    // Ninety seconds, exactly as JX-207's record said back in Northgate.
+    expect((sim.sensorById.get('CM-R03')!.stateUntil - sim.tick) / 60).toBeCloseTo(90, 0);
+    step(sim, 95);
+    for (const id of onX3) expect({ id, st: st(id) }).toEqual({ id, st: 'ONLINE' });
+  });
+
+  it('costs something: the cameras it blinds see it happen first', () => {
+    const sim = makeSim();
+    const jx = sim.network.get('JX-R12')!;
+    place(sim, { x: 495, y: 266 });
+    step(sim, 0.3);
+    let shots = 0;
+    while (sim.network.get('JX-R12')!.state === 'NOMINAL' && shots < 8) { shoot(sim, jx.pos); shots++; }
+    const ev = [...sim.evidence.values()];
+    expect(ev.some((e) => e.label.includes('JX-R12'))).toBe(true);
+    expect(ev.flatMap((e) => e.observedBy).length).toBeGreaterThan(0);
+  });
+});
+
 describe('the Relay 12 chain is walkable from where the player stands', () => {
   it('is six records, each saying something the last did not', () => {
     expect(RELAY_CHAIN.length).toBe(6);

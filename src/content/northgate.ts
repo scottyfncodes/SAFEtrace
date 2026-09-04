@@ -70,12 +70,23 @@ export function authorNorthgate(b: TownBuilder): void {
       'SERVICES: SVC-VISION, SVC-PREDICT',
     ],
   });
-  b.junction(pt(112, 88), 'NORTHGATE JUNCTION', 'JX-207', [
-    'SEGMENT S-N2 — 14 NODES',
-    'FRAME 04:41:07 DELIVERED TO SVC-VISION IN 240 MS',
-    'NO RETRANSMISSION, NO LOSS, NO DEGRADATION',
-    'SELF-HEAL: 90S',
-  ]);
+  /*
+   * The first record in the game that says what a segment is.
+   *
+   * The count is read out of the network rather than written down, because a
+   * district grows and a written number does not. It said 14 while the segment
+   * held 18, which is a small lie in the one place the game cannot afford one:
+   * the whole argument is that SAFEtrace's own paperwork is accurate.
+   */
+  b.junction(pt(112, 88), 'NORTHGATE JUNCTION', 'JX-207', (ctx) => {
+    const seg = ctx.network.segments.find((s) => s.id === 'S-N2');
+    return [
+      `SEGMENT S-N2 — ${seg?.nodeIds.length ?? 0} NODES, ALL CARRIED BY THIS RELAY`,
+      'FRAME 04:41:07 DELIVERED TO SVC-VISION IN 240 MS',
+      'NO RETRANSMISSION, NO LOSS, NO DEGRADATION',
+      'SELF-HEAL: 90S',
+    ];
+  });
   b.link('CM-207', 'JX-207');
   b.link('CM-207', 'SVC-VISION');
   b.link('CM-207', 'SVC-PREDICT');

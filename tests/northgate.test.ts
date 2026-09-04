@@ -142,6 +142,32 @@ describe('Sable Lane is the route the model cannot follow', () => {
   });
 });
 
+describe('the record that teaches what a segment is', () => {
+  it('states a node count that is actually true', () => {
+    const seg = data.network.segments.find((s) => s.id === 'S-N2')!;
+    expect(recordsOf('JX-207')[0]).toBe(
+      `SEGMENT S-N2 — ${seg.nodeIds.length} NODES, ALL CARRIED BY THIS RELAY`);
+  });
+
+  it('is derived, so growing the district cannot make it a lie', () => {
+    // The failure this replaces: the line said 14 while the segment held 18,
+    // because Northgate grew after the record was written.
+    const grown = JSON.parse(JSON.stringify({ network: data.network })) as { network: typeof data.network };
+    grown.network.segments.find((s) => s.id === 'S-N2')!.nodeIds.push('CM-FAKE');
+    const line = resolveRecords(
+      data.network.nodes.find((n) => n.id === 'JX-207')!.records,
+      { tick: 0, evidence: [], network: grown.network, playerIdentity: '' },
+    )[0];
+    expect(line).toContain(`${grown.network.segments.find((s) => s.id === 'S-N2')!.nodeIds.length} NODES`);
+  });
+
+  it('names no junction the player has not found yet', () => {
+    const text = recordsOf('JX-207').join(' ');
+    expect(text).not.toMatch(/JX-R12|JX-N3|JX-CH/);
+    expect(text).not.toMatch(/ATTACK|DESTROY|TARGET/);
+  });
+});
+
 describe('the six-record chain', () => {
   it('is six distinct records, each saying something the last did not', () => {
     expect(RECORD_CHAIN.length).toBe(6);

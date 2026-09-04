@@ -186,6 +186,27 @@ nearest drone commits to it, so the approach is answered by a farther one. This
 is the existing finite-asset-pool behaviour with somewhere new to matter; no
 dispatch code changed.
 
+## The segment record, corrected
+
+`JX-207`'s first record is the only line in the game that says what a segment
+is, and it is a required read. It said `SEGMENT S-N2 — 14 NODES` while `S-N2`
+held **18** — Northgate grew after the record was written. In a game whose
+argument is that SAFEtrace's own paperwork is accurate, that is the one place a
+wrong number cannot sit.
+
+It is now derived from the live network, the way `MT-R12` and `TX-2` already
+were, and it carries the rule the player needs before they can aim at a segment
+rather than at a camera:
+
+```
+SEGMENT S-N2 — 18 NODES, ALL CARRIED BY THIS RELAY
+NO RETRANSMISSION, NO LOSS, NO DEGRADATION
+SELF-HEAL: 90S
+```
+
+Three lines, no target named, and the 90 s matches the real degrade window
+exactly. What the player does with it is theirs.
+
 ## Guardrail earned this slice
 
 `validateWorld` now errors on a non-sensor network node authored more than 0.9 m
@@ -254,10 +275,15 @@ they are looking at.
 
 ## Known limitations
 
-- Relay 12 sits after the `reprise` beat in the current arc, which fires roughly
-  22 seconds after the Northgate chain completes. Whether the ending gives a
-  player room to reach Relay 12 at all is an integration question this slice did
-  not touch and the next gate should.
+- `CM-207` and `CM-R07` differ by one character in one position, and `CM-R07` is
+  the control case the player must tell apart from the TX-2 set. Flagged by the
+  comprehension gate; not corrected in this slice.
+- TX-2's cabinet has no geometry in the veneer. It exists in VISION and in the
+  inspect panel within 14 m, and the authored evasion route passes 37 m away —
+  `MT-R12`'s edges line is the bridge back to it.
+- The delivery log's live entries come from evidence, so a player who never
+  fires the slingshot sees only the archived line. Recognition does not depend
+  on live entries; the personal register does. Left as a playtest question.
 - No interiors. The hall cannot be entered, which is correct — there is nothing
   in it — but the depot and the office cannot either.
 - The compound has no NPC schedule beyond a single shift-crew route across the
