@@ -78,8 +78,17 @@ describe('the slingshot loop', () => {
 
   it('turns a knocked-over bin into an anomaly that moves the asset pool', () => {
     const sim = makeSim();
-    // A bin on Northgate Lane.
-    const bin = sim.world.data.props.find((p) => p.kind === 'bin' && p.district === 'northgate')!;
+    // A bin with clear ground south of it, so the shot is about the bin rather
+    // than about whatever happens to be authored behind it. Picking "the first
+    // bin" made this test depend on content ordering.
+    const bins = sim.world.data.props.filter((p) => p.kind === 'bin' && p.district === 'northgate');
+    const bin = bins.find((p) => {
+      for (let d = 2; d <= 14; d += 2) {
+        if (sim.world.buildingAt({ x: p.pos.x, y: p.pos.y + d })) return false;
+      }
+      return true;
+    })!;
+    expect(bin, 'Northgate needs at least one bin approachable from the street').toBeDefined();
     place(sim, { x: bin.pos.x, y: bin.pos.y + 12 });
     expect(sim.dispatcher.activeAnomalies.length).toBe(0);
 

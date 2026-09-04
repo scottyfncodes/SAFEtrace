@@ -263,8 +263,10 @@ export class TownBuilder {
     pos: Vec2; facing: number; kind?: SensorKind; fov?: number; range?: number;
     sweep?: number; sweepPeriod?: number; sweepPhase?: number; height?: number;
     bias?: number; label?: string; id?: string; interior?: boolean;
+    /** What this node says when it is read. Defaults to an ordinary camera's. */
+    records?: string[];
   }): SensorData {
-    const node = this.addNode('CAMERA', opts.pos, opts.label ?? 'CAMERA', opts.id, [
+    const node = this.addNode('CAMERA', opts.pos, opts.label ?? 'CAMERA', opts.id, opts.records ?? [
       `FEED: NOMINAL`,
       `RETENTION: 90 DAYS`,
       `SERVICES: SVC-VISION, SVC-PREDICT`,
@@ -290,8 +292,8 @@ export class TownBuilder {
     return s;
   }
 
-  junction(pos: Vec2, label: string, id?: string): NetworkNodeData {
-    return this.addNode('JUNCTION', pos, label, id, ['SEGMENT RELAY', 'SELF-HEAL: 90S']);
+  junction(pos: Vec2, label: string, id?: string, records?: string[]): NetworkNodeData {
+    return this.addNode('JUNCTION', pos, label, id, records ?? ['SEGMENT RELAY', 'SELF-HEAL: 90S']);
   }
 
   plateReader(pos: Vec2, label: string): NetworkNodeData {

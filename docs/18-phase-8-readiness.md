@@ -127,6 +127,11 @@ The evidence for GO: every P0 found in this audit is fixed and covered; the thes
 
 ## 11. First Phase 8 production target
 
+> **Built.** See `19-northgate-slice-01.md`. Delivered to cap: 26 buildings,
+> 8 new sensors, 6 records, 1 authored evasion, 0 new mechanics, and no
+> simulation architecture changes.
+
+
 **Northgate, and the walk back through the records.**
 
 Northgate is already a stub — eight houses, `CM-207`, `JX-207`, a plate reader, and segment `S-N2` on uplink `TX-2`. The story already points the player at it, and it needs no new mechanics.

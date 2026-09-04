@@ -22,6 +22,8 @@ before implementation and is the authority for what the game is trying to be.
 | 15 | [Testing Strategy](15-testing-strategy.md) | What is tested and how |
 | 16 | [Production Roadmap](16-production-roadmap.md) | Phases from slice to ship |
 | 17 | [Brief Contradictions & Resolutions](17-contradictions.md) | Conflicts found in the brief and how they were settled |
+| 18 | [Phase 8 Readiness Gate](18-phase-8-readiness.md) | The audit, the risks, and the GO decision |
+| 19 | [Phase 8 Slice 01: Northgate](19-northgate-slice-01.md) | The first production slice, and what it proved |
 
 ## The one-sentence pitch
 

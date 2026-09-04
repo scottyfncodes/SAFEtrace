@@ -7,6 +7,7 @@
  * backyards, the parking decks) are where the player is free.
  */
 import { TownBuilder, pt } from './builder';
+import { authorNorthgate } from './northgate';
 import type { WorldData } from '../sim/worldTypes';
 
 const ROOF_TERRACOTTA = '#C4714E';
@@ -31,20 +32,44 @@ export function buildBellhaven(): WorldData {
   b.uplink('TX-1', pt(392, 82), 'BELLHAVEN CENTRAL UPLINK');
   b.uplink('TX-2', pt(514, 206), 'RELAY 12 — DISTRICT UPLINK');
 
+  /*
+   * The six records the investigation walks, in causal order:
+   *
+   *   CM-207   the camera worked
+   *   JX-207   the frame arrived, intact, on time
+   *   SVC-VISION   it was matched against a gallery of schoolchildren
+   *   SVC-REVIEW   at a threshold somebody lowered, for good reasons
+   *   SVC-PREDICT  against a boy the model already associated with Northgate
+   *   SVC-RECORD   and the result cannot be removed
+   *
+   * Nobody in that chain did anything wrong. That is the argument.
+   */
   b.service('SVC-VISION', 'SAFEtrace VISION — IDENTITY RECOGNITION', pt(392, 74), [
     'GALLERY: BELLHAVEN RESIDENTS (11,204)',
     'GALLERY: RIDGELINE SECONDARY — ENROLLED MINORS (812)',
     'CONSENT BASIS: PARENT / GUARDIAN, SAFEtrace SCHOOL T&C 4.2',
     'MATCH THRESHOLD: 97.0%',
-    'THRESHOLD LAST REVISED: LOWERED FROM 99.0% AFTER REVIEW 11-04',
-    'REVIEW 11-04 OUTCOME: EARLIER DETECTION, TWO HARMS PREVENTED',
+    'THRESHOLD LAST REVISED: LOWERED FROM 99.0% — SEE REVIEW 11-04',
+    'MATCH 04:41:07 — ARAYA, DEVON M. — 98.7%',
+  ]);
+  b.service('SVC-REVIEW', 'SAFEtrace GOVERNANCE — REVIEW 11-04', pt(392, 66), [
+    'PETITIONED BY: BELLHAVEN SCHOOL COUNCIL (PARENTS, 214 SIGNATURES)',
+    'CHANGE: MATCH THRESHOLD 99.0% -> 97.0%',
+    'RATIONALE: TWO HARMS PREVENTED IN PILOT QUARTER',
+    'FALSE POSITIVE RATE: +340%',
+    'FALSE POSITIVE RATE: WITHIN TOLERANCE',
+    'APPROVED: VENN, P. — REGIONAL OPERATIONS',
   ]);
   b.service('SVC-PREDICT', 'SAFEtrace PREDICT — ASSOCIATION & FORECAST', pt(400, 74), [
     'MODEL: ROUTE PRIOR v9',
     'INPUTS: LOCATION HISTORY, ASSOCIATES, TIME OF DAY, INCIDENT TYPE',
+    'ARAYA, DEVON M. — NORTHGATE ASSOCIATION 0.97',
+    'BASIS: 41 PRIOR VISITS. NEAREST RELATIVE RESIDES NORTHGATE LN.',
     'ASSOCIATION IS NOT AN ACCUSATION.',
   ]);
   b.service('SVC-RECORD', 'SAFEtrace RECORD — SUBJECT HISTORY', pt(384, 74), [
+    'ARAYA, DEVON M. — CONTACT 04:52. NO FURTHER ACTION.',
+    'ENTRY RETAINED: FACIAL MATCH 98.7%, INC-4100',
     'RETENTION: INDEFINITE',
     'AMENDMENT: NOT AVAILABLE TO SUBJECTS',
     'REQUEST DECLINED — RECORD IMMUTABLE',
@@ -120,43 +145,8 @@ export function buildBellhaven(): WorldData {
   const relay = b.road('Service Access', [pt(505, 206), pt(528, 178)], { width: 5, prior: 0.15, sidewalk: false });
   b.joinRoad(relay[1], ave[7], 0.15);
 
-  // ---------------------------------------------------------------- northgate
-  b.in('northgate').useSegment('S-N2');
-  b.rectSurface(10, 10, 240, 130, 'grass', 0);
-  const ngHouses: Array<[number, number, number, string]> = [
-    [40, 30, 0, ROOF_SLATE], [85, 30, 0, ROOF_TERRACOTTA], [130, 30, 0, ROOF_SAND],
-    [175, 30, 0, ROOF_SLATE], [215, 30, 0, ROOF_TERRACOTTA],
-    [45, 95, 180, ROOF_TERRACOTTA], [100, 95, 180, ROOF_SLATE], [180, 95, 180, ROOF_SAND],
-  ];
-  for (const [x, y, rot, roof] of ngHouses) {
-    b.house({
-      at: pt(x, y), w: 10, d: 8, rot, roof, wall: WALL_CREAM,
-      occupants: 2 + ((x + y) % 4),
-      drivewayDir: y < 60 ? 90 : 270,
-      camera: { facing: y < 60 ? 90 : 270, range: 21, fov: 70 },
-    });
-  }
-
-  /**
-   * CM-207. The camera that produces the match. There is nothing wrong with it,
-   * and that is the entire point of the story.
-   */
-  b.camera({
-    id: 'CM-207', pos: pt(145, 88), facing: 270, kind: 'street',
-    fov: 80, range: 34, sweep: 22, sweepPeriod: 13, height: 4.6, bias: 0.97,
-    label: 'NORTHGATE LN / VINE — STREET',
-  });
-  b.junction(pt(112, 88), 'NORTHGATE JUNCTION', 'JX-207');
-  b.link('CM-207', 'JX-207');
-  b.link('CM-207', 'SVC-VISION');
-  b.link('CM-207', 'SVC-PREDICT');
-  b.link('JX-207', 'TX-2');
-  b.plateReader(pt(222, 62), 'NORTHGATE LN — PLATE READER');
-  b.trees([pt(60, 118), pt(125, 118), pt(200, 120), pt(30, 78)]);
-  b.prop('bin', pt(118, 45), 0);
-  b.prop('bin', pt(160, 45), 0);
-  b.prop('car', pt(52, 47), Math.PI / 2, { tint: '#4E7FA8' });
-  b.prop('car', pt(190, 112), Math.PI / 2, { tint: '#D96C5F' });
+  // Northgate lives in its own module. Districts are content, not architecture.
+  authorNorthgate(b);
 
   // ---------------------------------------------------------------- commons
   b.in('commons').useSegment('S-C1');
@@ -461,6 +451,10 @@ export function buildBellhaven(): WorldData {
   b.link('TX-1', 'SVC-VISION');
   b.link('TX-1', 'SVC-PREDICT');
   b.link('TX-2', 'SVC-RECORD');
+  // The chain, as edges. Each record names the next thing worth asking about.
+  b.link('SVC-VISION', 'SVC-REVIEW');
+  b.link('SVC-PREDICT', 'SVC-RECORD');
+  b.link('SVC-REVIEW', 'SVC-PREDICT');
 
 
   // ------------------------------------------------- avenue frontage & infill
@@ -476,21 +470,6 @@ export function buildBellhaven(): WorldData {
     height: 5.5, wall: WALL_CREAM, roof: ROOF_TERRACOTTA, label: 'CAFE',
   });
   b.cover([pt(336, 142), pt(452, 142), pt(452, 147), pt(336, 147)], 'awning', 3.4);
-
-  // Townhouses along the north side of the avenue: a continuous wall of
-  // frontage that makes the avenue feel like a street rather than a corridor.
-  b.in('northgate').useSegment('S-N2');
-  for (let i = 0; i < 6; i++) {
-    const x = 34 + i * 32;
-    b.building('house', [pt(x, 122), pt(x + 26, 122), pt(x + 26, 142), pt(x, 142)], {
-      height: 6.4, wall: i % 2 === 0 ? WALL_WARM : WALL_CREAM,
-      roof: i % 3 === 0 ? ROOF_SLATE : ROOF_TERRACOTTA,
-      occupants: 2 + (i % 3), label: `TERRACE ${200 + i}`,
-    });
-    if (i % 2 === 0) {
-      b.camera({ pos: pt(x + 13, 143), facing: 90, kind: 'doorbell', fov: 82, range: 18, height: 2.6, bias: 0.86, label: `TERRACE ${200 + i} DOORBELL` });
-    }
-  }
 
   // Back-garden sheds. Small, solid, and exactly the right height to duck behind.
   b.in('maple').useSegment('S-M1');

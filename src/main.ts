@@ -209,7 +209,7 @@ class Game {
   private bindKeys(): void {
     // Number keys select a verb on the focused node. In-world, in real time,
     // with a drone possibly already on its way.
-    for (let i = 1; i <= 6; i++) this.verbKeys.set(`Digit${i}`, i - 1);
+    for (let i = 1; i <= 9; i++) this.verbKeys.set(`Digit${i}`, i - 1);
 
     window.addEventListener('keydown', (e) => {
       if (this.phase === 'ad' || this.phase === 'reprise') {
@@ -227,10 +227,20 @@ class Game {
       if (!node) return;
       const verbs = availableVerbs(node);
       const verb = verbs[slot] as HackVerb | undefined;
-      if (!verb) return;
-      if (this.sim.hack) this.sim.cancelHack();
-      else this.sim.startHack(verb, node.id);
-      e.preventDefault();
+      if (verb) {
+        if (this.sim.hack) this.sim.cancelHack();
+        else this.sim.startHack(verb, node.id);
+        e.preventDefault();
+        return;
+      }
+      // Past the verbs, the digits walk the records already traced.
+      const traced = this.sim.reachableServices().filter((s) => s.id !== node.id);
+      const jump = traced[slot - verbs.length];
+      if (jump) {
+        this.sim.selectNode(jump.id);
+        this.audio.hackTick();
+        e.preventDefault();
+      }
     });
   }
 

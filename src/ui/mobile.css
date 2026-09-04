@@ -136,6 +136,13 @@ html.touch #inspect .verb {
 }
 html.touch #inspect .verb:active { background: rgba(79, 224, 196, 0.22); }
 #inspect .verbs { gap: 8px; }
+#inspect .traced {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid rgba(79, 224, 196, 0.18);
+}
+#inspect .verb.node { border-color: rgba(242, 245, 247, 0.35); color: #E8EFF2; }
+html.touch #inspect .verb.node { background: rgba(242, 245, 247, 0.07); }
 #inspect .rec.hold { color: var(--st-warn); }
 #inspect .verb.waiting { opacity: 0.45; }
 

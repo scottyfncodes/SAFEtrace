@@ -96,6 +96,8 @@ export class Hud {
       if (!target) return;
       e.preventDefault();
       e.stopPropagation();
+      const jumpTo = target.dataset.node;
+      if (jumpTo) { this.sim.selectNode(jumpTo); return; }
       const verb = target.dataset.verb as HackVerb | undefined;
       const nodeId = this.inspect.dataset.node;
       if (verb && nodeId) this.onVerb(verb, nodeId);
@@ -209,6 +211,7 @@ export class Hud {
         ? `<div class="rec">EDGES: ${node.edges.map(escapeHtml).join(', ')}</div>`
         : '') +
       (rolling ? `<div class="rec hold">${escapeHtml(SYSTEM.holdStill)}</div>` : '') +
+      this.tracedChips(node, verbs.length) +
       `<div class="verbs">${
         verbs.map((v, i) => {
           const busy = hack?.verb === v;
@@ -222,6 +225,24 @@ export class Hud {
     // Rebinding every frame would fight the touch layer, so the panel owns one
     // delegated handler for the life of the HUD.
     this.inspect.dataset.node = node.id;
+  }
+
+  /**
+   * Records the player has followed an edge to.
+   *
+   * A service has no location, so once traced it can be read from anywhere.
+   * Without this the chain existed in the simulation and was unreachable by a
+   * person, which is the same as not existing.
+   */
+  private tracedChips(node: NetworkNode, verbCount: number): string {
+    const services = this.sim.reachableServices().filter((s) => s.id !== node.id);
+    if (services.length === 0) return '';
+    return `<div class="traced"><span class="rec">TRACED</span>${
+      services.map((s, i) => {
+        const key = this.touch ? '' : `${verbCount + i + 1} `;
+        return `<button class="verb node" data-node="${s.id}">${key}${escapeHtml(s.id)}</button>`;
+      }).join('')
+    }</div>`;
   }
 
   private updateBearings(): void {

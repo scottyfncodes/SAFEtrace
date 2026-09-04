@@ -130,5 +130,11 @@ export const DIALOGUE = {
   playerThought: [
     "It was 98.7% sure.",
     "It wasn't lying. It was just sure.",
+    "Everything in here worked exactly the way it was meant to.",
+    "Somebody's mum asked for this. And they were right.",
+  ],
+  sableLane: [
+    "Devon: the lane behind the terraces. nobody's ever put a light back there.",
+    "Devon: it thinks you're still on the road.",
   ],
 };

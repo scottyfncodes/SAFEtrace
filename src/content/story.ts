@@ -45,9 +45,9 @@ export interface StoryState {
   incidentId: string | null;
   devonReleasedAt: number;
   reachedCm207: boolean;
-  queriedIncident: boolean;
-  queriedVision: boolean;
-  queriedRecord: boolean;
+  enteredSableLane: boolean;
+  /** How much of the six-record chain the player has actually read. */
+  chainRead: number;
   visionUnlockedAt: number;
   repriseShown: boolean;
 }
@@ -58,15 +58,24 @@ export const initialStoryState = (): StoryState => ({
   incidentId: null,
   devonReleasedAt: -1,
   reachedCm207: false,
-  queriedIncident: false,
-  queriedVision: false,
-  queriedRecord: false,
+  enteredSableLane: false,
+  chainRead: 0,
   visionUnlockedAt: -1,
   repriseShown: false,
 });
 
 const CHANNEL_ENTRY = { x: 196, y: 428 };
 const CM207 = { x: 145, y: 88 };
+/** The rear service alley, and the break in its garages behind CM-207. */
+const SABLE_LANE = { x: 144, y: 112 };
+
+/**
+ * The chain, in the order it makes sense in. The player may read it in any
+ * order; this is only used to notice how far they have got.
+ */
+export const RECORD_CHAIN = [
+  'CM-207', 'JX-207', 'SVC-VISION', 'SVC-REVIEW', 'SVC-PREDICT', 'SVC-RECORD',
+] as const;
 
 export const BEATS: Beat[] = [
   {
@@ -178,6 +187,40 @@ export const BEATS: Beat[] = [
     when: (c, s) => s.devonReleasedAt > 0 && c.sim.tick > s.devonReleasedAt - 60 * 40,
     run: (c) => {
       c.sim.message('SYSTEM', ['INCIDENT INC-4100', 'SOURCE NODE: CM-207 — NORTHGATE'], 7.0);
+      // No marker, no arrow. The system says where it is looking from, and the
+      // player already knows what Northgate Lane looks like from the map.
+      c.after(7, () => c.sim.message('CARE', [CARE.monthly], 5.5));
+    },
+  },
+
+  /*
+   * The authored evasion.
+   *
+   * CM-207 faces the street, so the obvious approach is the one it is watching.
+   * Nothing forbids it — a player who is fast, or who is willing to spend the
+   * risk, can simply skate up Northgate Lane. What the district offers instead
+   * is a rear alley that no forecast can run along, coming out behind the
+   * camera through the one gap in the garages.
+   *
+   * These beats do not gate anything. They only notice.
+   */
+  {
+    id: 'northgate-approach',
+    label: 'Northgate — the street is watched',
+    when: (c, s) => s.devonReleasedAt > 0 && dist(c.sim.player.pos, { x: 145, y: 60 }) < 46,
+    run: (c) => {
+      c.sim.message('SYSTEM', [SYSTEM.subjectMonitoring, SYSTEM.risk(c.sim.playerRisk)], 4.5);
+    },
+  },
+  {
+    id: 'sable-lane',
+    label: 'Sable Lane',
+    when: (c, s) => s.devonReleasedAt > 0 && dist(c.sim.player.pos, SABLE_LANE) < 30,
+    run: (c, s) => {
+      s.enteredSableLane = true;
+      // The forecast is still running. It is just running somewhere else.
+      c.hud.say([DIALOGUE.sableLane[0]], 3.6);
+      c.after(4, () => c.hud.say([DIALOGUE.sableLane[1]], 3.6));
     },
   },
   {
@@ -192,28 +235,24 @@ export const BEATS: Beat[] = [
     },
   },
   {
+    id: 'chain-underway',
+    label: 'Following the frame',
+    when: (_c, s) => s.chainRead >= 3,
+    run: (c) => {
+      c.hud.say([DIALOGUE.playerThought[2]], 4.0);
+    },
+  },
+  {
     id: 'understood',
     label: 'The pipeline that produced 98.7%',
-    when: (c, s) =>
-      s.reachedCm207 &&
-      c.sim.discoveredNodes.has('SVC-VISION') &&
-      c.sim.discoveredNodes.has('SVC-PREDICT'),
+    when: (_c, s) => s.reachedCm207 && s.chainRead >= RECORD_CHAIN.length,
     run: (c, s) => {
       s.visionUnlockedAt = c.sim.tick;
-      // Six database records, and the player assembles the argument themselves.
-      c.sim.message('SYSTEM', [
-        'GALLERY: RIDGELINE SECONDARY — ENROLLED MINORS',
-        'CONSENT BASIS: PARENT / GUARDIAN',
-      ], 7.0);
-      c.after(4.5, () => c.sim.message('SYSTEM', [
-        'ASSOCIATION: ARAYA, DEVON M. — NORTHGATE',
-        'PRIOR VISITS: 41',
-      ], 7.0));
-      c.after(9.5, () => c.sim.message('SYSTEM', [
-        SYSTEM.recordImmutable,
-        SYSTEM.retention,
-      ], 8.0, 'strong'));
-      c.after(15, () => c.hud.say([DIALOGUE.playerThought[1]], 4.5));
+      // Six records, and the player assembles the argument themselves. Nobody
+      // in the chain did anything wrong, and that is the whole of it.
+      c.sim.message('SYSTEM', [SYSTEM.recordImmutable, SYSTEM.retention], 8.0, 'strong');
+      c.after(5, () => c.hud.say([DIALOGUE.playerThought[1]], 4.5));
+      c.after(11, () => c.hud.say([DIALOGUE.playerThought[3]], 5.0));
     },
   },
   {
@@ -244,6 +283,13 @@ export class StoryDirector {
   }
 
   update(): void {
+    // How much of the chain has been read. A record counts once the player has
+    // held that node, not merely once an edge has named it.
+    const read = this.ctx.sim.readNodes;
+    let n = 0;
+    for (const id of RECORD_CHAIN) if (read.has(id)) n++;
+    this.state.chainRead = n;
+
     // Due work first, so a beat scheduled for this tick lands before anything
     // it might gate.
     if (this.queue.length) {

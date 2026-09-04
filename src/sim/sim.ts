@@ -97,6 +97,13 @@ export class Sim {
    */
   selectedNodeId: string | null = null;
   discoveredNodes = new Set<string>();
+  /**
+   * Nodes whose records the player has actually had in front of them.
+   *
+   * Distinct from `discoveredNodes`, which only means an edge named it. An
+   * investigation is a sequence of things read, not things pointed at.
+   */
+  readNodes = new Set<string>();
 
   escalation: EscalationLevel = 'PASSIVE';
   visionUnlocked = false;
@@ -803,6 +810,7 @@ export class Sim {
       const chosen = this.network.get(this.selectedNodeId);
       if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
         this.focusNode = chosen;
+        if (chosen.discovered) this.readNodes.add(chosen.id);
         return;
       }
       // Skating away from a node lets it go, without a menu to dismiss.
@@ -810,6 +818,7 @@ export class Sim {
       if (this.hack) this.cancelHack();
     }
     this.focusNode = this.network.nearest(this.player.pos, 14) ?? null;
+    if (this.focusNode?.discovered) this.readNodes.add(this.focusNode.id);
   }
 
   /**
