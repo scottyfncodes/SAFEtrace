@@ -193,3 +193,54 @@ export function polyCentroid(poly: readonly Vec2[]): Vec2 {
   a *= 3;
   return { x: cx / a, y: cy / a };
 }
+
+/** A point in the world with a height. Enough to rig a limb with. */
+export interface Vec3 { x: number; y: number; z: number }
+
+/**
+ * Where the joint of a two-bone limb goes.
+ *
+ * Given where a limb starts, where it ends, and how long each half of it is,
+ * there are only two places the joint can be: mirror images of each other
+ * across the line between the ends. `bendTo` picks which — forward for a knee,
+ * back for an elbow — and picking it explicitly is the whole reason a knee
+ * cannot fold the wrong way in a pose nobody thought to check. If the ends are
+ * further apart than the limb is long the limb straightens rather than tearing.
+ *
+ * This lives here rather than in the renderer because it is geometry: the same
+ * triangle solves a leg, an arm, and anything else with an elbow in it.
+ */
+export function solveTwoBone(
+  root: Vec3, end: Vec3, upper: number, lower: number, bendTo: Vec2,
+): Vec3 {
+  const vx = end.x - root.x, vy = end.y - root.y, vz = end.z - root.z;
+  const span = Math.hypot(vx, vy, vz);
+  if (span < 1e-6) return { x: root.x, y: root.y, z: root.z };
+  // Never longer than the limb: past full extension the joint sits on the line.
+  const d = Math.min(span, (upper + lower) * 0.999);
+  const ux = vx / span, uy = vy / span, uz = vz / span;
+
+  // How far along the limb the joint sits, and how far off that line.
+  const a = (upper * upper - lower * lower + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, upper * upper - a * a));
+
+  // The bend direction with everything along the limb taken out of it, so the
+  // joint is pushed square to the line between the ends.
+  const dot = bendTo.x * ux + bendTo.y * uy;
+  let bx = bendTo.x - ux * dot, by = bendTo.y - uy * dot, bz = -uz * dot;
+  const bl = Math.hypot(bx, by, bz);
+  if (bl < 1e-6) {
+    // Bend direction is along the limb: fall back to any square direction.
+    bx = -uy; by = ux; bz = 0;
+    const fl = Math.hypot(bx, by) || 1;
+    bx /= fl; by /= fl;
+  } else {
+    bx /= bl; by /= bl; bz /= bl;
+  }
+
+  return {
+    x: root.x + ux * a + bx * h,
+    y: root.y + uy * a + by * h,
+    z: root.z + uz * a + bz * h,
+  };
+}

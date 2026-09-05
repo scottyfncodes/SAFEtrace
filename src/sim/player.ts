@@ -52,7 +52,16 @@ function steerOf(p: PlayerState, intent: Intent): number {
 }
 
 export const TUNE = {
-  footSpeed: 2.6,
+  /**
+   * Off the board, the player runs.
+   *
+   * It used to be a 2.6 m/s walk, which was fine when nothing was ever chasing
+   * you and fatal the moment something was: a bail put you on your feet at
+   * half the speed of the officer coming for you. A kid who has just come off
+   * their board runs. Still much slower than the board — that gap is the whole
+   * reason to be on it — and still faster than a copper.
+   */
+  footSpeed: 5.0,
   maxSpeed: 11.0,
   flowSpeedBonus: 2.5,
   pushImpulse: 3.1,

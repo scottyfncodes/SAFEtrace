@@ -1,3 +1,4 @@
+import { solveTwoBone } from '../src/core/math';
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { validateWorld, World } from '../src/sim/world';
@@ -103,5 +104,77 @@ describe('Bellhaven content validation', () => {
     const seg = data.network.segments.find((s) => s.id === 'S-N2');
     expect(seg!.uplinkId).toBe('TX-2');
     expect(cm207!.edges).toContain('SVC-VISION');
+  });
+});
+
+describe('a limb bends the way a limb bends', () => {
+  /*
+   * The reverse-knee bug, closed at the source.
+   *
+   * The rider's legs used to be a straight quad from foot to hip, then a quad
+   * with a joint jammed into the middle at a fixed sideways offset — which
+   * meant the direction of the bend was a decoration, tuned by hand for one
+   * pose, and wrong in every pose nobody re-tuned. It came out backwards, so
+   * the character's knees folded like a bird's.
+   *
+   * Both legs and both arms now go through one solver, and these hold the
+   * property the whole rig depends on: the joint lands on the side you asked
+   * for, at every extension, in every pose, with the bones intact.
+   */
+  const hip = { x: 0, y: 0, z: 0.8 };
+  const forward = { x: 1, y: 0 };
+
+  it('puts the knee on the side it was told to, however deep the crouch', () => {
+    // From nearly straight down to a deep squat. Full extension has no bend
+    // left to have — the straightening case below covers that.
+    for (const ankleZ of [0.6, 0.45, 0.3, 0.15, 0.05]) {
+      const knee = solveTwoBone(hip, { x: 0, y: 0, z: ankleZ }, 0.4, 0.38, forward);
+      expect({ ankleZ, forwardOfHip: knee.x > 0.02 }).toEqual({ ankleZ, forwardOfHip: true });
+    }
+    // And it comes further forward the deeper the crouch — the hip is at 0.8,
+    // so a foot at 0.6 is a folded leg and one at 0.25 is a nearly straight
+    // one. Squatting puts your knees out in front of you; this is that.
+    const deep = solveTwoBone(hip, { x: 0, y: 0, z: 0.6 }, 0.4, 0.38, forward);
+    const shallow = solveTwoBone(hip, { x: 0, y: 0, z: 0.25 }, 0.4, 0.38, forward);
+    expect(deep.x).toBeGreaterThan(shallow.x);
+  });
+
+  it('bends the other way when asked, which is what an elbow does', () => {
+    const back = solveTwoBone(hip, { x: 0, y: 0, z: 0.2 }, 0.4, 0.38, { x: -1, y: 0 });
+    expect(back.x).toBeLessThan(-0.02);
+  });
+
+  it('keeps both bones their own length, so the leg cannot stretch', () => {
+    // Targets inside the limb's reach: past that it straightens, tested below.
+    for (const ankle of [
+      { x: 0, y: 0, z: 0.2 }, { x: 0.25, y: 0.1, z: 0.25 }, { x: -0.2, y: 0.4, z: 0.3 },
+    ]) {
+      const knee = solveTwoBone(hip, ankle, 0.4, 0.38, forward);
+      const upper = Math.hypot(knee.x - hip.x, knee.y - hip.y, knee.z - hip.z);
+      const lower = Math.hypot(ankle.x - knee.x, ankle.y - knee.y, ankle.z - knee.z);
+      expect(upper).toBeCloseTo(0.4, 4);
+      expect(lower).toBeCloseTo(0.38, 4);
+    }
+  });
+
+  it('straightens instead of tearing when the foot is out of reach', () => {
+    // A pushing leg reaches for the road; it must run out of bend, not snap.
+    const far = { x: 2.5, y: 0, z: 0 };
+    const knee = solveTwoBone(hip, far, 0.4, 0.38, forward);
+    const onLine = Math.hypot(knee.y - hip.y);
+    expect(onLine).toBeLessThan(0.02);
+    expect(knee.x).toBeGreaterThan(hip.x);
+    expect(Number.isFinite(knee.z)).toBe(true);
+  });
+
+  it('never returns anything but a real point, whatever it is handed', () => {
+    const same = solveTwoBone(hip, { ...hip }, 0.4, 0.38, forward);
+    expect([same.x, same.y, same.z].every(Number.isFinite)).toBe(true);
+    // A bend direction pointing straight along the limb has no side to pick;
+    // it must still produce a joint rather than a NaN.
+    const along = solveTwoBone(
+      { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 0.6, 0.6, { x: 1, y: 0 },
+    );
+    expect([along.x, along.y, along.z].every(Number.isFinite)).toBe(true);
   });
 });

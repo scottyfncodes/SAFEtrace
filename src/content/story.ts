@@ -149,12 +149,30 @@ export const BEATS: Beat[] = [
     label: 'The veneer cracks',
     when: (c, s) => s.matchFiredAt > 0 && c.sim.tick >= s.matchFiredAt + 60 * 13,
     run: (c) => {
-      // A drone's shadow crosses them. As its light comes on the world flickers
-      // into machine vision for under two seconds and snaps back. Neither
-      // character comments on it.
+      /*
+       * A drone's shadow crosses them. As its light comes on the world flickers
+       * into machine vision for under two seconds and snaps back. Neither
+       * character comments on it.
+       *
+       * This used to raise an anomaly at the player's own position, which
+       * tasked a unit to go and investigate the exact spot the player was
+       * standing on — so twenty seconds into an ordinary afternoon of skating,
+       * a drone and a car converged on a fourteen-year-old who had done
+       * nothing. That is the single loudest source of the game feeling like a
+       * permanent chase, and it was scenery: the beat is a shadow passing
+       * overhead, and a shadow does not need anybody dispatched to cast it.
+       *
+       * The drone is put on a short route over the player instead, so it
+       * genuinely flies across and carries on. Nobody is looking for anybody.
+       */
       const drone = c.sim.drones[0];
-      drone.pos = { x: c.sim.player.pos.x + 14, y: c.sim.player.pos.y - 18 };
-      c.sim.dispatcher.flagAnomaly(c.sim.player.pos, c.sim.tick, 'INVESTIGATING — SUBJECT VERIFICATION', 60 * 24);
+      const from = { x: c.sim.player.pos.x + 34, y: c.sim.player.pos.y - 44 };
+      drone.pos = from;
+      drone.route = [
+        { x: c.sim.player.pos.x - 6, y: c.sim.player.pos.y + 8 },
+        ...drone.route,
+      ];
+      drone.routeIndex = 0;
       c.sim.crackTheVeneer(1.8);
       c.audio.peelIn();
       c.renderer.kick(0.35);

@@ -8,6 +8,9 @@ import { fuse, makeTrack } from '../src/sim/surveillance/fusion';
 import { levelFor, type Subject } from '../src/sim/surveillance/types';
 import { scoreRisk } from '../src/sim/surveillance/risk';
 import { analyse, makeEvidence, solveRange } from '../src/sim/surveillance/evidence';
+import { TUNE } from '../src/sim/player';
+import { PATROL } from '../src/sim/patrol';
+import { DRONE } from '../src/sim/drone';
 import { fire, solvePitch, stepProjectile } from '../src/sim/slingshot';
 import { THRESHOLDS } from '../src/sim/surveillance/behavior';
 import { DEG } from '../src/core/math';
@@ -498,9 +501,44 @@ describe('being watched is not being hunted', () => {
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: 145, y: 62 });
     shootAt(sim, cam.data.pos, cam.data.height);
-    step(sim, 12);
+    let sent = false;
+    for (let i = 0; i < 24 && !sent; i++) { step(sim, 0.5); sent = chasing(sim); }
     expect(sim.playerTrack.wantedUntil).toBeGreaterThan(sim.tick);
+    expect(sent).toBe(true);
+  });
+
+  it('sends the air first: a drone is what you cannot outrun', () => {
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    let kinds: string[] = [];
+    for (let i = 0; i < 24 && kinds.length === 0; i++) {
+      step(sim, 0.5);
+      kinds = sim.tasking.filter((a) => a.task?.trackId === sim.playerTrack.id).map((a) => a.kind);
+    }
+    expect(kinds).toContain('drone');
+  });
+
+  it('loses the thread: break line of sight, keep moving, and they stop coming', () => {
+    /*
+     * A pursuit has to be losable or it is a countdown rather than a chase.
+     * Nothing has seen the subject for six seconds, so the estimate the unit
+     * is driving at is six seconds of guesswork, and it stops driving at it.
+     */
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 24; i++) { step(sim, 0.5); if (chasing(sim)) break; }
     expect(chasing(sim)).toBe(true);
+    // Gone: out of every cone in the district, and still moving.
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    step(sim, 9);
+    expect(chasing(sim)).toBe(false);
+    // Still on the list, though. Being lost is not being forgiven.
+    expect(sim.playerTrack.wantedUntil).toBeGreaterThan(sim.tick);
   });
 
   it('goes back to merely watching once the reason has aged out', () => {
@@ -561,5 +599,38 @@ describe('being watched is not being hunted', () => {
     sim.dispatcher.flagAnomaly({ x: 300, y: 300 }, sim.tick + 1, 'TEST ANOMALY');
     step(sim, 1);
     expect(sim.tasking.some((a) => a.task !== null)).toBe(true);
+  });
+});
+
+describe('the speed hierarchy is the chase', () => {
+  /*
+   * A board beats running, running beats a copper, and a drone beats a board.
+   * Every one of these was wrong: a responding unit moved at 12.5 m/s — faster
+   * than the player's top speed — so a pursuit could only end in being caught
+   * or in the task timing out. Neither of those is the player escaping.
+   */
+  it('puts a board ahead of a person on foot, and a person ahead of a copper', () => {
+    expect(TUNE.maxSpeed).toBeGreaterThan(TUNE.footSpeed * 1.8);
+    expect(TUNE.footSpeed).toBeGreaterThan(PATROL.respondSpeed);
+    expect(PATROL.respondSpeed).toBeGreaterThan(PATROL.routineSpeed);
+  });
+
+  it('puts a drone ahead of a board, so running from one is not a plan', () => {
+    expect(DRONE.speed).toBeGreaterThan(TUNE.maxSpeed + TUNE.flowSpeedBonus);
+  });
+
+  it('lets a skater outrun a responding unit in a straight line', () => {
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 9, y: 0 });
+    skate(sim, 3);
+    expect(sim.player.speed).toBeGreaterThan(PATROL.respondSpeed * 1.6);
+  });
+
+  it('still lets a drone close on a skater at full tilt', () => {
+    // Straight-line only: a drone turns wide, which is what corners are for.
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 9, y: 0 });
+    skate(sim, 3);
+    expect(DRONE.speed).toBeGreaterThan(sim.player.speed);
   });
 });

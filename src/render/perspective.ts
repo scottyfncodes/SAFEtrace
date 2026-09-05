@@ -20,7 +20,7 @@
  * point.
  */
 import type { Vec2 } from '../core/math';
-import { clamp, clamp01, damp, lerp, wrapAngle } from '../core/math';
+import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/math';
 import type { Sim } from '../sim/sim';
 import type { Building } from '../sim/worldTypes';
 import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
@@ -138,6 +138,33 @@ type P3 = { x: number; y: number; z: number };
  * read, and the whole rig lags a little under acceleration. None of that is
  * cinematic garnish — it is how the player is told how fast they are going.
  */
+/**
+ * Where the four wheels are, in the board's own frame: forward, then across.
+ *
+ * The deck is 1.84 m long and 0.40 m wide here. The trucks sit inboard of the
+ * ends and the wheels sit just inside the deck's edges, which is what a real
+ * board looks like from above — you see deck, and a little wheel peeping out
+ * at each corner, not a chassis wider than the plank on top of it.
+ */
+const WHEELS: ReadonlyArray<readonly [number, number]> = [
+  [0.62, 0.13], [0.62, -0.13], [-0.62, 0.13], [-0.62, -0.13],
+];
+/** Half-width and half-height of a wheel, drawn as a billboard. */
+const WHEEL_R = 0.06;
+
+/**
+ * Bone lengths, in metres, for a fourteen-year-old on a board.
+ *
+ * The legs together are longer than the distance from hip to foot in any pose
+ * the rider actually holds, which is the point: a limb that can always reach
+ * is a limb that always has a bend in it, and the deeper the crouch the more
+ * of a bend it has, for free.
+ */
+const LEG_UPPER = 0.40;
+const LEG_LOWER = 0.38;
+const ARM_UPPER = 0.26;
+const ARM_LOWER = 0.24;
+
 export class ChaseCamera {
   yaw = 0;
   private dist = 24.6;
@@ -577,15 +604,32 @@ export class PerspectiveRenderer {
         onBoard(-0.92, -0.20, rise(-0.92)),
         onBoard(-0.92, 0.20, rise(-0.92)),
       ], VENEER.player, alpha('#2E3944', 0.45), 1.4);
-      for (const [f, r] of [[0.66, 0.22], [0.66, -0.22], [-0.66, 0.22], [-0.66, -0.22]] as Array<[number, number]>) {
+      // The trucks: a hanger under the deck that the wheels are on the ends of,
+      // so there is something holding them up rather than two floating discs.
+      for (const f of [0.62, -0.62]) {
+        const a = tr ? onBoard(f, 0.13, rise(f) - 0.035) : { ...at(f, 0.13), z: z + 0.06 };
+        const bnd = tr ? onBoard(f, -0.13, rise(f) - 0.035) : { ...at(f, -0.13), z: z + 0.06 };
+        this.limb(cam, a, a.z, bnd, bnd.z, 0.022, '#39424C');
+      }
+      /*
+       * Wheels go under the deck, not beside it.
+       *
+       * They were at 0.22 m from the centreline on a deck half that wide, so
+       * they stuck out past both edges and the board read as a go-kart. A real
+       * truck is about as wide as the deck and hangs the wheels *below* it: an
+       * eight-inch deck runs an eight-inch axle, so the wheels tuck just
+       * inside the edges with the hangers under the ply. Narrow enough to sit
+       * under the board, wide enough to still be there.
+       */
+      for (const [f, r] of WHEELS) {
         if (tr) {
           // Off the ground and turning: the wheels go where the deck takes them.
           const w = onBoard(f, r, rise(f) - 0.05);
-          this.card(cam, { x: w.x, y: w.y }, w.z, 0.07, 0.045, '#2A3038');
+          this.card(cam, { x: w.x, y: w.y }, w.z, WHEEL_R, 0.045, '#2A3038');
         } else {
           // Planted. The only thing that lifts a wheel is leaving the ground.
           const w = at(f, r);
-          this.card(cam, w, z + 0.045 + rise(f), 0.07, 0.045, '#2A3038');
+          this.card(cam, w, z + 0.045 + rise(f), WHEEL_R, 0.045, '#2A3038');
         }
       }
     }
@@ -599,6 +643,20 @@ export class PerspectiveRenderer {
      */
     const reach = p.pushPhase > 0 && p.stance !== 'AIR' ? Math.sin(p.pushPhase * Math.PI) : 0;
     const legCol = shade(VENEER.player, -0.6);
+    const pushing = reach > 0.02 && p.onBoard;
+
+    /*
+     * Which way the rider is facing, and therefore which way a knee bends.
+     *
+     * This is the whole of the reverse-knee bug. A skater stands across the
+     * board, and the side their toes point at is the side they push off — the
+     * right foot comes down on +r, so +r is the front of this person. Knees
+     * were being pushed to -r, which is behind them, so both legs folded
+     * backwards like a bird's. Everything about the rig that has a front now
+     * derives from this one vector instead of being decided separately.
+     */
+    const toe = { x: rx, y: ry };
+    const back = { x: -rx, y: -ry };
 
     /*
      * Feet up while the board is turning. This is the whole of the rider's
@@ -608,46 +666,61 @@ export class PerspectiveRenderer {
     const tuck = tr && !tr.landed ? Math.sin(ph * Math.PI) * 0.28 : 0;
 
     /*
-     * Nobody rides a skateboard with straight legs.
+     * Nobody rides a skateboard with straight legs, and nobody's knees know
+     * what state the game is in.
      *
-     * The rider used to be a stiff column: hips at a fixed height and one
-     * straight quad from each foot up to them, which is a figure standing on a
-     * vehicle rather than a person riding a board. Two things fix it, and both
-     * are things a skater actually does.
+     * The rider used to be a stiff column, then a column with a joint jammed
+     * into the middle of each leg at a fixed offset — which meant the bend was
+     * a decoration that had to be re-tuned for every pose and came out wrong
+     * in the ones nobody re-tuned. Both legs and both arms now go through one
+     * solver: two bones of fixed length between two ends, with the joint put
+     * wherever the geometry says it lands and pushed to whichever side is
+     * anatomically forward. Crouch deeper and the knee comes further over the
+     * toes on its own, because that is what the triangle does. Reach a foot to
+     * the road and the leg straightens on its own, for the same reason.
      *
-     * The hips sit low to start with and drop further under load — into a
-     * carve, through a pop, on a landing — so there is always some bend in
-     * reserve and the stance reads as *ready*. And the legs have a knee: two
-     * segments with a joint pushed out over the toes, so the bend is visible
-     * as a shape rather than implied by a height. The deeper the crouch, the
-     * further the knees come forward, which is the geometry of squatting.
+     * The hips sit low to begin with and drop further under load — into a
+     * carve, through a pop, on a landing — so there is always bend in reserve
+     * and the stance reads as *ready* rather than as standing to attention.
      */
     const load = clamp01(Math.abs(lean) * 0.55 + Math.max(0, -p.crouch) * 0.8 + tuck * 1.6);
-    const hipZ = z + 0.78 - crouch - load * 0.15;
-    // Knees track out over the toe edge, and lead a little into a turn.
-    const kneeLead = 0.09 + load * 0.13;
-    const bend = {
-      x: -rx * kneeLead + fx * lean * 0.05,
-      y: -ry * kneeLead + fy * lean * 0.05,
-    };
+    const hipZ = z + 0.80 - crouch - load * 0.17;
 
-    // Left foot: forward on the deck, always, riding the roll.
-    const leftFoot = at(0.40, -0.15);
-    this.leg(cam, leftFoot, z + 0.12 - roll + tail * 0.35 + tuck, at(0.13, -0.08), hipZ, bend, legCol);
+    /*
+     * On foot, the legs do something else entirely: they run.
+     *
+     * A bail puts the player on the pavement at a running pace, and that is
+     * now a real part of the chase rather than a penalty box — so it needs to
+     * look like running. One phase drives both legs in opposition, taken from
+     * the odometer so the stride is tied to ground actually covered.
+     */
+    const running = !p.onBoard && p.speed > 0.4;
+    const stride = running ? p.odometer * 1.55 : 0;
+    const swing = (side: number) => Math.sin(stride + (side > 0 ? 0 : Math.PI));
 
-    // Right foot: on the tail, or off it and pushing.
-    const pushing = reach > 0.02;
-    const rightFoot = pushing
-      ? at(-0.44 - reach * 0.30, 0.24 + reach * 0.30)
-      : at(-0.46, 0.15);
-    const rightZ = pushing ? 0.03 : z + 0.12 + roll + tail + tuck;
-    // A pushing leg straightens as it reaches for the road; a planted one is
-    // bent like the other.
-    const rightBend = pushing
-      ? { x: bend.x * (1 - reach * 0.8), y: bend.y * (1 - reach * 0.8) }
-      : bend;
-    this.leg(cam, rightFoot, rightZ, at(-0.11, 0.08), hipZ, rightBend, legCol);
-    this.card(cam, rightFoot, rightZ + 0.02, 0.11, 0.05, shade(VENEER.player, -0.7));
+    let leftFoot: Vec2, leftZ: number, rightFoot: Vec2, rightZ: number;
+    if (running) {
+      // Feet fore and aft along the heading, lifting on the forward swing.
+      const s0 = swing(1), s1 = swing(-1);
+      leftFoot = at(s0 * 0.42, -0.12);
+      rightFoot = at(s1 * 0.42, 0.12);
+      leftZ = Math.max(0.02, s0 * 0.16);
+      rightZ = Math.max(0.02, s1 * 0.16);
+    } else {
+      // Left foot forward on the deck, always, riding the roll.
+      leftFoot = at(0.40, -0.13);
+      leftZ = z + 0.12 - roll + tail * 0.35 + tuck;
+      // Right foot on the tail, or off it and pushing.
+      rightFoot = pushing ? at(-0.44 - reach * 0.30, 0.26 + reach * 0.34) : at(-0.46, 0.13);
+      rightZ = pushing ? 0.03 : z + 0.12 + roll + tail + tuck;
+    }
+
+    const hipL = at(running ? 0 : 0.13, -0.09);
+    const hipR = at(running ? 0 : -0.11, 0.09);
+    this.twoBone(cam, hipL, hipZ, leftFoot, leftZ, LEG_UPPER, LEG_LOWER, toe, 0.072, legCol);
+    this.twoBone(cam, hipR, hipZ, rightFoot, rightZ, LEG_UPPER, LEG_LOWER, toe, 0.072, legCol);
+    this.card(cam, rightFoot, rightZ + 0.02, 0.10, 0.045, shade(VENEER.player, -0.7));
+    this.card(cam, leftFoot, leftZ + 0.02, 0.10, 0.045, shade(VENEER.player, -0.7));
 
     /*
      * The rider is where the carve actually reads. Weight goes over the edge
@@ -656,35 +729,58 @@ export class PerspectiveRenderer {
      * board nothing.
      */
     const dip = load * 0.09;
-    const bodyAt = at(reach * 0.20 + load * 0.05, lean * 0.30);
+    const bodyF = reach * 0.20 + load * 0.05 + (running ? 0.06 : 0);
+    const bodyAt = at(bodyF, lean * 0.30);
     // Torso: taller than it is wide, sitting straight on top of the hips, so
     // the body reads as a body and not as a bar floating over a pair of legs.
-    const torsoH = 0.30 - dip * 0.5;
-    const torsoZ = hipZ + torsoH;
-    this.card(cam, bodyAt, torsoZ, 0.19, torsoH, shade(VENEER.player, -0.42));
-    // Arms out for balance, further out the harder the board is working, and
-    // the leading one drops into the turn.
-    const shoulderZ = hipZ + torsoH * 1.8;
-    const spread = 0.24 + load * 0.18;
+    const torsoH = 0.28 - dip * 0.5;
+    this.card(cam, bodyAt, hipZ + torsoH, 0.18, torsoH, shade(VENEER.player, -0.42));
+
+    /*
+     * Arms, with elbows in them.
+     *
+     * There were two sticks running from somewhere near the chest out to a
+     * hand, hinged nowhere, which is why the character read as a torso with
+     * legs. Real arms hang from a shoulder, break at an elbow that points back
+     * and down, and end in a hand that is doing something — and what they are
+     * doing is most of how a person on a board reads: out and low for balance,
+     * further out the harder the board is working, the leading one dropping
+     * into a carve, both of them counter-swinging a run, and one of them
+     * holding a slingshot when there is one to hold.
+     */
+    const shoulderZ = hipZ + torsoH * 1.92;
+    const spread = 0.30 + load * 0.16 + (p.stance === 'AIR' ? 0.12 : 0);
+    // Elbows fall back and down, the way an arm held out for balance hangs.
+    const elbowTo = { x: back.x * 0.7 - fx * 0.3, y: back.y * 0.7 - fy * 0.3 };
     for (const side of [1, -1]) {
-      const hand = at(reach * 0.18 - side * lean * 0.12, side * spread + lean * 0.26);
-      this.limb(cam, hand, shoulderZ - 0.10 - side * lean * 0.12, bodyAt, shoulderZ, 0.05, legCol);
+      // The shoulder is on the torso, not floating beside it.
+      const shoulder = at(bodyF, side * 0.15 + lean * 0.30);
+      const swingF = running ? -swing(side) * 0.34 : reach * 0.16;
+      const hand = at(bodyF + swingF - side * lean * 0.10, side * spread + lean * 0.24);
+      const handZ = shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
+      this.twoBone(cam, shoulder, shoulderZ, hand, handZ, ARM_UPPER, ARM_LOWER, elbowTo, 0.048, legCol);
+      // A hand, so the arm ends in something.
+      this.card(cam, hand, handZ, 0.05, 0.05, '#F2D3B8');
     }
-    this.card(cam, bodyAt, shoulderZ + 0.15, 0.13, 0.13, '#F2D3B8');
+    this.card(cam, bodyAt, shoulderZ + 0.16, 0.125, 0.125, '#F2D3B8');
   }
 
   /**
-   * A leg with a knee in it: two segments meeting at a joint pushed out over
-   * the toes. `bend` is the world-space offset applied to the midpoint, so the
-   * deeper the crouch the further the knee travels forward.
+   * Draw a two-bone limb: hip → knee → ankle, or shoulder → elbow → hand.
+   *
+   * The joint comes from `solveTwoBone`, which is geometry and lives with the
+   * rest of it. All this does is put two quads where the triangle says.
    */
-  private leg(
-    cam: Cam, foot: Vec2, footZ: number, hip: Vec2, hipZ: number, bend: Vec2, fill: string,
+  private twoBone(
+    cam: Cam, root: Vec2, rootZ: number, end: Vec2, endZ: number,
+    upper: number, lower: number, bendTo: Vec2, wide: number, fill: string,
   ): void {
-    const knee = { x: (foot.x + hip.x) / 2 + bend.x, y: (foot.y + hip.y) / 2 + bend.y };
-    const kneeZ = footZ + (hipZ - footZ) * 0.48;
-    this.limb(cam, foot, footZ, knee, kneeZ, 0.07, fill);
-    this.limb(cam, knee, kneeZ, hip, hipZ, 0.078, shade(fill, 0.06));
+    const j = solveTwoBone(
+      { x: root.x, y: root.y, z: rootZ }, { x: end.x, y: end.y, z: endZ },
+      upper, lower, bendTo,
+    );
+    this.limb(cam, root, rootZ, j, j.z, wide, fill);
+    this.limb(cam, j, j.z, end, endZ, wide * 0.9, shade(fill, 0.06));
   }
 
   /** A leg: a narrow quad from a foot on the ground up to the hip. */

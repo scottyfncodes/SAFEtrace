@@ -9,8 +9,23 @@ import type { Task } from './surveillance/types';
 export type PatrolState = 'ROUTINE' | 'RESPONDING' | 'INTERVENING' | 'RETURNING';
 
 export const PATROL = {
-  routineSpeed: 6.5,
-  respondSpeed: 12.5,
+  /*
+   * A person, running.
+   *
+   * These were 6.5 and 12.5 metres per second, which are a 23 km/h stroll and
+   * a 45 km/h sprint. At that speed a responding unit was faster than the
+   * player's top speed on a board, so once one was sent there was no escaping
+   * it by skating — the only outcomes were being caught or the task timing
+   * out, and both of those feel like the game deciding rather than the player.
+   *
+   * The hierarchy the chase needs is: a board beats running, running beats a
+   * copper. So a routine beat is a walk and a response is a hard run, and both
+   * are numbers a human body produces. The danger is not the speed. It is that
+   * they take the roads, they cut the corners, they arrive from where you were
+   * not looking, and they are still coming when you make a mistake.
+   */
+  routineSpeed: 2.9,
+  respondSpeed: 4.6,
   turnRate: 2.2,
   contactRadius: 3.2,
   observeRadius: 26,
