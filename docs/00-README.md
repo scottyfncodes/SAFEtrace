@@ -35,6 +35,7 @@ before implementation and is the authority for what the game is trying to be.
 | 28 | [Gameplay Cleanup and Interaction Clarity](28-gameplay-cleanup-and-interaction-clarity.md) | The pursuit state machine, the two-thumb slingshot, and no haunted UI |
 | 29 | [Mobile UX and the Plan View](29-mobile-ux-and-plan-view.md) | Plan view as a control, VISION as content, and a thumb-first HUD |
 | 30 | [Telling People Apart](30-telling-people-apart.md) | The cop who was a neighbour, and the friend who was riding nothing |
+| 31 | [Vertical Slice Feel and the Playtest Gate](31-vertical-slice-feel-and-the-playtest-gate.md) | The afternoon that started thirty-two seconds late, and what only a person can answer |
 
 ## The one-sentence pitch
 

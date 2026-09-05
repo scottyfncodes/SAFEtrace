@@ -253,6 +253,10 @@ class Game {
         this.phase = 'play';
         this.hud.setVisible(true);
         this.renderer.cam.scripted = null;
+        // The story's clock starts now. The world has been running underneath
+        // the advertisement for half a minute, and a player who watched it all
+        // the way through must still get the same afternoon as one who skipped.
+        this.story.begin();
       },
     });
   }

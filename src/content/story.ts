@@ -40,6 +40,15 @@ export interface Beat {
 }
 
 export interface StoryState {
+  /**
+   * The tick the afternoon started on — set when the advertisement hands over.
+   *
+   * The world runs underneath the advertisement, because it is the same world,
+   * so `sim.tick` is already past two thousand by the time the player has
+   * control. Beats that mean "half a minute into the afternoon" have to be
+   * measured from here; measured from `sim.tick` they are all long overdue and
+   * fire in a heap on the first frame of play.
+   */
   startedAt: number;
   matchFiredAt: number;
   incidentId: string | null;
@@ -64,6 +73,9 @@ export const initialStoryState = (): StoryState => ({
   repriseShown: false,
 });
 
+/** Ticks of *play*, which is not the same as ticks of simulation. */
+const since = (c: StoryContext, s: StoryState): number => c.sim.tick - s.startedAt;
+
 const CHANNEL_ENTRY = { x: 196, y: 428 };
 const CM207 = { x: 145, y: 88 };
 /** The rear service alley, and the break in its garages behind CM-207. */
@@ -81,7 +93,7 @@ export const BEATS: Beat[] = [
   {
     id: 'welcome',
     label: 'Maple Court',
-    when: (c) => c.sim.tick > 90,
+    when: (c, s) => since(c, s) > 90,
     run: (c) => {
       c.sim.message('CARE', [CARE.weather], 5.0);
       c.hud.say([DIALOGUE.devonOpening[0]], 3.2);
@@ -90,7 +102,7 @@ export const BEATS: Beat[] = [
   {
     id: 'devon-suggests-channel',
     label: 'The Channel',
-    when: (c) => c.sim.tick > 60 * 12,
+    when: (c, s) => since(c, s) > 60 * 12,
     run: (c) => {
       c.hud.say([DIALOGUE.devonOpening[1]], 4.0);
       c.sim.message('CARE', [CARE.friendSafe('Devon')], 5.0);
@@ -109,7 +121,7 @@ export const BEATS: Beat[] = [
   {
     id: 'incident',
     label: 'Incident reported — Northgate',
-    when: (c, s) => s.matchFiredAt < 0 && dist(c.sim.player.pos, CHANNEL_ENTRY) < 40 && c.sim.tick > 60 * 25,
+    when: (c, s) => s.matchFiredAt < 0 && dist(c.sim.player.pos, CHANNEL_ENTRY) < 40 && since(c, s) > 60 * 25,
     run: (c, s) => {
       // Four kilometres away, on the far side of town, while the player is
       // standing in a drainage channel with their best friend.
@@ -298,6 +310,14 @@ export class StoryDirector {
         this.queue.push({ dueTick: this.ctx.sim.tick + Math.round(seconds * 60), fn });
       },
     };
+  }
+
+  /**
+   * The afternoon starts here — when the advertisement gets out of the way and
+   * the player has control, not when the simulation was constructed.
+   */
+  begin(): void {
+    this.state.startedAt = this.ctx.sim.tick;
   }
 
   update(): void {

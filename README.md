@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 352 tests: simulation, determinism, architecture, content, touch
+npm test         # 354 tests: simulation, determinism, architecture, content, touch
 npm run build
 ```
 
@@ -31,6 +31,7 @@ in the veneer, SAFEtrace VISION, and the advertisement's reprise.
 | `W` | push (a rhythm, not a throttle) |
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
+| `R` | trick — which trick is the board's business, not yours |
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
 | `F` | take out the slingshot, and stand still to use it |
@@ -125,7 +126,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-352 tests, all headless, in about ten seconds.
+354 tests, all headless, in about ten seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
@@ -144,6 +145,15 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Status
 
-Phases 0 through 7 of the roadmap. The slice is playable end to end; broad
-content production is deliberately the last phase, per
+**Phase 7 — the slice — is built, and its gate has not been run.** Every item
+required by [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md) §2 is in the
+build and playable end to end, from the advertisement to the reprise. But all
+six of that document's success criteria in §4 are observations of a person who
+has never seen the game — a clean line inside four minutes without instruction,
+the sling-into-a-camera move happening by accident and then on purpose, somebody
+asking "how did it know I was going there?" — and none of them is a thing a test
+suite can assert. They need a room and a stranger.
+
+So the next gate is playtesting, not code. Broad content production is
+deliberately Phase 8 and stays there, per
 [`docs/16-production-roadmap.md`](docs/16-production-roadmap.md).

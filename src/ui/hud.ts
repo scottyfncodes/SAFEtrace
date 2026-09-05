@@ -15,6 +15,9 @@ const KEY_PROMPTS = [
   '<span><kbd>W</kbd>push</span>',
   '<span><kbd>A D</kbd>carve</span>',
   '<span><kbd>Space</kbd>ollie</span>',
+  // A phone has a TRICK button in the corner; a keyboard had the same verb on
+  // an unlisted key, so half the players never found out it existed.
+  '<span><kbd>R</kbd>trick</span>',
   '<span><kbd>S</kbd>slide</span>',
   '<span><kbd>F</kbd>sling</span>',
   '<span><kbd>Q</kbd>plan</span>',

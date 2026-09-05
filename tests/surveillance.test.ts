@@ -16,6 +16,7 @@ import { fire, solvePitch, stepProjectile } from '../src/sim/slingshot';
 import { THRESHOLDS } from '../src/sim/surveillance/behavior';
 import { DEG } from '../src/core/math';
 import { resolveRecords } from '../src/sim/worldTypes';
+import { SYSTEM } from '../src/content/copy';
 
 const subject = (over: Partial<Subject> = {}): Subject => ({
   id: 'S-TEST', kind: 'resident', identity: 'TEST, A.', displayName: 'TEST, A.',
@@ -603,6 +604,28 @@ describe('being watched is not being hunted', () => {
       skate(sim, 3, i % 2 === 0 ? 0.7 : -0.7);
       expect(sim.pursuit).toBe('NOT_PURSUING');
     }
+  });
+
+  /**
+   * There were three lines for a pursuit ending and none for one beginning, so
+   * a player heard "SEARCH STOOD DOWN" for something they were never told had
+   * started. Both ends of the arc are spoken now.
+   */
+  it('says when somebody is sent, as well as when they give up', () => {
+    const sim = makeUnlockedSim();
+    const said: string[] = [];
+    sim.bus.on('safetrace:message', (m) => said.push(...m.lines));
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 40 && sim.pursuit === 'NOT_PURSUING'; i++) step(sim, 0.5);
+    expect(said).toContain(SYSTEM.unitDispatched);
+
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    for (let i = 0; i < 120 && sim.pursuit !== 'NOT_PURSUING'; i++) step(sim, 0.5);
+    expect(said).toContain(SYSTEM.pursuitCleared);
   });
 
   it('walks the whole arc, and ends somewhere the player can get to', () => {

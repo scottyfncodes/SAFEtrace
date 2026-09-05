@@ -79,6 +79,16 @@ export const SYSTEM = {
    * in its own register, that the fix is stale — and each of them corresponds
    * to a state the dispatcher is actually in, so the words are never a bluff.
    */
+  /*
+   * ...and it says when it starts, too.
+   *
+   * There were three lines for a pursuit ending and none for one beginning, so
+   * "SEARCH STOOD DOWN" was the payoff to something the player had never been
+   * told had started. These two are the other half of that set: the first is
+   * somebody being sent to where you are, the second to where you were.
+   */
+  unitDispatched: 'UNIT DISPATCHED — SUBJECT LOCATION',
+  unitResponding: 'UNIT RESPONDING — LAST REPORTED LOCATION',
   contactLost: 'VISUAL CONTACT LOST — LAST KNOWN POSITION HELD',
   searchingLastKnown: 'UNITS SEARCHING — LAST KNOWN POSITION',
   pursuitCleared: 'SUBJECT NOT LOCATED — SEARCH STOOD DOWN',

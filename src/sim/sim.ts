@@ -1083,7 +1083,12 @@ export class Sim {
     if (now === this.lastPursuit) return;
     const was = this.lastPursuit;
     this.lastPursuit = now;
-    if (now === 'LOST' && was === 'PURSUING') {
+    const dormant = was === 'NOT_PURSUING' || was === 'CLEAR';
+    if (dormant && now === 'PURSUING') {
+      this.message('SYSTEM', [SYSTEM.unitDispatched], 3.6, 'normal', 'important');
+    } else if (dormant && now === 'ALERT') {
+      this.message('SYSTEM', [SYSTEM.unitResponding], 3.6, 'normal', 'important');
+    } else if (now === 'LOST' && was === 'PURSUING') {
       this.message('SYSTEM', [SYSTEM.contactLost], 3.4, 'normal', 'important');
     } else if (now === 'SEARCHING') {
       this.message('SYSTEM', [SYSTEM.searchingLastKnown], 3.6, 'normal', 'important');
