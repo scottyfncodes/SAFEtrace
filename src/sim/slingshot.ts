@@ -4,7 +4,7 @@
  * Ballistics are simulated in 3D (x, y, z) so a camera on a 4.2 m pole and a
  * drone at 14 m are genuinely different problems.
  */
-import { type Vec2, clamp01, dist, fromAngle, lerp } from '../core/math';
+import { type Vec2, clamp01, fromAngle, lerp } from '../core/math';
 import type { Rng } from '../core/rng';
 
 export const MUZZLE_MIN = 18;
@@ -184,17 +184,12 @@ export function predictArc(
   return out;
 }
 
-/** Bearings that landed and can be picked back up. */
-export interface DroppedBearing { pos: Vec2; tick: number; }
-
-export function collectBearings(
-  dropped: DroppedBearing[], at: Vec2, radius: number,
-): { kept: DroppedBearing[]; collected: number } {
-  const kept: DroppedBearing[] = [];
-  let collected = 0;
-  for (const d of dropped) {
-    if (dist(d.pos, at) <= radius) collected++;
-    else kept.push(d);
-  }
-  return { kept, collected };
-}
+/**
+ * Rocks that landed and are lying there.
+ *
+ * There is no ammunition economy any more: a rock is a rock, the ground is
+ * covered in them, and a player who has to think about their supply of gravel
+ * is thinking about a menu instead of a town. These are kept only so a shot
+ * leaves something behind — the world remembers being hit.
+ */
+export interface DroppedRock { pos: Vec2; tick: number; }

@@ -38,13 +38,15 @@ function steerOf(p: PlayerState, intent: Intent): number {
    * nose produced *full* deflection. That is the whole of why the board was
    * twitchy — there was no such thing as a small input.
    *
-   * Authority now rises as a cubic on the stick's own travel, so the first
-   * third of the throw is a gentle correction and only the last third asks for
-   * everything. Angular error is scaled by a wider band on top of that, so
-   * pointing sharply away from the nose is a request rather than a command.
+   * Authority rises as a smoothstep on the stick's own travel: gentle in the
+   * first part of the throw, and everything by the time the thumb is out at
+   * the edge. It used to carry an extra factor on top of that, a cubic that
+   * held back most of the authority for the last third — which made the board
+   * feel like it was ignoring you. Getting a board to come round is a wrist,
+   * not a negotiation.
    */
   const throwT = clamp01((mag - TUNE.steerDead) / (1 - TUNE.steerDead));
-  const authority = throwT * throwT * (3 - 2 * throwT) * throwT;
+  const authority = throwT * throwT * (3 - 2 * throwT);
   const off = wrapAngle(Math.atan2(mv.y, mv.x) - p.heading);
   return clamp(off / TUNE.headingBand, -1, 1) * authority;
 }
@@ -56,8 +58,17 @@ export const TUNE = {
   pushImpulse: 3.1,
   pushCooldown: 0.42,
   pushDuration: 0.22,
-  carveLow: 2.35,
-  carveHigh: 0.82,
+  /**
+   * The turn-rate ceiling, at a standstill and at full speed.
+   *
+   * This is the turning radius, and it was set for a board that felt heavy:
+   * 0.82 rad/s at eleven metres a second is an arc thirteen metres across,
+   * which is a car's turn, not a skater's. Raised, but not to a pivot — at
+   * speed it is now about a nine-metre arc, which is a hard carve you have to
+   * commit to and can still hold a line through.
+   */
+  carveLow: 2.9,
+  carveHigh: 1.15,
   /**
    * The board leans into a turn and leans out of it. It does not snap.
    *
@@ -70,10 +81,10 @@ export const TUNE = {
    * The board is heavy. It takes a moment to come round and a moment to stop
    * coming round, and both of those moments are the feel of the thing.
    */
-  turnAccel: 6.2,
-  turnDamp: 6.0,
+  turnAccel: 9.4,
+  turnDamp: 6.4,
   /** Thumb travel below this is a resting hand, not a steering input. */
-  steerDead: 0.14,
+  steerDead: 0.10,
   /**
    * A board at walking pace is redirected by the foot that is pushing it, not
    * by wishing. Redirecting during a push is most of how a skater turns around
@@ -83,11 +94,16 @@ export const TUNE = {
   /** Visible body lean, radians at full carve. */
   leanMax: 0.42,
   /**
-   * How far off the desired heading counts as full deflection. Wide enough that
-   * a small correction is a small correction and the board is not always
-   * fighting for the last few degrees.
+   * How far off the desired heading counts as full deflection.
+   *
+   * A wide band was the other half of the board feeling numb: at 1.30 rad you
+   * had to point three quarters of a right angle away from the nose before the
+   * stick was asking for a full carve, so ordinary steering lived in the
+   * bottom third of the response. Narrower, and a thumb that points somewhere
+   * gets a board that goes there — which is what a skateboard does, since the
+   * thing turning it is a person's weight and it answers immediately.
    */
-  headingBand: 1.30,
+  headingBand: 0.80,
   carveAimPenalty: 0.65,
   /**
    * Drawing the sling settles the board.
@@ -207,9 +223,6 @@ export interface PlayerState {
   crouch: number;
   bailTimer: number;
   onBoard: boolean;
-  /** Ammunition. A physical count, not an economy. */
-  bearings: number;
-  maxBearings: number;
   aiming: boolean;
   draw: number;
   /** Metres travelled; used only for telemetry and story pacing. */
@@ -258,8 +271,6 @@ export function makePlayer(spawn: Vec2): PlayerState {
     crouch: 0,
     bailTimer: 0,
     onBoard: true,
-    bearings: 12,
-    maxBearings: 12,
     aiming: false,
     draw: 0,
     odometer: 0,
@@ -308,7 +319,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
     if (!p.onBoard) { p.vel.x *= 0.3; p.vel.y *= 0.3; }
   }
 
-  p.aiming = intent.aim && p.bearings > 0;
+  p.aiming = intent.aim;
   // A device with a continuous draw axis — a thumb pulling the pouch back —
   // sets the draw directly. Everything else loads it at the character's own
   // rate, which is what a key held down means.

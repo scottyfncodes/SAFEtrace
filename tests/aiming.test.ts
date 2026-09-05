@@ -270,11 +270,19 @@ describe('the stationary aiming mode', () => {
     expect(sim.aimMode).toBe(false);
   });
 
-  it('does not open with an empty pocket', () => {
+  it('opens whenever the player asks, because there is no pocket to be empty', () => {
+    /*
+     * There used to be twelve steel bearings, a counter, rocks to walk back
+     * and collect, and resupply caches — a tax on experimenting with the one
+     * tool the game hands you. It throws rocks now. You are standing on more
+     * of them.
+     */
     const sim = makeSim();
-    sim.player.bearings = 0;
-    enter(sim);
-    expect(sim.aimMode).toBe(false);
+    for (let i = 0; i < 30; i++) {
+      enter(sim);
+      expect(sim.aimMode).toBe(true);
+      enter(sim);
+    }
   });
 
   it('stops the character dead and keeps them exactly where they stood', () => {
@@ -326,12 +334,12 @@ describe('the stationary aiming mode', () => {
     expect(sim.lastShot!.label).toBe('UAV-01');
   });
 
-  it('cannot trap the player: it lets go when the pocket runs out', () => {
+  it('holds the mode for as long as the player wants it, and only they end it', () => {
     const sim = makeSim();
     enter(sim);
-    expect(sim.aimMode).toBe(true);
-    sim.player.bearings = 0;
     for (let i = 0; i < 400; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.aimMode).toBe(true);
+    enter(sim);
     expect(sim.aimMode).toBe(false);
   });
 
@@ -463,6 +471,37 @@ describe('it handles like a skateboard, not a radio-controlled car', () => {
     expect(peak).toBeGreaterThan(0.18);
     for (let i = 0; i < 120; i++) sim.step(TICK_DT, emptyIntent(), null);
     expect(Math.abs(sim.player.lean)).toBeLessThan(0.05);
+  });
+
+  it('answers the thumb quickly: a board turns on a person\'s weight', () => {
+    /*
+     * The other half of the RC-car complaint, and it took two passes to find.
+     * The first fix gave the board weight, which was right, and then went too
+     * far the other way: authority was held back by a cubic on the stick's own
+     * travel *and* scaled against a wide angular band, so ordinary steering
+     * lived in the bottom third of the response and the board felt like it was
+     * ignoring you. A skateboard is turned by a person shifting their weight
+     * onto an edge, and it answers immediately.
+     *
+     * Half a second of a hard right angle demanded of a rolling board is most
+     * of the way round. It still has to build — the test above holds that —
+     * but it builds fast.
+     */
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 7, y: 0 });
+    sim.player.heading = 0;
+    hold(sim, { x: 0, y: -1 }, 0.5);
+    expect(Math.abs(sim.player.heading)).toBeGreaterThan(0.75);
+  });
+
+  it('gives a small push of the thumb a small turn, so it is still steerable', () => {
+    // Sensitivity is not twitchiness: a thumb barely off centre asks for a
+    // correction, not a carve.
+    const sim = makeSim();
+    place(sim, { x: 300, y: 150 }, { x: 7, y: 0 });
+    sim.player.heading = 0;
+    hold(sim, { x: 0.97, y: -0.24 }, 0.5);
+    expect(Math.abs(sim.player.heading)).toBeLessThan(0.42);
   });
 
   it('still goes where it is pointed, given a moment', () => {

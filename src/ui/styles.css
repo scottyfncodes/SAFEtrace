@@ -199,30 +199,6 @@ html, body {
 }
 
 /* -------------------------------------------------------------- ammo & flow */
-/*
- * The pocket runs up the right edge rather than across the bottom: a column of
- * bearings beside the thumb that spends them, with the sling button directly to
- * its left. You can see how many you have without looking away from the road.
- */
-#pocket {
-  position: absolute; bottom: 22px; right: 10px;
-  display: flex; flex-direction: column-reverse; align-items: center; gap: 5px;
-}
-/* Half the size they were: ammunition in a pocket flap, not a status bar. */
-#bearings { display: flex; flex-direction: column-reverse; gap: 3px; align-items: center; }
-#bearings i {
-  width: calc(3.5px * var(--text-scale)); height: calc(3.5px * var(--text-scale));
-  border-radius: 50%; background: #E4E1D8;
-  box-shadow: 0 1px 1px rgba(0,0,0,0.45), inset 0 -0.5px 0.5px rgba(0,0,0,0.25);
-  transition: opacity 180ms var(--ease);
-}
-#bearings i.spent { opacity: 0.18; }
-#pocket .cap {
-  font-size: calc(7px * var(--text-scale)); text-transform: uppercase;
-  letter-spacing: 0.1em; color: rgba(255,255,255,0.6);
-  writing-mode: vertical-rl; text-orientation: mixed;
-}
-
 /* --------------------------------------------------------------------- talk */
 #dialogue.hidden { opacity: 0 !important; }
 #dialogue {

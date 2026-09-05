@@ -15,16 +15,26 @@ function shoot(sim: Sim, at: Vec2 | (() => Vec2), z: number | (() => number) = 0
 }
 
 describe('the slingshot loop', () => {
-  it('takes a camera out of service and spends a bearing doing it', () => {
+  it('takes a camera out of service, and costs nothing but the throw', () => {
     const sim = makeUnlockedSim();
     const cam = sim.sensorById.get('CM-207')!;
     // Stand in the street in front of the camera, at a workable range.
     place(sim, { x: 145, y: 62 });
-    const before = sim.player.bearings;
 
     shoot(sim, cam.data.pos, cam.data.height);
 
-    expect(sim.player.bearings).toBe(before - 1);
+    expect(['OFFLINE', 'MISALIGNED', 'FROZEN']).toContain(cam.state);
+    // And a rock is left lying where it landed, because the world remembers.
+    expect(sim.droppedRocks.length).toBeGreaterThan(0);
+  });
+
+  it('never runs out: a hundred rocks is the same as one', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < 100; i++) shoot(sim, { x: 145, y: 30 });
+    // Still able to shoot, still able to aim, nothing counted, nothing spent.
+    const cam = sim.sensorById.get('CM-207')!;
+    shoot(sim, cam.data.pos, cam.data.height);
     expect(['OFFLINE', 'MISALIGNED', 'FROZEN']).toContain(cam.state);
   });
 

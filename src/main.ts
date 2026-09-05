@@ -264,7 +264,6 @@ class Game {
       this.renderer.ripple(pos, 0.6);
     });
     bus.on('player:fire', () => this.audio.fire());
-    bus.on('player:collect', () => this.audio.collect());
     bus.on('projectile:impact', ({ kind, pos }) => {
       if (kind === 'cameraLens' || kind === 'drone' || kind === 'junction') this.audio.impactMetal();
       else this.audio.impactSoft();
@@ -285,10 +284,8 @@ class Game {
     bus.on('drone:destabilised', () => { this.audio.impactMetal(); this.renderer.kick(0.3); });
     bus.on('veneer:crack', () => { this.audio.peelIn(); this.renderer.kick(0.25); });
     bus.on('vision:unlocked', () => this.audio.motif(0.8));
-    bus.on('player:trick', ({ name }) => {
-      this.renderer.flashTrick(name);
-      this.audio.land(0.6);
-    });
+    // Caught it: a sound, and nothing written on the screen about it.
+    bus.on('player:trick', () => this.audio.land(0.6));
     bus.on('aim:entered', () => {
       // Start looking where the character already faces, so the transition
       // never spins the world.
@@ -296,8 +293,10 @@ class Game {
         ? Math.atan2(this.sim.player.vel.y, this.sim.player.vel.x)
         : this.sim.player.heading;
       this.lookTargetYaw = this.aimYaw;
-      this.lookTargetPitch = 0.06;
-      this.sim.lookPitch = 0.06;
+      // Start on the street rather than the sky: a long lens puts the horizon
+      // low in the frame, and a reticle above it is aimed at nothing.
+      this.lookTargetPitch = -0.07;
+      this.sim.lookPitch = -0.07;
       this.audio.hackTick();
     });
     bus.on('aim:exited', () => this.audio.hackTick());
@@ -323,23 +322,20 @@ class Game {
 
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
-    this.touch.setSlingAvailable(this.sim.player.bearings > 0 && !this.sim.hack);
+    this.touch.setSlingAvailable(!this.sim.hack);
     this.touch.setVisionAvailable(this.sim.visionUnlocked);
 
     if (this.sim.aimMode) {
       /*
-       * Look is integrated into a target, and the view eases onto it.
+       * The look stick turns the view, and the view eases onto it.
        *
-       * The raw deltas used to be applied straight to the camera, so a pointer
-       * stream that arrives in bursts — which is what a phone gives you —
-       * showed up as judder. A short half-life keeps the finger-to-camera
-       * relationship one to one over any movement a thumb can actually make,
-       * while smoothing the sampling underneath it. Ten pixels is still ten
-       * pixels; it just does not arrive in one lump.
+       * The stick reports a rate, so the target integrates here and the camera
+       * damps onto that target — which keeps a pointer stream that arrives in
+       * bursts, as a phone's does, from showing up as judder.
        */
-      const look = this.touch.takeLook();
-      this.lookTargetYaw += look.yaw;
-      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + look.pitch);
+      const look = this.touch.lookRate();
+      this.lookTargetYaw += look.yaw * dt;
+      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + look.pitch * dt);
       this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.028, dt);
       this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.028, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
@@ -379,10 +375,9 @@ class Game {
    */
   private aimTargetPoint(): { x: number; y: number } {
     const p = this.sim.aimAnchor ?? this.sim.player.pos;
-    // Plus the last few degrees the drawn sling is contributing: a band pulled
-    // to the left throws to the right, and that is an adjustment the player
-    // makes with the same thumb that is holding the tension.
-    const yaw = this.aimYaw + this.touch.pullOffset.yaw;
+    // Exactly where the left thumb has put it, and nothing else. The hand on
+    // the sling contributes tension and a release, never a direction.
+    const yaw = this.aimYaw;
     return { x: p.x + Math.cos(yaw) * 34, y: p.y + Math.sin(yaw) * 34 };
   }
 
@@ -423,9 +418,10 @@ class Game {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
     this.renderer.slingGrip = this.sim.aimMode ? this.touch.slingGrip : null;
+    this.renderer.lookStick = this.sim.aimMode ? this.touch.lookStick : null;
     if (this.sim.aimMode && this.touchPrimary) {
       const z = this.touch.slingZone();
-      this.renderer.slingZoneHint = { x: z.x + z.w * 0.34, y: z.y + z.h * 0.52 };
+      this.renderer.slingZoneHint = { x: z.x + z.w * 0.5, y: z.y + z.h * 0.78 };
     } else {
       this.renderer.slingZoneHint = null;
     }

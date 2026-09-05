@@ -33,17 +33,30 @@ export const EYE_Z = 1.62;
  * get more world in frame without the subject becoming a speck.
  */
 /*
- * Narrower than an eye, on purpose.
+ * A long lens, on purpose. This is most of the miniature.
  *
- * The rig has been pulled back three times now, and distance costs the rider
- * their size: at twenty-six metres a 1.8 m skater is fifty pixels on a phone.
- * Tightening the lens from 54 degrees to 46 buys a fifth of that back without
- * moving the camera in again, and it does the aiming view a favour too — a
- * slingshot sight picture wants a long lens, not a wide one.
+ * A wide lens is what makes a place feel big: it stretches the near ground,
+ * throws the far ground away, and puts you inside the scene. A long one does
+ * the opposite — it flattens the depth between near and far until a street
+ * reads as a set of objects arranged on a table, which is exactly the trick
+ * every photograph of a model railway plays and exactly what a Micro Machines
+ * track looks like. So the field of view keeps narrowing: 54 degrees, then 46,
+ * now 34. It also happens to make the rider *larger* on the glass than a wider
+ * lens would from the same place, which is what pays for the higher vantage.
  */
-const VFOV = (46 * Math.PI) / 180;
+const VFOV = (40 * Math.PI) / 180;
 const NEAR = 0.25;
-const FAR = 105;
+/*
+ * How far the world is drawn.
+ *
+ * This used to be 105 m, which was generous for a rig sitting at eye height
+ * behind the rider — everything past it was below the horizon line anyway. It
+ * is not generous for a camera looking down from sixteen metres up: the top of
+ * that frame lands nearly two hundred metres out, and at 105 the far third of
+ * the shot was flat green fill with no town in it. A miniature only reads if
+ * you can see the far edge of the thing.
+ */
+const FAR = 195;
 
 export interface CamState {
   /** Where the eye is, in world metres. */
@@ -127,10 +140,10 @@ type P3 = { x: number; y: number; z: number };
  */
 export class ChaseCamera {
   yaw = 0;
-  private dist = 17.9;
-  private height = 8.8;
+  private dist = 24.6;
+  private height = 12.4;
   /** Negative is downward: the rig looks down at the rider from behind. */
-  private pitch = -0.38;
+  private pitch = -0.40;
   private look: Vec2 = { x: 0, y: 0 };
 
   reset(sim: Sim): void {
@@ -153,17 +166,26 @@ export class ChaseCamera {
     this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2)));
 
     /*
-     * Farther back and flatter at speed: more road, more sense of pace.
+     * The other half of the miniature: more town in the frame at once.
      *
-     * Another seventy-five per cent out, and distance and height scale
-     * together so the rig dollies straight back along its own view axis — the
-     * framing is the one that was already right, seen from further away,
-     * rather than a new and steeper angle on the same street.
+     * A model reads as a model because you can see the whole of it. The rig
+     * carries further back and a little higher, and the long lens flattens
+     * what that distance would otherwise stretch — so the frame now holds
+     * something like a hundred and seventy metres of Bellhaven, front to
+     * back, instead of eighty. Streets become blocks, houses become things
+     * arranged along them, and the board is a small object crossing a town
+     * rather than a vehicle on a road.
+     *
+     * The angle is left where it was, at about two parts back to one part up.
+     * Steeper was tried and it is worse: past thirty degrees the horizon
+     * leaves the frame, taking every drone in the sky and the top of every
+     * building with it, and what is left is flat ground in two colours. A
+     * miniature needs to be a thing you can see the far edge of.
      */
-    this.dist = damp(this.dist, lerp(16.1, 25.7, t), 0.24, dt);
-    this.height = damp(this.height, lerp(8.05, 10.5, t), 0.24, dt);
-    // Flatter at speed, so more of the road ahead comes into frame.
-    this.pitch = damp(this.pitch, lerp(-0.40, -0.30, t), 0.3, dt);
+    this.dist = damp(this.dist, lerp(23.5, 29.0, t), 0.24, dt);
+    this.height = damp(this.height, lerp(11.8, 14.0, t), 0.24, dt);
+    // Slightly flatter at speed, so a little more of the road ahead is in shot.
+    this.pitch = damp(this.pitch, lerp(-0.42, -0.36, t), 0.3, dt);
 
     // The point the rig is looking at lags the rider under acceleration.
     this.look = {
@@ -233,6 +255,29 @@ export class PerspectiveRenderer {
       ctx.fill();
       if (f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.wide ?? 1; ctx.stroke(); }
     }
+    if (!firstPerson) this.drawMiniatureHaze(ctx, cam);
+  }
+
+  /**
+   * The far field, softened.
+   *
+   * This is the third leg of the miniature, and it is the one that does the
+   * most for the least: every photograph of a model is shot with a shallow
+   * depth of field, so the top and bottom of the frame fall out of focus, and
+   * the eye reads that fall-off as *closeness to a small thing* rather than as
+   * a lens setting. A real blur would cost a full-frame filter pass on a
+   * phone; a wash of the sky's own colour over the far ground does the same
+   * job to the same eye, because what it is really saying is "this edge is not
+   * where you are looking".
+   */
+  private drawMiniatureHaze(ctx: CanvasRenderingContext2D, cam: Cam): void {
+    const band = cam.h * 0.3;
+    const g = ctx.createLinearGradient(0, 0, 0, band);
+    g.addColorStop(0, alpha('#C4D6E4', 0.62));
+    g.addColorStop(0.45, alpha('#C4D6E4', 0.2));
+    g.addColorStop(1, alpha('#C4D6E4', 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cam.w, band);
   }
 
   private drawSkyAndGround(ctx: CanvasRenderingContext2D, cam: Cam): void {
@@ -379,32 +424,33 @@ export class PerspectiveRenderer {
   }
 
   /**
-   * A steel ball, not a floating cube.
+   * A rock, not a floating cube.
    *
-   * A bearing was a flat square card, and at the size a nine-millimetre ball
-   * subtends it read as a blocky object rather than the thing the whole
-   * slingshot is about. This is a billboarded disc with a dark rim and a
-   * highlight up and to the left, which is the least it takes for something
-   * this small to read as round and metal. It is drawn a little larger than a
-   * real bearing for the same reason a bullet tracer is: at true scale it is
-   * two pixels and the player cannot follow their own shot.
+   * The projectile was a steel bearing and it was drawn as a flat square card,
+   * which at the size a small object subtends read as a blocky thing rather
+   * than something you would pick up off a driveway. It is gravel now, which
+   * suits a miniature town better than machined steel: a billboarded lump with
+   * an irregular outline, a dark side and a lit side. Drawn a little larger
+   * than life for the same reason a tracer is: at true scale it is two pixels
+   * and a player cannot follow their own shot.
    */
-  private ball(cam: Cam, p: Vec2, z: number, r: number): void {
+  private rock(cam: Cam, p: Vec2, z: number, r: number): void {
     const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
     if (d > FAR || d < 0.25) return;
     const ux = -(p.y - cam.pos.y) / d, uy = (p.x - cam.pos.x) / d;
-    const ring = (rad: number, dx: number, dz: number, fill: string): void => {
+    // A seven-sided lump: irregular enough not to read as a machined ball.
+    const JAG = [1, 0.82, 1.05, 0.88, 1.0, 0.79, 0.94];
+    const lump = (rad: number, dx: number, dz: number, fill: string): void => {
       const pts: P3[] = [];
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const c = Math.cos(a) * rad + dx, sz = Math.sin(a) * rad + dz;
+      for (let i = 0; i < JAG.length; i++) {
+        const a = (i / JAG.length) * Math.PI * 2;
+        const c = Math.cos(a) * rad * JAG[i] + dx, sz = Math.sin(a) * rad * JAG[i] + dz;
         pts.push({ x: p.x + ux * c, y: p.y + uy * c, z: z + sz });
       }
       this.push(cam, pts, fill);
     };
-    ring(r, 0, 0, '#6E767E');
-    ring(r * 0.72, -r * 0.16, r * 0.16, '#C9CDD2');
-    ring(r * 0.3, -r * 0.3, r * 0.3, '#F4F6F8');
+    lump(r, 0, 0, '#565C63');
+    lump(r * 0.66, -r * 0.18, r * 0.18, '#7C838B');
   }
 
   private collectActors(sim: Sim, cam: Cam): void {
@@ -422,8 +468,8 @@ export class PerspectiveRenderer {
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
-    for (const pr of sim.projectiles) this.ball(cam, pr.pos, pr.z, 0.075);
-    for (const b of sim.droppedBearings) this.ball(cam, b.pos, 0.05, 0.06);
+    for (const pr of sim.projectiles) this.rock(cam, pr.pos, pr.z, 0.07);
+    for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055);
   }
 
   private person(cam: Cam, p: Vec2, tint: string): void {
@@ -552,7 +598,6 @@ export class PerspectiveRenderer {
      * deck, right foot off the tail and down to the road.
      */
     const reach = p.pushPhase > 0 && p.stance !== 'AIR' ? Math.sin(p.pushPhase * Math.PI) : 0;
-    const legTop = z + 0.72 - crouch;
     const legCol = shade(VENEER.player, -0.6);
 
     /*
@@ -562,27 +607,84 @@ export class PerspectiveRenderer {
      */
     const tuck = tr && !tr.landed ? Math.sin(ph * Math.PI) * 0.28 : 0;
 
+    /*
+     * Nobody rides a skateboard with straight legs.
+     *
+     * The rider used to be a stiff column: hips at a fixed height and one
+     * straight quad from each foot up to them, which is a figure standing on a
+     * vehicle rather than a person riding a board. Two things fix it, and both
+     * are things a skater actually does.
+     *
+     * The hips sit low to start with and drop further under load — into a
+     * carve, through a pop, on a landing — so there is always some bend in
+     * reserve and the stance reads as *ready*. And the legs have a knee: two
+     * segments with a joint pushed out over the toes, so the bend is visible
+     * as a shape rather than implied by a height. The deeper the crouch, the
+     * further the knees come forward, which is the geometry of squatting.
+     */
+    const load = clamp01(Math.abs(lean) * 0.55 + Math.max(0, -p.crouch) * 0.8 + tuck * 1.6);
+    const hipZ = z + 0.78 - crouch - load * 0.15;
+    // Knees track out over the toe edge, and lead a little into a turn.
+    const kneeLead = 0.09 + load * 0.13;
+    const bend = {
+      x: -rx * kneeLead + fx * lean * 0.05,
+      y: -ry * kneeLead + fy * lean * 0.05,
+    };
+
     // Left foot: forward on the deck, always, riding the roll.
     const leftFoot = at(0.40, -0.15);
-    this.limb(cam, leftFoot, z + 0.12 - roll + tail * 0.35 + tuck, at(0.12, -0.07), legTop, 0.075, legCol);
+    this.leg(cam, leftFoot, z + 0.12 - roll + tail * 0.35 + tuck, at(0.13, -0.08), hipZ, bend, legCol);
 
     // Right foot: on the tail, or off it and pushing.
-    const rightFoot = reach > 0.02
+    const pushing = reach > 0.02;
+    const rightFoot = pushing
       ? at(-0.44 - reach * 0.30, 0.24 + reach * 0.30)
       : at(-0.46, 0.15);
-    const rightZ = reach > 0.02 ? 0.03 : z + 0.12 + roll + tail + tuck;
-    this.limb(cam, rightFoot, rightZ, at(-0.1, 0.07), legTop, 0.075, legCol);
+    const rightZ = pushing ? 0.03 : z + 0.12 + roll + tail + tuck;
+    // A pushing leg straightens as it reaches for the road; a planted one is
+    // bent like the other.
+    const rightBend = pushing
+      ? { x: bend.x * (1 - reach * 0.8), y: bend.y * (1 - reach * 0.8) }
+      : bend;
+    this.leg(cam, rightFoot, rightZ, at(-0.11, 0.08), hipZ, rightBend, legCol);
     this.card(cam, rightFoot, rightZ + 0.02, 0.11, 0.05, shade(VENEER.player, -0.7));
 
     /*
      * The rider is where the carve actually reads. Weight goes over the edge
-     * being turned on and the knees compress into it, which is a bigger visual
-     * signal than the deck angle and costs the board nothing.
+     * being turned on, the shoulders lead the turn, and the whole body folds
+     * down into it — a bigger signal than the deck angle, and it costs the
+     * board nothing.
      */
-    const dip = Math.abs(lean) * 0.06;
-    const bodyAt = at(reach * 0.22, lean * 0.26);
-    this.card(cam, bodyAt, legTop + 0.34 - crouch - dip, 0.24, 0.34 - dip * 0.4, shade(VENEER.player, -0.42));
-    this.card(cam, bodyAt, legTop + 0.78 - crouch - dip * 1.6, 0.15, 0.15, '#F2D3B8');
+    const dip = load * 0.09;
+    const bodyAt = at(reach * 0.20 + load * 0.05, lean * 0.30);
+    // Torso: taller than it is wide, sitting straight on top of the hips, so
+    // the body reads as a body and not as a bar floating over a pair of legs.
+    const torsoH = 0.30 - dip * 0.5;
+    const torsoZ = hipZ + torsoH;
+    this.card(cam, bodyAt, torsoZ, 0.19, torsoH, shade(VENEER.player, -0.42));
+    // Arms out for balance, further out the harder the board is working, and
+    // the leading one drops into the turn.
+    const shoulderZ = hipZ + torsoH * 1.8;
+    const spread = 0.24 + load * 0.18;
+    for (const side of [1, -1]) {
+      const hand = at(reach * 0.18 - side * lean * 0.12, side * spread + lean * 0.26);
+      this.limb(cam, hand, shoulderZ - 0.10 - side * lean * 0.12, bodyAt, shoulderZ, 0.05, legCol);
+    }
+    this.card(cam, bodyAt, shoulderZ + 0.15, 0.13, 0.13, '#F2D3B8');
+  }
+
+  /**
+   * A leg with a knee in it: two segments meeting at a joint pushed out over
+   * the toes. `bend` is the world-space offset applied to the midpoint, so the
+   * deeper the crouch the further the knee travels forward.
+   */
+  private leg(
+    cam: Cam, foot: Vec2, footZ: number, hip: Vec2, hipZ: number, bend: Vec2, fill: string,
+  ): void {
+    const knee = { x: (foot.x + hip.x) / 2 + bend.x, y: (foot.y + hip.y) / 2 + bend.y };
+    const kneeZ = footZ + (hipZ - footZ) * 0.48;
+    this.limb(cam, foot, footZ, knee, kneeZ, 0.07, fill);
+    this.limb(cam, knee, kneeZ, hip, hipZ, 0.078, shade(fill, 0.06));
   }
 
   /** A leg: a narrow quad from a foot on the ground up to the hip. */

@@ -131,6 +131,20 @@ export type EvidenceKind =
    */
   | 'PERSON_STRUCK';
 
+/**
+ * Which kinds of evidence are worth sending somebody for.
+ *
+ * Firing a slingshot is not a crime and neither is a noise: a bin knocked over
+ * three streets away is a thing to go and look at, which is exactly what the
+ * decoy is for, and a player who gets hunted for using their one tool stops
+ * using it. Interfering with the apparatus — a lens, a junction, a unit — or
+ * throwing something at a person is a different matter, and that is the whole
+ * of the list.
+ */
+export const PURSUABLE_EVIDENCE: ReadonlySet<EvidenceKind> = new Set<EvidenceKind>([
+  'NODE_OFFLINE', 'NODE_TAMPER', 'DRONE_INTERFERENCE', 'PROJECTILE_IMPACT', 'PERSON_STRUCK',
+]);
+
 export type EvidenceStage = 'NEW' | 'ANALYSING' | 'RESOLVED';
 
 export interface Evidence {

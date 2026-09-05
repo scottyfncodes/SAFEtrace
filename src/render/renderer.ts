@@ -30,6 +30,8 @@ export class Renderer {
   slingGrip: { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null = null;
   /** Where to hint that the sling can be picked up. */
   slingZoneHint: { x: number; y: number } | null = null;
+  /** Where the look thumb is planted and where it has been pushed to. */
+  lookStick: { anchor: { x: number; y: number }; thumb: { x: number; y: number } } | null = null;
   readonly chase = new ChaseCamera();
   private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
@@ -99,16 +101,7 @@ export class Renderer {
   ripple(pos: Vec2, life = 0.9): void { this.ripples.push({ pos, t: 0, life }); }
   kick(a: number): void { this.cam.kick(a * this.settings.cameraShake); }
 
-  /**
-   * The one piece of text a skating game owes the player.
-   *
-   * A trick button that rolls the dice has to say what came up, or it is a
-   * button that makes the board do something illegible. It is two words, low
-   * on the screen, gone in a moment — the name of the thing you just did, not
-   * a score for having done it.
-   */
-  private trickFlash: { name: string; t: number } | null = null;
-  flashTrick(name: string): void { this.trickFlash = { name, t: 0 }; }
+
 
   screenToWorld(p: Vec2): Vec2 { return this.cam.toWorld(p, this.w, this.h); }
 
@@ -138,7 +131,6 @@ export class Renderer {
     if (sim.visionBlend < 0.999) {
       this.perspective.draw(ctx, sim, this.chase.state(sim), this.w, this.h, false);
       this.drawSkateHud(ctx);
-      this.drawTrickFlash(ctx, dt);
     }
     if (sim.visionBlend <= 0.001) {
       if (this.controlVisual) {
@@ -266,6 +258,7 @@ export class Renderer {
       ctx.textAlign = 'left';
     }
 
+    this.drawLookStick(ctx);
     this.drawSlingInHands(ctx, draw);
 
     // A frame, so it is obvious this is a state and not the world.
@@ -275,8 +268,29 @@ export class Renderer {
   }
 
   /**
+   * The look thumb, drawn where it is planted.
+   *
+   * Aiming is a stick now, and a stick you cannot see is a gesture somebody
+   * has to be told about. Same shape as the movement stick, on the same half
+   * of the glass, so there is one thing to learn rather than two.
+   */
+  private drawLookStick(ctx: CanvasRenderingContext2D): void {
+    const l = this.lookStick;
+    if (!l) return;
+    ctx.save();
+    ctx.strokeStyle = alpha('#F6F4EE', 0.22);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(l.anchor.x, l.anchor.y, 38, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = alpha('#F6F4EE', 0.16);
+    ctx.beginPath(); ctx.arc(l.thumb.x, l.thumb.y, 21, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = alpha('#F6F4EE', 0.44);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
    * The slingshot, held. Two hands, the fork, and elastic that visibly stretches
-   * as the band loads with a bearing sitting in the pouch.
+   * as the band loads with a rock sitting in the pouch.
    *
    * Drawn in screen space at the bottom of the view rather than as world
    * geometry: it is held against the eye, so it does not belong in the
@@ -285,9 +299,10 @@ export class Renderer {
   private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
     const grip = this.slingGrip;
     const base = this.h + 18;
-    // The fork rests low and left. The pouch is wherever the thumb is holding
-    // it, so the thing on screen is the thing under the finger.
-    const fx = grip ? grip.grab.x : this.w * 0.30;
+    // The fork rests low on the right, where the thumb that draws it lives.
+    // The pouch is wherever that thumb is holding it, so the thing on screen
+    // is the thing under the finger.
+    const fx = grip ? grip.grab.x : this.w * 0.72;
     const forkY = grip ? grip.grab.y - 54 : this.h * 0.74;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
@@ -303,7 +318,7 @@ export class Renderer {
     ctx.strokeStyle = shade(VENEER.player, -0.34);
     ctx.lineWidth = 22;
     ctx.beginPath();
-    ctx.moveTo(fx - 52, base);
+    ctx.moveTo(fx - 30, base);
     ctx.lineTo(fx, forkY + prong * 0.9);
     ctx.stroke();
     ctx.fillStyle = skin;
@@ -328,19 +343,19 @@ export class Renderer {
     ctx.lineTo(fx + span, forkY - prong);
     ctx.stroke();
 
-    // The bearing in the pouch: a little steel ball, lit from up and left so
-    // it reads as a sphere rather than a dot.
-    ctx.fillStyle = '#6E767E';
+    // The rock in the pouch, lit from up and left so it reads as a lump of
+    // stone rather than a dot.
+    ctx.fillStyle = '#4E545B';
     ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#C9CDD2';
-    ctx.beginPath(); ctx.arc(pullX - 0.8, pullY - 0.8, 5.6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#F4F6F8';
-    ctx.beginPath(); ctx.arc(pullX - 2.2, pullY - 2.4, 2.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#767D85';
+    ctx.beginPath(); ctx.arc(pullX - 1, pullY - 1.1, 5.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9AA1A8';
+    ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
     if (grip) {
       ctx.strokeStyle = shade(VENEER.player, -0.34);
       ctx.lineWidth = 22;
       ctx.beginPath();
-      ctx.moveTo(this.w * 0.55, base);
+      ctx.moveTo(this.w * 0.92, base);
       ctx.lineTo(pullX + 8, pullY + 16);
       ctx.stroke();
       ctx.fillStyle = skin;
@@ -369,24 +384,15 @@ export class Renderer {
    * — and a human asked what it was for, which is the only question a piece of
    * permanent UI is not allowed to raise. Gone.
    */
-  private drawTrickFlash(ctx: CanvasRenderingContext2D, dt: number): void {
-    const f = this.trickFlash;
-    if (!f) return;
-    f.t += dt;
-    if (f.t > 1.5) { this.trickFlash = null; return; }
-    // Up and out: it arrives at once and leaves without being dismissed.
-    const a = clamp01(f.t < 0.12 ? f.t / 0.12 : 1 - (f.t - 0.12) / 1.38);
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `700 ${Math.round(Math.min(22, this.w * 0.045))}px ui-monospace, Menlo, monospace`;
-    const y = this.h * 0.42 - f.t * 16;
-    ctx.fillStyle = alpha('#12181F', 0.5 * a);
-    ctx.fillText(f.name, this.w / 2 + 1, y + 1);
-    ctx.fillStyle = alpha('#F6F4EE', 0.92 * a);
-    ctx.fillText(f.name, this.w / 2, y);
-    ctx.restore();
-  }
+  /*
+   * No trick name on screen.
+   *
+   * There was one, flashed low in the frame, on the theory that a button which
+   * rolls the dice owes the player a word. It does not: the board is right
+   * there doing the thing, and a caption over it is the game explaining its
+   * own animation. If a kickflip does not read as a kickflip, the fix is the
+   * kickflip.
+   */
 
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;
@@ -738,7 +744,7 @@ export class Renderer {
       ctx.fillStyle = '#3F464D';
       ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(1.5, z * 0.16), 0, Math.PI * 2); ctx.fill();
     }
-    for (const d of this.sim.droppedBearings) {
+    for (const d of this.sim.droppedRocks) {
       const s = this.cam.toScreen(d.pos, this.w, this.h);
       ctx.fillStyle = alpha('#6C7075', 0.8);
       ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(1, z * 0.12), 0, Math.PI * 2); ctx.fill();

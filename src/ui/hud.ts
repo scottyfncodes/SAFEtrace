@@ -2,8 +2,9 @@
  * The diegetic HUD.
  *
  * Almost every element is a thing in the fiction: the risk score is the
- * SAFEtrace app's own Community Safety Score widget that every resident has,
- * and ammunition is bearings visible in a pocket flap rather than a counter.
+ * SAFEtrace app's own Community Safety Score widget that every resident has.
+ * There is no ammunition counter, because there is no ammunition — the
+ * slingshot throws rocks, and the town is made of them.
  */
 import type { Sim } from '../sim/sim';
 import type { Settings } from '../core/settings';
@@ -35,7 +36,6 @@ export class Hud {
   private notifications: HTMLElement;
   private inspect: HTMLElement;
   private prompts: HTMLElement;
-  private bearings: HTMLElement;
   private dialogue: HTMLElement;
   private debug: HTMLElement;
   private scoreValue!: HTMLElement;
@@ -70,10 +70,6 @@ export class Hud {
       </div>
       <div id="notifications"></div>
       <div id="inspect"></div>
-      <div id="pocket">
-        <div id="bearings"></div>
-        <div class="cap">Bearings</div>
-      </div>
       <div id="prompts"></div>
       <div id="dialogue"></div>
       <div id="debug"></div>
@@ -82,18 +78,12 @@ export class Hud {
     this.inspect = root.querySelector('#inspect')!;
     this.prompts = root.querySelector('#prompts')!;
     this.prompts.innerHTML = touch ? TOUCH_PROMPTS : KEY_PROMPTS;
-    this.bearings = root.querySelector('#bearings')!;
     this.dialogue = root.querySelector('#dialogue')!;
     this.debug = root.querySelector('#debug')!;
     this.scoreValue = root.querySelector('#score')!;
     this.scoreMeter = root.querySelector('#meter')!;
     this.phoneRows = root.querySelector('#phone-rows')!;
     this.scoreState = root.querySelector('#score-state')!;
-
-    for (let i = 0; i < sim.player.maxBearings; i++) {
-      const el = document.createElement('i');
-      this.bearings.appendChild(el);
-    }
 
     // Verb chips are the one place the HUD accepts input. Delegated, so the
     // panel can re-render freely underneath.
@@ -135,7 +125,6 @@ export class Hud {
     this.drainMessages();
     this.updatePhone();
     this.updateInspect();
-    this.updateBearings();
 
     if (this.dialogueTimer > 0) {
       this.dialogueTimer -= dt;
@@ -344,13 +333,6 @@ export class Hud {
   private recordsOf(node: NetworkNode): string {
     return resolveRecords(node.records, this.sim.recordContext())
       .map((r) => `<div class="rec">${escapeHtml(r)}</div>`).join('');
-  }
-
-  private updateBearings(): void {
-    const kids = this.bearings.children;
-    for (let i = 0; i < kids.length; i++) {
-      (kids[i] as HTMLElement).classList.toggle('spent', i >= this.sim.player.bearings);
-    }
   }
 
   private updateDebug(): void {

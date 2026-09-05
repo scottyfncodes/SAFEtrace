@@ -360,11 +360,9 @@ describe('what it costs to look', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 6, y: 0 });
     sim.unlockVision();
-    const before = sim.player.bearings;
     for (let i = 0; i < 90; i++) sim.step(TICK_DT, looking(), { x: 200, y: 215 });
 
     expect(sim.player.aiming).toBe(false);
-    expect(sim.player.bearings).toBe(before);
     expect(sim.projectiles.length).toBe(0);
     expect(sim.player.stance).not.toBe('AIR');
   });
@@ -458,6 +456,23 @@ describe('being watched is not being hunted', () => {
   const chasing = (sim: ReturnType<typeof makeSim>) =>
     sim.tasking.some((a) => a.task?.trackId === sim.playerTrack.id);
 
+  it('never puts a player on the list for a score alone, however high', () => {
+    /*
+     * There used to be a third way onto the list: ten sustained seconds at
+     * intervention level. But the score is not a record of anything you did —
+     * it rises from behaviour flags, prediction error and standing near other
+     * people's incidents. Pursuit driven by it is pursuit for existing.
+     */
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < 20; i++) {
+      sim.playerTrack.risk.total = 100;
+      step(sim, 2);
+      expect(chasing(sim)).toBe(false);
+    }
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+  });
+
   it('sends nobody after a player who is only skating, however hard', () => {
     const sim = makeSim();
     place(sim, { x: 145, y: 62 });
@@ -495,6 +510,47 @@ describe('being watched is not being hunted', () => {
     sim.playerTrack.risk.total = 95;
     step(sim, 6);
     expect(chasing(sim)).toBe(false);
+  });
+
+  it('sends nobody for firing a rock: a slingshot is not a crime', () => {
+    /*
+     * Using the tool is not suspicious. A player who gets hunted the first
+     * time they try the one thing the game hands them stops trying it, and
+     * then the whole middle of the game — the decoys, the segment topology,
+     * the choice of what to interfere with — never happens.
+     */
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 });
+    // Twenty rocks into the empty road, in full view of the street.
+    for (let i = 0; i < 20; i++) shootAt(sim, { x: 175, y: 30 });
+    step(sim, 10);
+    expect([...sim.evidence.values()].length).toBe(0);
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+    expect(chasing(sim)).toBe(false);
+  });
+
+  it('sends nobody for a noise, because a noise is what the decoy is', () => {
+    // A bin knocked over is a place to go and look at — that is the point of
+    // it — and it must never turn into a name on a list.
+    const sim = makeUnlockedSim();
+    const bin = sim.world.data.props.find((p) => p.kind === 'bin' && p.hittable)!;
+    place(sim, { x: bin.pos.x, y: bin.pos.y + 12 });
+    step(sim, 0.3);
+    shootAt(sim, bin.pos, 0.7);
+    step(sim, 8);
+    const kinds = [...sim.evidence.values()].map((e) => e.kind);
+    expect(kinds.every((k) => k === 'NOISE')).toBe(true);
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+  });
+
+  it('sends somebody for interfering with the apparatus', () => {
+    // The line is not "you used the slingshot", it is "you did that with it".
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    step(sim, 12);
+    expect(sim.playerTrack.wantedUntil).toBeGreaterThan(sim.tick);
   });
 
   it('still investigates a place, because a noise is not a person', () => {

@@ -82,13 +82,6 @@ html, body {
     background: rgba(16, 23, 31, 0.38);
   }
 
-  #pocket {
-    bottom: calc(var(--safe-bottom) + 34vh);
-    right: calc(10px + var(--safe-right));
-  }
-  #bearings i { width: calc(5px * var(--text-scale)); height: calc(5px * var(--text-scale)); }
-  #pocket .cap { font-size: calc(7.5px * var(--text-scale)); }
-
   #dialogue {
     bottom: calc(var(--safe-bottom) + 42vh);
     max-width: 88vw;
@@ -108,7 +101,6 @@ html, body {
 /* Landscape on a phone: the thumb zones get shorter, so the panels move in. */
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
   #inspect { bottom: calc(var(--safe-bottom) + 8px); width: min(60vw, 320px); }
-  #pocket { bottom: calc(var(--safe-bottom) + 8px); }
   #dialogue { bottom: calc(var(--safe-bottom) + 52px); }
   #prompts { display: none; }
   .note:nth-child(n + 3) { display: none; }

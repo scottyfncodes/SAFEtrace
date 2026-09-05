@@ -128,23 +128,18 @@ export class ControlsRenderer {
   }
 
   /**
-   * Words where a word is faster, shapes where a shape is: POP and TRICK say
-   * exactly what they do, the sling is a drawn slingshot, VISION is an eye.
+   * Words where a word is faster, shapes where a shape is: TRICK says exactly
+   * what it does, the sling is a drawn slingshot, VISION is an eye.
    */
   private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
     const s = r * 0.5;
     ctx.lineWidth = 2.4;
     ctx.strokeStyle = ctx.fillStyle as string;
     ctx.beginPath();
-    if (id === 'ollie') {
-      // The word, and nothing else. A ramp glyph told the player nothing they
-      // could not read faster from three letters.
-      ctx.font = `700 ${Math.round(r * 0.46)}px ui-monospace, Menlo, monospace`;
-      ctx.fillText('POP', x, y + 1);
-      return;
-    } else if (id === 'trick') {
-      // Same treatment as POP, because they are the same kind of thing: a verb
-      // the board performs. Which trick is the board's business, not a label's.
+    if (id === 'trick') {
+      // The word, and nothing else. A ramp or a board glyph told the player
+      // nothing they could not read faster from five letters. Which trick is
+      // the board's business, and it is never named.
       ctx.font = `700 ${Math.round(r * 0.38)}px ui-monospace, Menlo, monospace`;
       ctx.fillText('TRICK', x, y + 1);
       return;

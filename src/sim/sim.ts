@@ -17,7 +17,7 @@ import type { SimEvents } from './events';
 import { TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
-  collectBearings, type DroppedBearing, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
+  type DroppedRock, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
@@ -33,7 +33,7 @@ import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
 import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track } from './surveillance/types';
 import type { MessagePriority } from './events';
 import type { RecordContext } from './worldTypes';
-import { levelFor } from './surveillance/types';
+import { PURSUABLE_EVIDENCE, levelFor } from './surveillance/types';
 import { SYSTEM, CARE, SHOT } from '../content/copy';
 
 /** How far the player can reach into the network without walking to it. */
@@ -102,7 +102,8 @@ export class Sim {
   npcTracks: Track[] = [];
 
   projectiles: Projectile[] = [];
-  droppedBearings: DroppedBearing[] = [];
+  /** Rocks lying where they landed. Scenery, not supply. */
+  droppedRocks: DroppedRock[] = [];
   evidence = new Map<string, Evidence>();
   incidents: Incident[] = [];
 
@@ -275,9 +276,7 @@ export class Sim {
       if (this.aimMode) this.exitAimMode(); else this.enterAimMode();
     }
     if (this.aimMode) {
-      // Out of bearings is the one thing that ends the mode by itself.
-      if (this.player.bearings <= 0 && this.projectiles.length === 0) this.exitAimMode();
-      else intent = holdStillToAim(intent);
+      intent = holdStillToAim(intent);
     }
 
     // 1-2. Input and movement.
@@ -405,7 +404,7 @@ export class Sim {
   lastShot: { tick: number; hit: boolean; label: string } | null = null;
 
   enterAimMode(): void {
-    if (this.aimMode || this.player.bearings <= 0) return;
+    if (this.aimMode) return;
     this.aimMode = true;
     this.aimAnchor = { x: this.player.pos.x, y: this.player.pos.y };
     this.player.vel = { x: 0, y: 0 };
@@ -565,8 +564,7 @@ export class Sim {
   }
 
   private updateProjectiles(dt: number, intent: Intent): void {
-    if (intent.firePressed && this.player.aiming && this.player.bearings > 0 && this.player.draw > 0.12) {
-      this.player.bearings--;
+    if (intent.firePressed && this.player.aiming && this.player.draw > 0.12) {
       // Sway is the documented reward for skating well, and it belongs on the
       // shot rather than only on the reticle: the reticle must not promise
       // accuracy the projectile does not have.
@@ -604,30 +602,23 @@ export class Sim {
     }
     this.projectiles = keep;
 
-    // Bearings roll and can be picked back up: a physical constraint, not an economy.
-    if (this.player.bearings < this.player.maxBearings) {
-      const { kept, collected } = collectBearings(this.droppedBearings, this.player.pos, 1.6);
-      if (collected > 0) {
-        this.droppedBearings = kept;
-        this.player.bearings = Math.min(this.player.maxBearings, this.player.bearings + collected);
-        this.bus.emit('player:collect', { count: collected });
-      }
-    }
-    // Resupply points.
-    for (const p of this.world.propsNear(this.player.pos, 3)) {
-      if (p.kind === 'ammoCache' && this.player.bearings < this.player.maxBearings) {
-        this.player.bearings = this.player.maxBearings;
-        this.bus.emit('player:collect', { count: 0 });
-      }
-    }
+    /*
+     * No ammunition.
+     *
+     * There used to be twelve steel bearings, a pocket that emptied, rocks to
+     * walk back and pick up, and resupply caches. All of it was a tax on
+     * experimenting with the one tool the game hands you: a player who is
+     * counting their shots does not try the interesting one. It is gravel. You
+     * are standing on more of it.
+     */
   }
 
   private resolveImpact(
     kind: string, pos: Vec2, vel: Vec2, vz: number, z: number, targetId?: string,
   ): void {
     this.bus.emit('projectile:impact', { kind: kind as never, pos, targetId });
-    this.droppedBearings.push({ pos: { ...pos }, tick: this.tick });
-    if (this.droppedBearings.length > 40) this.droppedBearings.shift();
+    this.droppedRocks.push({ pos: { ...pos }, tick: this.tick });
+    if (this.droppedRocks.length > 40) this.droppedRocks.shift();
 
     const observedBy = this.sensorsObserving(pos);
 
@@ -947,9 +938,15 @@ export class Sim {
       if (outcome.linked && e.linkedTrackId) {
         const t = this.allTracks.find((x) => x.id === e.linkedTrackId);
         if (t && !t.linkedEvidence.includes(e.id)) t.linkedEvidence.push(e.id);
-        // Evidence that lands on a name is the moment somebody is sent. Not a
-        // score, not a camera holding you: a thing they can point at.
-        if (t) t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
+        /*
+         * Evidence that lands on a name, and is the kind worth sending
+         * somebody for, is the moment somebody is sent. Not a score, not a
+         * camera holding you, and not a noise: a thing they can point at that
+         * they also consider a matter for a unit.
+         */
+        if (t && PURSUABLE_EVIDENCE.has(e.kind)) {
+          t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
+        }
         this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
       } else if (e.kind !== 'NOISE') {
         this.message('SYSTEM', [SYSTEM.originIndeterminate], 3.4);
@@ -959,29 +956,20 @@ export class Sim {
 
   // ---------------------------------------------------------------- dispatch
 
-  /**
-   * The third way onto the list: not one thing, but everything.
+  /*
+   * There is no third way onto the list.
    *
-   * A player who sits at intervention level long enough has earned attention
-   * without any single event doing it. Ten seconds, so it is a pattern rather
-   * than a spike from clipping a kerb.
+   * There used to be: sit at intervention level for ten seconds and a unit was
+   * sent, on the theory that a sustained score is a pattern rather than a
+   * spike. But the score is not a record of anything you did — it rises from
+   * behaviour flags, prediction error and proximity to other people's
+   * incidents, all of which an ordinary afternoon produces. Pursuit driven by
+   * it is pursuit for skating around, which is the thing this is supposed to
+   * stop. Somebody comes when the system has a thing it can point at: evidence
+   * that links to a name, or an incident with that name on it. Nothing else.
    */
-  private updateWanted(): void {
-    const t = this.playerTrack;
-    if (levelFor(t.risk.total) === 'INTERVENTION') {
-      this.interventionTicks++;
-      if (this.interventionTicks > 60 * 10) {
-        t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
-      }
-    } else {
-      this.interventionTicks = Math.max(0, this.interventionTicks - 2);
-    }
-  }
-
-  private interventionTicks = 0;
 
   private updateDispatch(): void {
-    this.updateWanted();
     for (const a of this.assets) {
       const d = this.drones.find((x) => x.id === a.id);
       if (d) { a.pos = d.pos; continue; }
