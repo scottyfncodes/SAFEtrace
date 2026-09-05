@@ -1,8 +1,16 @@
 name: Deploy to GitHub Pages
 
+# Whichever branch was pushed last is what the site shows.
+#
+# The trigger used to name two branches by hand, so work on any third one was
+# invisible on the live site until somebody remembered to edit this file — and
+# the branch that happens to be the repository default is itself a `claude/`
+# branch, so there was never a stable "production" to point at. A repository has
+# exactly one Pages site; last push wins is the honest way to say that, and it
+# means the link always shows the branch actually being worked on.
 on:
   push:
-    branches: ['main', 'claude/safetrace-game-foundation-0aksik']
+    branches: ['main', 'claude/**']
   workflow_dispatch:
 
 # Assets are published with relative paths (vite `base: './'`), so the build
