@@ -86,6 +86,20 @@ export function shootAt(sim: Sim, at: Aim, z: Height = 0, offsetDeg = 0, draw = 
   sim.lookPitch = 0.06;
 }
 
+/**
+ * Reach for whatever is in range, the way a player does.
+ *
+ * Nothing opens on proximity any more, so a test that wants a node on screen
+ * has to press the same button a person would. Returns whether anything was
+ * actually in reach to take.
+ */
+export function interact(sim: Sim): boolean {
+  const it = emptyIntent();
+  it.interactPressed = true;
+  sim.step(TICK_DT, it, null);
+  return sim.focusNode !== null;
+}
+
 /** Drive the player straight, as if holding push. */
 export function skate(sim: Sim, seconds: number, steer = 0): void {
   const n = Math.round(seconds * 60);

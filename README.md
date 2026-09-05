@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 48 tests: simulation, determinism, architecture, content
+npm test         # 354 tests: simulation, determinism, architecture, content, touch
 npm run build
 ```
 
@@ -31,13 +31,24 @@ in the veneer, SAFEtrace VISION, and the advertisement's reprise.
 | `W` | push (a rhythm, not a throttle) |
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
+| `R` | trick — which trick is the board's business, not yours |
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
-| Right mouse | aim the slingshot; time does not slow |
-| Left mouse | release |
-| `E` then `1`–`6` | inspect a network node and act on it |
-| `Q` | hold for SAFEtrace VISION, once you have earned it |
-| `F3` | diagnostics, including the full risk decomposition |
+| `F` | take out the slingshot, and stand still to use it |
+| Left mouse | draw the band; release to throw |
+| `E` then `1`–`6` | reach for the node you are standing next to, and act on it |
+| `Q` | hold for the plan view — the town from above, from the first frame |
+| `F3` | diagnostics, including the pursuit state and the risk decomposition |
+
+Nothing opens on its own. A node's panel appears because you pressed `E` — or,
+on a phone, because you tapped the thing itself — and never because you skated
+past it. On a phone the slingshot is two thumbs: the left one drags the sling
+where you want it, the right one pulls the band back and lets go.
+
+A phone gets three buttons, in the bottom-right, from the first frame: `SLING`,
+`TRICK`, and `PLAN`. The plan view is a *view* and is always available on every
+device. SAFEtrace VISION is a story unlock, and what it changes is what the plan
+view contains — coverage, subjects, the forecast — not how you open it.
 
 ## The idea, in one table
 
@@ -115,7 +126,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-48 tests, all headless, under four seconds.
+354 tests, all headless, in about ten seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
@@ -127,9 +138,22 @@ because if a refactor ever made it impossible the premise would break silently.
   single document or it drifts.
 - **Content** — the shipped town validates: every sensor on a segment, every
   segment on an uplink, a connected road graph, and the Channel genuinely off it.
+- **Touch** — the gesture engine is pure, so every thumb is a synthetic trace:
+  the two-thumb slingshot, and a nine-viewport ergonomics matrix asserting touch
+  target sizes, separation between neighbours, safe-area clearance and screen
+  coverage on the iPhone sizes this actually has to work on.
 
 ## Status
 
-Phases 0 through 7 of the roadmap. The slice is playable end to end; broad
-content production is deliberately the last phase, per
+**Phase 7 — the slice — is built, and its gate has not been run.** Every item
+required by [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md) §2 is in the
+build and playable end to end, from the advertisement to the reprise. But all
+six of that document's success criteria in §4 are observations of a person who
+has never seen the game — a clean line inside four minutes without instruction,
+the sling-into-a-camera move happening by accident and then on purpose, somebody
+asking "how did it know I was going there?" — and none of them is a thing a test
+suite can assert. They need a room and a stranger.
+
+So the next gate is playtesting, not code. Broad content production is
+deliberately Phase 8 and stays there, per
 [`docs/16-production-roadmap.md`](docs/16-production-roadmap.md).

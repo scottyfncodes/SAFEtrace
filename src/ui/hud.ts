@@ -15,13 +15,17 @@ const KEY_PROMPTS = [
   '<span><kbd>W</kbd>push</span>',
   '<span><kbd>A D</kbd>carve</span>',
   '<span><kbd>Space</kbd>ollie</span>',
+  // A phone has a TRICK button in the corner; a keyboard had the same verb on
+  // an unlisted key, so half the players never found out it existed.
+  '<span><kbd>R</kbd>trick</span>',
   '<span><kbd>S</kbd>slide</span>',
-  '<span><kbd>RMB</kbd>aim</span>',
-  '<span><kbd>E</kbd>inspect</span>',
+  '<span><kbd>F</kbd>sling</span>',
+  '<span><kbd>Q</kbd>plan</span>',
+  '<span><kbd>E</kbd>interact</span>',
 ].join('');
 
-// Two lines, not three. The ollie, the sling and VISION are buttons you can
-// see now, so there is nothing left to tell anybody about them.
+// Two lines, not three. The ollie, the sling and the plan view are all buttons
+// you can see, so there is nothing left to tell anybody about them.
 const TOUCH_PROMPTS = [
   '<span>hold to roll</span>',
   '<span>push the way you want to go</span>',
@@ -353,6 +357,9 @@ export class Hud {
       `error  ${t.predictionError.toFixed(3)}`,
       `flags  ${[...t.flags].join(',')}`,
       `esc    ${this.sim.escalation}`,
+      // The answer to "is anybody actually coming", which is a different
+      // question from the score above it and now has its own state machine.
+      `chase  ${this.sim.pursuit}`,
       `seen   ${this.sim.playerObserved}`,
     ].join('\n');
   }

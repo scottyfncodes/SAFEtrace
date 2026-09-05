@@ -57,10 +57,41 @@ export const SYSTEM = {
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
   identityUnresolved: 'IDENTITY UNRESOLVED',
   holdStill: 'COME TO A STOP TO INTERFERE',
-  visionAvailable: 'SAFEtrace VISION — AVAILABLE',
+  /**
+   * What VISION actually gives you.
+   *
+   * This used to read "SAFEtrace VISION — AVAILABLE" alongside a hint naming a
+   * control, because unlocking it grew a button on the HUD. The plan view is
+   * now a control the player has had since the first frame; what changes here
+   * is what is drawn inside it. So the line names the content, not a key.
+   */
+  visionAvailable: 'SAFEtrace VISION — SUBJECT LAYER ENABLED',
+  /** The plan view's own caption, before there is anything else to say. */
+  planView: 'PLAN VIEW',
   queryAvailable: 'QUERY AND TRACE AVAILABLE',
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
+  /*
+   * The pursuit says out loud what it does and does not know.
+   *
+   * A player who breaks contact and is then found anyway learns that escaping
+   * is not a thing this game does. These three lines are the system admitting,
+   * in its own register, that the fix is stale — and each of them corresponds
+   * to a state the dispatcher is actually in, so the words are never a bluff.
+   */
+  /*
+   * ...and it says when it starts, too.
+   *
+   * There were three lines for a pursuit ending and none for one beginning, so
+   * "SEARCH STOOD DOWN" was the payoff to something the player had never been
+   * told had started. These two are the other half of that set: the first is
+   * somebody being sent to where you are, the second to where you were.
+   */
+  unitDispatched: 'UNIT DISPATCHED — SUBJECT LOCATION',
+  unitResponding: 'UNIT RESPONDING — LAST REPORTED LOCATION',
+  contactLost: 'VISUAL CONTACT LOST — LAST KNOWN POSITION HELD',
+  searchingLastKnown: 'UNITS SEARCHING — LAST KNOWN POSITION',
+  pursuitCleared: 'SUBJECT NOT LOCATED — SEARCH STOOD DOWN',
   /*
    * A bearing hit somebody. SAFEtrace does not say "you hurt them", because
    * nobody was hurt and the system would not care if they had been. It logs an
@@ -115,11 +146,21 @@ export const AD_REPRISE_ANNOTATIONS: Record<number, string> = {
   5: 'RETENTION: INDEFINITE',
 };
 
-/** Dialogue. Kept short: the strongest moments in this game are notifications. */
-/** How a verb is reached, phrased for the device in the player's hands. */
+/*
+ * Two different kinds of sentence, and only one of them names a control.
+ *
+ * `inspect` is a control: reaching into a node is a new verb the player has
+ * not used before, and they are told which button does it on the device in
+ * their hands. `vision` is not a control and must never read like one — the
+ * plan view has been one hold away since the first frame, on every device.
+ * What the unlock changes is what that view contains, so the line describes
+ * the content and is the same sentence everywhere.
+ */
+const VISION_UNLOCKED = 'COVERAGE AND SUBJECTS NOW IN PLAN VIEW';
+
 export const HINTS = {
-  keyboard: { vision: 'HOLD Q', inspect: 'PRESS E' },
-  touch: { vision: 'TWO FINGERS', inspect: 'TAP THE NODE' },
+  keyboard: { vision: VISION_UNLOCKED, inspect: 'PRESS E' },
+  touch: { vision: VISION_UNLOCKED, inspect: 'TAP THE NODE' },
 };
 
 export const DIALOGUE = {

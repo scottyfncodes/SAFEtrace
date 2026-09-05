@@ -25,6 +25,17 @@ before implementation and is the authority for what the game is trying to be.
 | 18 | [Phase 8 Readiness Gate](18-phase-8-readiness.md) | The audit, the risks, and the GO decision |
 | 19 | [Phase 8 Slice 01: Northgate](19-northgate-slice-01.md) | The first production slice, and what it proved |
 | 20 | [Phase 8 Slice 02: Relay 12](20-relay-12.md) | TX-2 as the shared file, and why it is not a target |
+| 21 | [Relay 12 Playtest Protocol](21-relay-12-playtest-protocol.md) | The P0 human playtest, written before it was run |
+| 22 | [Usability Pass 01](22-usability-pass-01.md) | Movement, aiming, score, notifications |
+| 23 | [Usability Pass 02](23-usability-pass-02.md) | JX-M1, movement, and stationary aiming |
+| 24 | [The Third-Person Skate Camera](24-third-person-camera.md) | A second camera over the same world |
+| 25 | [Attention, Tricks, and Manual Aim](25-attention-tricks-and-manual-aim.md) | Nobody comes unless you gave them a reason |
+| 26 | [A Smaller Town, Two Thumbs, and Rocks](26-miniature-scale-and-two-thumbs.md) | The miniature, a thumb each, and no ammunition |
+| 27 | [Pursuit, Speed, and a Rider with Joints](27-pursuit-and-the-rig.md) | What was actually mobilising the police |
+| 28 | [Gameplay Cleanup and Interaction Clarity](28-gameplay-cleanup-and-interaction-clarity.md) | The pursuit state machine, the two-thumb slingshot, and no haunted UI |
+| 29 | [Mobile UX and the Plan View](29-mobile-ux-and-plan-view.md) | Plan view as a control, VISION as content, and a thumb-first HUD |
+| 30 | [Telling People Apart](30-telling-people-apart.md) | The cop who was a neighbour, and the friend who was riding nothing |
+| 31 | [Vertical Slice Feel and the Playtest Gate](31-vertical-slice-feel-and-the-playtest-gate.md) | The afternoon that started thirty-two seconds late, and what only a person can answer |
 
 ## The one-sentence pitch
 

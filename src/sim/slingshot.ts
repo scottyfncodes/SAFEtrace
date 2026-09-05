@@ -19,6 +19,45 @@ export type ImpactKind =
   | 'cameraLens' | 'cameraMount' | 'cameraMotor'
   | 'drone' | 'light' | 'junction' | 'prop' | 'ground' | 'building';
 
+/**
+ * What makes one rock not the previous rock.
+ *
+ * A rock is gravel off a driveway and there are no two alike, but they are all
+ * obviously rocks — nobody has to work out what they picked up. So the
+ * variation is narrow and it is all silhouette: a little bigger or smaller, a
+ * little wider than it is tall or the other way round, turned to a different
+ * angle, and lumpier or smoother round the edge. No colour, no shape family,
+ * nothing that could read as a different kind of ammunition, because there is
+ * only one kind and the player must never wonder.
+ *
+ * Rolled once, from the simulation's own seeded generator, and carried on the
+ * projectile — so the rock that leaves the sling is the rock that lands, and a
+ * replay throws the same stones.
+ */
+export interface RockShape {
+  /** Multiplier on drawn radius. Kept close to one. */
+  size: number;
+  /** How much wider than tall, or the reverse. 1 is round. */
+  squash: number;
+  /** Which way that squash points, in radians. */
+  spin: number;
+  /** How far the outline wanders in and out, 0..1. */
+  jag: number;
+  /** Where round the outline the wandering starts. */
+  phase: number;
+}
+
+/** One rock, rolled. Everything about it stays within "that is a rock". */
+export function rollRock(rng: Rng): RockShape {
+  return {
+    size: 0.82 + rng.next() * 0.36,
+    squash: 0.84 + rng.next() * 0.32,
+    spin: rng.next() * Math.PI * 2,
+    jag: 0.6 + rng.next() * 0.8,
+    phase: rng.next() * Math.PI * 2,
+  };
+}
+
 export interface Projectile {
   id: number;
   pos: Vec2;
@@ -28,6 +67,8 @@ export interface Projectile {
   life: number;
   /** Where it was fired from; the player's own record, not the system's. */
   origin: Vec2;
+  /** This particular stone. */
+  shape: RockShape;
   trail: Array<{ x: number; y: number; z: number }>;
 }
 
@@ -59,6 +100,8 @@ export function fire(from: Vec2, angle: number, draw: number, pitch: number, rng
     vz: Math.sin(pitch) * speed,
     life: PROJ_LIFETIME,
     origin: { x: from.x, y: from.y },
+    // Whatever was under the hand this time.
+    shape: rollRock(rng),
     trail: [],
   };
 }
@@ -192,4 +235,4 @@ export function predictArc(
  * is thinking about a menu instead of a town. These are kept only so a shot
  * leaves something behind — the world remembers being hit.
  */
-export interface DroppedRock { pos: Vec2; tick: number; }
+export interface DroppedRock { pos: Vec2; tick: number; shape: RockShape; }

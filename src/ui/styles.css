@@ -187,6 +187,9 @@ html, body {
 #prompts {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 14px;
+  /* Eight verbs is wider than a narrow window, and a control strip that runs
+     off the edge of the glass is worse than one that takes two lines. */
+  flex-wrap: wrap; justify-content: center; max-width: min(92vw, 760px);
   background: rgba(16, 23, 31, 0.55);
   padding: 8px 16px; border-radius: 999px;
   color: #EDF2F5;

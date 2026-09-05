@@ -10,11 +10,13 @@ import { scoreRisk } from '../src/sim/surveillance/risk';
 import { analyse, makeEvidence, solveRange } from '../src/sim/surveillance/evidence';
 import { TUNE } from '../src/sim/player';
 import { PATROL } from '../src/sim/patrol';
+import { PURSUIT } from '../src/sim/surveillance/pursuit';
 import { DRONE } from '../src/sim/drone';
 import { fire, solvePitch, stepProjectile } from '../src/sim/slingshot';
 import { THRESHOLDS } from '../src/sim/surveillance/behavior';
 import { DEG } from '../src/core/math';
 import { resolveRecords } from '../src/sim/worldTypes';
+import { SYSTEM } from '../src/content/copy';
 
 const subject = (over: Partial<Subject> = {}): Subject => ({
   id: 'S-TEST', kind: 'resident', identity: 'TEST, A.', displayName: 'TEST, A.',
@@ -341,12 +343,12 @@ describe('sensor cone geometry', () => {
 
 describe('what it costs to look', () => {
   /**
-   * Seeing the machine comes at the expense of acting normally. This lived only
-   * in the touch layer, which meant the rule did not exist on a keyboard.
+   * Looking at the plan comes at the expense of acting normally. This lived
+   * only in the touch layer, which meant the rule did not exist on a keyboard.
    */
   const looking = () => {
     const i = emptyIntent();
-    i.vision = true;
+    i.planView = true;
     i.push = true;
     i.pushPressed = true;
     i.aim = true;
@@ -359,10 +361,9 @@ describe('what it costs to look', () => {
     return i;
   };
 
-  it('will not let the player push, aim, or ollie while VISION is held', () => {
+  it('will not let the player push, aim, or ollie while the plan is held', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 6, y: 0 });
-    sim.unlockVision();
     for (let i = 0; i < 90; i++) sim.step(TICK_DT, looking(), { x: 200, y: 215 });
 
     expect(sim.player.aiming).toBe(false);
@@ -373,18 +374,44 @@ describe('what it costs to look', () => {
   it('still lets the player hold their line and stop, so looking is not a crash', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 8, y: 0 });
-    sim.unlockVision();
     const heading = sim.player.heading;
     for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
     expect(sim.player.heading).not.toBe(heading);
-    expect(sim.visionActive).toBe(true);
+    expect(sim.planViewActive).toBe(true);
+  });
+
+  /*
+   * The plan view is a view, and SAFEtrace VISION is a story unlock. They were
+   * the same flag, which is how a phone ended up growing a button the moment
+   * the story fired — and how the keyboard's Q did nothing at all for the
+   * first several minutes of a session.
+   */
+  it('opens the plan from the very first frame, long before VISION exists', () => {
+    const sim = makeSim();
+    expect(sim.visionUnlocked).toBe(false);
+    for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
+    expect(sim.planViewActive).toBe(true);
+    expect(sim.planViewBlend).toBeGreaterThan(0.5);
+    // And unlocking changes nothing about how it opens.
+    expect(sim.visionUnlocked).toBe(false);
+  });
+
+  it('does not change how the plan opens when VISION unlocks', () => {
+    const before = makeSim();
+    for (let i = 0; i < 60; i++) before.step(TICK_DT, looking(), null);
+
+    const after = makeSim();
+    after.unlockVision();
+    for (let i = 0; i < 60; i++) after.step(TICK_DT, looking(), null);
+
+    expect(after.planViewActive).toBe(before.planViewActive);
+    expect(after.planViewBlend).toBeCloseTo(before.planViewBlend, 6);
   });
 
   it('applies the same rule whatever the device, because the device is not asked', () => {
     // The intent is identical; only the simulation decides.
     const sim = makeSim();
     place(sim, { x: 155, y: 215 });
-    sim.unlockVision();
     const i = looking();
     sim.step(TICK_DT, i, null);
     // The caller's intent object is not mutated: suppression is internal.
@@ -548,6 +575,155 @@ describe('being watched is not being hunted', () => {
     sim.playerTrack.risk.total = 95;
     step(sim, 6);
     expect(chasing(sim)).toBe(false);
+  });
+
+  /*
+   * ------------------------------------------------------------------------
+   * The pursuit is a state machine, and every one of these is a state.
+   *
+   * Two things a human reported, in their words: "the cop is still immediately
+   * chasing" and "even when I lose the cop, the cop eventually tracks me down
+   * anyway". Both were structural. Nothing owned the question of whether a
+   * pursuit was running, so it could start as a side effect of tasking; and
+   * being lost only cancelled the current task, leaving the file open for two
+   * minutes so the next lens restarted the chase for something already outrun.
+   * ------------------------------------------------------------------------
+   */
+  it('starts a session with nobody pursuing anybody', () => {
+    const sim = makeSim();
+    expect(sim.pursuit).toBe('NOT_PURSUING');
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+    expect(sim.pursuitLastKnown).toBeNull();
+    expect(sim.tasking.every((a) => a.task === null)).toBe(true);
+  });
+
+  it('is still NOT_PURSUING after a long, hard skate through the town', () => {
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < 20; i++) {
+      skate(sim, 3, i % 2 === 0 ? 0.7 : -0.7);
+      expect(sim.pursuit).toBe('NOT_PURSUING');
+    }
+  });
+
+  /**
+   * There were three lines for a pursuit ending and none for one beginning, so
+   * a player heard "SEARCH STOOD DOWN" for something they were never told had
+   * started. Both ends of the arc are spoken now.
+   */
+  it('says when somebody is sent, as well as when they give up', () => {
+    const sim = makeUnlockedSim();
+    const said: string[] = [];
+    sim.bus.on('safetrace:message', (m) => said.push(...m.lines));
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 40 && sim.pursuit === 'NOT_PURSUING'; i++) step(sim, 0.5);
+    expect(said).toContain(SYSTEM.unitDispatched);
+
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    for (let i = 0; i < 120 && sim.pursuit !== 'NOT_PURSUING'; i++) step(sim, 0.5);
+    expect(said).toContain(SYSTEM.pursuitCleared);
+  });
+
+  it('walks the whole arc, and ends somewhere the player can get to', () => {
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    expect(sim.pursuit).toBe('NOT_PURSUING');
+
+    // A real offence: a lens, in front of the lens.
+    shootAt(sim, cam.data.pos, cam.data.height);
+    const seen: string[] = [];
+    const note = () => { if (seen[seen.length - 1] !== sim.pursuit) seen.push(sim.pursuit); };
+    for (let i = 0; i < 40 && sim.pursuit === 'NOT_PURSUING'; i++) { step(sim, 0.5); note(); }
+    expect(seen).toContain('PURSUING');
+
+    // Gone: out of every cone in the district, and still moving.
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    for (let i = 0; i < 120 && sim.pursuit !== 'NOT_PURSUING'; i++) { step(sim, 0.5); note(); }
+
+    expect(seen).toEqual(['NOT_PURSUING', 'PURSUING', 'LOST', 'SEARCHING', 'CLEAR', 'NOT_PURSUING']);
+    // And CLEAR means cleared: the file is shut, not merely quiet.
+    expect(sim.playerTrack.wantedUntil).toBeLessThan(sim.tick);
+    expect(sim.pursuitLastKnown).toBeNull();
+    expect(chasing(sim)).toBe(false);
+  });
+
+  it('does not pick the player back up after clearing, however visible they are', () => {
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 40 && sim.pursuit === 'NOT_PURSUING'; i++) step(sim, 0.5);
+
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    for (let i = 0; i < 120 && sim.pursuit !== 'NOT_PURSUING'; i++) step(sim, 0.5);
+    expect(sim.pursuit).toBe('NOT_PURSUING');
+
+    // Straight back under the camera that started it, in the open, for a while.
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < 40; i++) {
+      step(sim, 0.5);
+      expect(sim.pursuit).toBe('NOT_PURSUING');
+      expect(chasing(sim)).toBe(false);
+    }
+  });
+
+  it('hands nobody the player\'s position unless something can see them', () => {
+    /*
+     * The mechanical form of "no magic reacquisition": a trackId is the only
+     * way an asset can ask where the subject is now, and it is only ever
+     * written while the pursuit is PURSUING — which requires live contact.
+     * Every other order is a place, frozen at issue.
+     */
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 40 && !chasing(sim); i++) step(sim, 0.5);
+    expect(chasing(sim)).toBe(true);
+
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    for (let i = 0; i < 200; i++) {
+      step(sim, 0.25);
+      if (sim.pursuit !== 'PURSUING') {
+        for (const a of sim.tasking) expect(a.task?.trackId).toBeUndefined();
+      }
+      if (sim.pursuit === 'NOT_PURSUING') break;
+    }
+  });
+
+  it('searches around where the player was, not where the player is', () => {
+    const sim = makeUnlockedSim();
+    const cam = sim.sensorById.get('CM-207')!;
+    place(sim, { x: 145, y: 62 });
+    shootAt(sim, cam.data.pos, cam.data.height);
+    for (let i = 0; i < 40 && !chasing(sim); i++) step(sim, 0.5);
+
+    const lostAt = { x: sim.player.pos.x, y: sim.player.pos.y };
+    place(sim, { x: 300, y: 442 });
+    sim.playerTrack.confidence = 0;
+    let searched = 0;
+    for (let i = 0; i < 200 && sim.pursuit !== 'CLEAR'; i++) {
+      step(sim, 0.25);
+      if (sim.pursuit !== 'SEARCHING') continue;
+      for (const a of sim.tasking) {
+        if (!a.task) continue;
+        searched++;
+        // Near where they were last seen, and nowhere near where they went.
+        expect(Math.hypot(a.task.target.x - lostAt.x, a.task.target.y - lostAt.y))
+          .toBeLessThan(PURSUIT.searchRadius + 2);
+        expect(Math.hypot(a.task.target.x - sim.player.pos.x, a.task.target.y - sim.player.pos.y))
+          .toBeGreaterThan(60);
+      }
+    }
+    expect(searched).toBeGreaterThan(0);
   });
 
   it('sends nobody for firing a rock: a slingshot is not a crime', () => {

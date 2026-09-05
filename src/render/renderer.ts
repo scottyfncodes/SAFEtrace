@@ -13,10 +13,13 @@ import type { Sim } from '../sim/sim';
 import { predictArc } from '../sim/slingshot';
 import { ViewCamera } from './camera';
 import { ControlsRenderer } from './controls';
-import { ChaseCamera, EYE_Z, PerspectiveRenderer } from './perspective';
+import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
-import { VeneerRenderer, ROOF_K, roundRect } from './veneer';
+import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
+
+/** Where a node's label hangs: roughly the height its housing sits at. */
+const NODE_LABEL_Z = 3.0;
 
 export class Renderer {
   readonly cam = new ViewCamera();
@@ -26,19 +29,37 @@ export class Renderer {
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
   private readonly perspective = new PerspectiveRenderer();
-  /** Where the sling is being held, from the touch layer. Null when slack. */
+  /** Where the sling is being pulled, from the touch layer. Null when slack. */
   slingGrip: { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null = null;
-  /** Where to hint that the sling can be picked up. */
-  slingZoneHint: { x: number; y: number } | null = null;
-  /** Where the look thumb is planted and where it has been pushed to. */
-  lookStick: { anchor: { x: number; y: number }; thumb: { x: number; y: number } } | null = null;
+  /**
+   * Where the hand holding the sling is: the left thumb, if it is down.
+   *
+   * The fork is drawn there, so the thing the player is dragging around the
+   * screen is literally under the finger dragging it. Null falls back to a
+   * resting position, which is what a slingshot held in one hand looks like
+   * when the other hand is not on it.
+   */
+  slingHand: { x: number; y: number } | null = null;
   readonly chase = new ChaseCamera();
   private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
   showControlHome = false;
+  /**
+   * What the contextual prompt tells the player to do. Set once by the host,
+   * because which gesture opens a node is a fact about the device.
+   */
+  interactVerb = 'INTERACT';
+  /**
+   * The device's safe-area insets, in CSS pixels, set by the host.
+   *
+   * Anything the renderer draws hard against an edge — the plan-view frame
+   * most of all — has to know where the notch and the home indicator are, or
+   * it draws a border the phone crops.
+   */
+  safe = { top: 0, right: 0, bottom: 0, left: 0 };
   private ctx: CanvasRenderingContext2D;
   w = 0; h = 0; dpr = 1;
-  /** 0..1 wavefront progress, separate from sim.visionBlend so it can overshoot. */
+  /** 0..1 wavefront progress, separate from sim.planViewBlend so it can overshoot. */
   private peel = 0;
   private residual = 0;
   private ripples: Array<{ pos: Vec2; t: number; life: number }> = [];
@@ -121,25 +142,27 @@ export class Renderer {
      * Two views, and which one you are in means something.
      *
      * Third person is your body: you, the board, the pavement, and the camera
-     * on the wall that is pointing at you. The plan view is the machine's
-     * picture of you — coverage, edges, forecast, evidence — and it is drawn
-     * against the flat camera because that is where those things are legible.
-     * Holding VISION crosses from one to the other, which is what the peel has
-     * always been for.
+     * on the wall that is pointing at you. The plan view is the town drawn as
+     * data, from above, because a plan is where structure is legible — and,
+     * once SAFEtrace VISION is unlocked, it is also where coverage, edges,
+     * forecast and evidence become readable. Holding PLAN crosses from one to
+     * the other, which is what the peel has always been for.
      */
     this.chase.update(sim, dt);
-    if (sim.visionBlend < 0.999) {
-      this.perspective.draw(ctx, sim, this.chase.state(sim), this.w, this.h, false);
+    if (sim.planViewBlend < 0.999) {
+      const eye = this.chase.state(sim);
+      this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawSkateHud(ctx);
+      this.drawInteractPrompt(ctx, eye, dt);
     }
-    if (sim.visionBlend <= 0.001) {
+    if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
-        this.controls.update(this.controlVisual, dt, this.showControlHome);
-        this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+        this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
+        this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }
       return;
     }
-    ctx.globalAlpha = sim.visionBlend;
+    ctx.globalAlpha = sim.planViewBlend;
 
     this.cam.follow(
       sim.player.pos, sim.player.vel, sim.player.speed, sim.playerMaxSpeed, dt,
@@ -148,7 +171,7 @@ export class Renderer {
 
     // The peel leads the blend slightly on the way in and trails on the way out,
     // which is what makes it feel like a wave rather than a fade.
-    const target = sim.visionBlend;
+    const target = sim.planViewBlend;
     const rate = target > this.peel ? 5.2 : 6.0;
     this.peel += Math.sign(target - this.peel) * Math.min(Math.abs(target - this.peel), rate * dt);
     this.peel = clamp01(this.peel);
@@ -174,8 +197,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     if (this.controlVisual) {
-      this.controls.update(this.controlVisual, dt, this.showControlHome);
-      this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+      this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
+      this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
     }
   }
 
@@ -197,31 +220,25 @@ export class Renderer {
     const cx = this.w / 2, cy = this.h / 2;
     const draw = clamp01(sim.player.draw);
 
-    // The lock, on the thing itself, so the player aims at the world and not at
-    // a crosshair floating in front of it.
-    const t = sim.aimTarget;
-    const lock = t ? this.perspective.screenOf(eye, t.pos, t.z, this.w, this.h) : null;
-    if (lock) {
-      const r = Math.max(22, 620 / Math.max(4, Math.hypot(t!.pos.x - sim.player.pos.x, t!.pos.y - sim.player.pos.y)));
-      const arm = r * 0.4;
-      for (const [col, wid] of [['#12181F', 4], [VENEER.player, 2]] as const) {
-        ctx.strokeStyle = col; ctx.lineWidth = wid; ctx.lineCap = 'round';
-        ctx.beginPath();
-        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as Array<[number, number]>) {
-          ctx.moveTo(lock.x + sx * r, lock.y + sy * r - sy * arm);
-          ctx.lineTo(lock.x + sx * r, lock.y + sy * r);
-          ctx.lineTo(lock.x + sx * r - sx * arm, lock.y + sy * r);
-        }
-        ctx.stroke();
-      }
-    }
+    /*
+     * No brackets on the thing under the sight.
+     *
+     * There were: a target the ballistic solver had picked out got a set of
+     * corner marks drawn round it, and the reticle changed colour to say so.
+     * Nothing was ever snapped or magnetised — the bearing has always been
+     * exactly where the thumb put it — but a box that appears around a drone
+     * the moment you sweep across it *reads* as a lock, and a player who
+     * believes the game is locking on has stopped aiming. So the reticle is
+     * one shape, one colour, in one place, and it says nothing about what is
+     * behind it.
+     */
 
     // The reticle: a ring that closes as the band loads. Empty means not ready.
     const rr = 26 - draw * 11;
     ctx.strokeStyle = alpha('#12181F', 0.55);
     ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = alpha(lock ? VENEER.player : '#F6F4EE', 0.9);
+    ctx.strokeStyle = alpha('#F6F4EE', 0.9);
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath();
@@ -258,7 +275,6 @@ export class Renderer {
       ctx.textAlign = 'left';
     }
 
-    this.drawLookStick(ctx);
     this.drawSlingInHands(ctx, draw);
 
     // A frame, so it is obvious this is a state and not the world.
@@ -268,29 +284,14 @@ export class Renderer {
   }
 
   /**
-   * The look thumb, drawn where it is planted.
+   * The slingshot, held in two hands, doing exactly what the two thumbs do.
    *
-   * Aiming is a stick now, and a stick you cannot see is a gesture somebody
-   * has to be told about. Same shape as the movement stick, on the same half
-   * of the glass, so there is one thing to learn rather than two.
-   */
-  private drawLookStick(ctx: CanvasRenderingContext2D): void {
-    const l = this.lookStick;
-    if (!l) return;
-    ctx.save();
-    ctx.strokeStyle = alpha('#F6F4EE', 0.22);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(l.anchor.x, l.anchor.y, 38, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = alpha('#F6F4EE', 0.16);
-    ctx.beginPath(); ctx.arc(l.thumb.x, l.thumb.y, 21, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = alpha('#F6F4EE', 0.44);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  /**
-   * The slingshot, held. Two hands, the fork, and elastic that visibly stretches
-   * as the band loads with a rock sitting in the pouch.
+   * This is the control scheme drawn as an object. The left hand holds the
+   * fork and the fork is drawn at the left thumb, so dragging the sling around
+   * the screen looks like dragging a slingshot around. The right hand has the
+   * pouch and the pouch is drawn at the right thumb, so pulling back stretches
+   * the band between the two of them. Nothing on screen is a metaphor for the
+   * input; it is the input.
    *
    * Drawn in screen space at the bottom of the view rather than as world
    * geometry: it is held against the eye, so it does not belong in the
@@ -298,83 +299,198 @@ export class Renderer {
    */
   private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
     const grip = this.slingGrip;
+    const hand = this.slingHand;
     const base = this.h + 18;
-    // The fork rests low on the right, where the thumb that draws it lives.
-    // The pouch is wherever that thumb is holding it, so the thing on screen
-    // is the thing under the finger.
-    const fx = grip ? grip.grab.x : this.w * 0.72;
-    const forkY = grip ? grip.grab.y - 54 : this.h * 0.74;
+    // Where the fork is: under the left thumb, or resting where that thumb is
+    // invited to land when it is off the glass. It never jumps between the two,
+    // because the aim does not live in this number — the aim is a total of
+    // drags, and this is only where the object is drawn.
+    const fx = hand ? hand.x : this.slingRest.x;
+    const forkY = (hand ? hand.y : this.slingRest.y) - 54;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
     const skin = '#E8BE9B';
     const pullX = grip ? grip.thumb.x : fx + 26;
     const pullY = grip ? grip.thumb.y : forkY + prong * 0.4;
 
+    /*
+     * A stick and a string, which is what this is.
+     *
+     * It used to be a machined fork with a wide rubber band folded through a
+     * point: two straight lines, one thick V, and a dot. That is a diagram of a
+     * catapult, and at any size it collapsed into a letter Y.
+     *
+     * What a fourteen-year-old actually has is a forked branch cut out of a
+     * hedge — thicker at the grip than at the tips, never straight, with a stub
+     * where a twig was taken off — with cord whipped onto each prong and a
+     * scrap of leather between the two cords holding the stone. Every part of
+     * that is drawn below, because every part of it is why the object reads as
+     * something somebody made rather than something the game issued them.
+     */
+    const crotch = { x: fx, y: forkY };
+    const grab = { x: fx, y: forkY + prong * 1.2 };
+    const tipL = { x: fx - span, y: forkY - prong };
+    // The right prong is shorter and sits a little lower. A branch that forks
+    // symmetrically is a branch nobody believes.
+    const tipR = { x: fx + span * 0.92, y: forkY - prong * 0.9 };
+    const BARK = '#6E5236';
+    const LIT = '#9C7B51';
+    const CORD = '#D8C7A4';
+    const LEATHER = '#5A452E';
+
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Forward hand and arm, holding the fork out.
+    // Forward hand and arm, holding the fork out. The arm comes up from the
+    // bottom-left corner, which is where the thumb that owns it lives.
     ctx.strokeStyle = shade(VENEER.player, -0.34);
     ctx.lineWidth = 22;
     ctx.beginPath();
-    ctx.moveTo(fx - 30, base);
-    ctx.lineTo(fx, forkY + prong * 0.9);
+    ctx.moveTo(this.w * 0.08, base);
+    ctx.lineTo(fx, forkY + prong * 1.05);
+    ctx.stroke();
+
+    // --- the branch ---------------------------------------------------------
+    // Drawn before the hand, so the hand closes around the grip rather than
+    // the stick being laid on top of a fist.
+    ctx.strokeStyle = BARK;
+    taperedStroke(ctx, grab, crotch, 12, 9.5, -3);
+    taperedStroke(ctx, crotch, tipL, 9, 4.6, -7);
+    taperedStroke(ctx, crotch, tipR, 8.5, 4.2, 6);
+    // The stub, where a twig was cut off. One detail, and it does more than
+    // the other three put together.
+    taperedStroke(ctx,
+      { x: fx + 1, y: forkY + prong * 0.52 },
+      { x: fx + 11, y: forkY + prong * 0.34 }, 5.5, 2.4, 2, 4);
+
+    // The lit side, up and to the left, thinner and offset just enough to read
+    // as a round stick rather than a flat one.
+    ctx.strokeStyle = LIT;
+    taperedStroke(ctx,
+      { x: grab.x - 1.8, y: grab.y - 1.8 }, { x: crotch.x - 1.8, y: crotch.y - 1.8 },
+      4.5, 3.4, -3);
+    taperedStroke(ctx,
+      { x: crotch.x - 1.8, y: crotch.y - 2 }, { x: tipL.x - 1.4, y: tipL.y - 1.6 },
+      3.4, 1.6, -7);
+    taperedStroke(ctx,
+      { x: crotch.x - 1.2, y: crotch.y - 2 }, { x: tipR.x - 1.2, y: tipR.y - 1.6 },
+      3.2, 1.5, 6);
+
+    // --- cord, whipping and pouch -------------------------------------------
+    // Where the pouch hangs, and which way round it is: its length lies across
+    // the pull, because that is where the two cords come in from.
+    const ax = pullX - fx, ay = pullY - forkY;
+    const len = Math.hypot(ax, ay) || 1;
+    const perp = { x: -ay / len, y: ax / len };
+    const half = 8.5;
+    const endA = { x: pullX + perp.x * half, y: pullY + perp.y * half };
+    const endB = { x: pullX - perp.x * half, y: pullY - perp.y * half };
+    /*
+     * Which cord goes to which end of the pouch.
+     *
+     * "Whichever end is nearer" is the obvious rule and it is wrong: at a long
+     * draw the pouch is nearly edge-on, so the two distances differ by a
+     * couple of pixels out of three hundred and the answer flips — and a
+     * flipped answer draws the cords crossing each other in mid-air. Of the two
+     * possible pairings the shorter *total* is always the one that does not
+     * cross, which is true for any geometry the player can produce, including
+     * drawing back past the fork.
+     */
+    const d = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.hypot(a.x - b.x, a.y - b.y);
+    const straight = d(tipL, endA) + d(tipR, endB) <= d(tipL, endB) + d(tipR, endA);
+    const nearL = straight ? endA : endB;
+    const nearR = straight ? endB : endA;
+
+    // Slack when it is not drawn, taut when it is. String does not thin the way
+    // rubber does, so the tension has to read from the sag instead.
+    const sag = (1 - draw) * 7;
+    ctx.strokeStyle = CORD;
+    ctx.lineWidth = 2.2;
+    for (const [tip, end] of [[tipL, nearL], [tipR, nearR]] as const) {
+      ctx.beginPath();
+      ctx.moveTo(tip.x, tip.y);
+      ctx.quadraticCurveTo((tip.x + end.x) / 2, (tip.y + end.y) / 2 + sag, end.x, end.y);
+      ctx.stroke();
+    }
+
+    // Whipping: the turns of thread that actually hold a cord onto a stick.
+    // Kept just below the tip and just inside the branch's own width, so it
+    // reads as binding rather than as something caught on the end.
+    ctx.lineWidth = 1.5;
+    for (const tip of [tipL, tipR]) {
+      const dx = crotch.x - tip.x, dy = crotch.y - tip.y;
+      const n = Math.hypot(dx, dy) || 1;
+      const ux = dx / n, uy = dy / n;
+      for (let i = 0; i < 3; i++) {
+        const at = { x: tip.x + ux * (3.5 + i * 3.2), y: tip.y + uy * (3.5 + i * 3.2) };
+        ctx.beginPath();
+        ctx.moveTo(at.x - uy * 3.1, at.y + ux * 3.1);
+        ctx.lineTo(at.x + uy * 3.1, at.y - ux * 3.1);
+        ctx.stroke();
+      }
+    }
+
+    // Seated back along the draw, so the fingers are behind the pouch rather
+    // than on top of it: the stone is the thing the player is aiming, and it
+    // has to stay visible at every draw length.
+    const back = { x: pullX + (ax / len) * 12, y: pullY + (ay / len) * 12 };
+    ctx.strokeStyle = shade(VENEER.player, -0.34);
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(this.w * 0.92, base);
+    ctx.lineTo(back.x + 2, back.y + 14);
     ctx.stroke();
     ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.72, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(back.x, back.y + 8, 13, 0, Math.PI * 2); ctx.fill();
 
-    // The fork.
-    ctx.strokeStyle = '#8A6A4A';
-    ctx.lineWidth = 8;
+    /*
+     * The drawing hand, always — including before it is doing anything.
+     *
+     * This used to appear only once the right thumb was already on the glass,
+     * which meant a player entering the mode saw a slingshot held in one hand
+     * and had to be told the other half. Now the arm is there from the first
+     * frame, reaching up from the bottom-right corner to the pouch, so the
+     * object itself says where each thumb goes: one hand on the fork at the
+     * left, one on the pouch at the right. There is no ring, no label and no
+     * hint text, because the thing in front of the player is the instruction.
+     */
+    // The pouch: a scrap of leather, drawn as one round-capped stroke across
+    // the pull, with the stone sitting in it.
+    ctx.strokeStyle = LEATHER;
+    ctx.lineWidth = 9;
     ctx.beginPath();
-    ctx.moveTo(fx, forkY + prong * 0.9);
-    ctx.lineTo(fx, forkY);
-    ctx.moveTo(fx, forkY); ctx.lineTo(fx - span, forkY - prong);
-    ctx.moveTo(fx, forkY); ctx.lineTo(fx + span, forkY - prong);
+    ctx.moveTo(endA.x, endA.y); ctx.lineTo(endB.x, endB.y);
+    ctx.stroke();
+    ctx.strokeStyle = shade(LEATHER, 0.22);
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(endA.x - 1, endA.y - 1.4); ctx.lineTo(endB.x - 1, endB.y - 1.4);
     ctx.stroke();
 
-    // The band. It thins as it stretches, which is the whole read on tension.
-    ctx.strokeStyle = '#3B4149';
-    ctx.lineWidth = Math.max(1.8, 5.2 - draw * 2.6);
-    ctx.beginPath();
-    ctx.moveTo(fx - span, forkY - prong);
-    ctx.lineTo(pullX, pullY);
-    ctx.lineTo(fx + span, forkY - prong);
-    ctx.stroke();
-
-    // The rock in the pouch, lit from up and left so it reads as a lump of
-    // stone rather than a dot.
+    // The stone, lit from up and left so it reads as a lump off a driveway
+    // rather than a dot.
     ctx.fillStyle = '#4E545B';
     ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#767D85';
     ctx.beginPath(); ctx.arc(pullX - 1, pullY - 1.1, 5.4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#9AA1A8';
     ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
-    if (grip) {
-      ctx.strokeStyle = shade(VENEER.player, -0.34);
-      ctx.lineWidth = 22;
-      ctx.beginPath();
-      ctx.moveTo(this.w * 0.92, base);
-      ctx.lineTo(pullX + 8, pullY + 16);
-      ctx.stroke();
-      ctx.fillStyle = skin;
-      ctx.beginPath(); ctx.arc(pullX + 6, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
-    } else {
-      // Not held: a quiet ring where the sling is waiting to be picked up.
-      const z = this.slingZoneHint;
-      if (z) {
-        ctx.strokeStyle = alpha('#F6F4EE', 0.20);
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([5, 7]);
-        ctx.beginPath();
-        ctx.arc(z.x, z.y, 42, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
+
+    // The forward hand, closed around the grip.
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.82, 13, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+
+  /**
+   * Where the sling sits when no thumb is on it.
+   *
+   * Set by the host to the same point the movement pad invites a first touch,
+   * so the fork rests exactly where the left thumb already is.
+   */
+  slingRest = { x: 120, y: 560 };
 
   /**
    * The only thing the skating view puts on top of itself.
@@ -393,6 +509,71 @@ export class Renderer {
    * own animation. If a kickflip does not read as a kickflip, the fix is the
    * kickflip.
    */
+
+  /** How faded in the "you can touch this" marker is, 0..1. */
+  private promptFade = 0;
+  private promptId: string | null = null;
+
+  /**
+   * The one thing in the world that says "this opens something".
+   *
+   * A node used to open its panel because the player was near it, which is how
+   * a box headed CM-009 arrived over the middle of a street somebody was
+   * skating down. Proximity now buys a label and nothing else: the node's own
+   * id, the word the player will press, and a ring on the thing itself so
+   * there is no doubt which object is being talked about. Press it and the
+   * screen opens; skate past and nothing happens, ever.
+   *
+   * It is drawn only while something is actually in reach, so it is never a
+   * permanent label on the world — the town does not wear name tags.
+   */
+  private drawInteractPrompt(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
+    const node = this.sim.interactCandidate;
+    // A different node restarts the fade, so the label never appears to
+    // teleport from one object to the next.
+    if (node && node.id !== this.promptId) { this.promptId = node.id; this.promptFade = 0; }
+    if (!node) this.promptId = null;
+    this.promptFade = clamp01(this.promptFade + (node ? 4.5 : -6) * dt);
+    if (this.promptFade < 0.01 || !node) return;
+
+    const at = this.perspective.screenOf(eye, node.pos, NODE_LABEL_Z, this.w, this.h);
+    if (!at) return;
+    const a = smoothstep(this.promptFade);
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // The object itself, ringed.
+    ctx.strokeStyle = alpha(VENEER.accent, 0.55 * a);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(at.x, at.y, 13, 0, Math.PI * 2); ctx.stroke();
+
+    const label = node.id;
+    ctx.font = '700 12px ui-monospace, Menlo, monospace';
+    const wid = Math.max(58, ctx.measureText(label).width + 18);
+    const boxY = at.y - 42;
+    ctx.fillStyle = alpha('#121A22', 0.82 * a);
+    roundRect(ctx, at.x - wid / 2, boxY - 15, wid, 30, 4);
+    ctx.fill();
+    ctx.strokeStyle = alpha(VENEER.accent, 0.5 * a);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
+    ctx.fillText(label, at.x, boxY - 5);
+    ctx.font = '600 9px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = alpha(VENEER.accent, 0.95 * a);
+    ctx.fillText(this.interactVerb, at.x, boxY + 8);
+
+    // A short leader down to the thing, so the label belongs to it.
+    ctx.strokeStyle = alpha(VENEER.accent, 0.4 * a);
+    ctx.beginPath();
+    ctx.moveTo(at.x, boxY + 15);
+    ctx.lineTo(at.x, at.y - 14);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;
@@ -538,6 +719,21 @@ export class Renderer {
   ): void {
     ctx.fillStyle = this.machine.voidColour(opts);
     ctx.fillRect(0, 0, this.w, this.h);
+
+    /*
+     * The plan, and then the machine's reading of it.
+     *
+     * These are two different things and the split is the whole of the plan
+     * view / VISION separation. The first half is a plan of a suburb —
+     * streets, buildings, the road graph — and a resident is entitled to that
+     * from the first frame, on any device, by holding one control.
+     *
+     * The second half is what SAFEtrace makes of the same town: who it can
+     * see, what it thinks they are doing, where it thinks they are going, and
+     * what it is holding against them. That arrives when the story says so.
+     * Unlocking VISION does not hand the player a new button; it fills in the
+     * map they already had.
+     */
     this.machine.drawGround(ctx, this.cam, this.w, this.h, view, opts);
     this.machine.drawStructure(ctx, this.cam, this.w, this.h, view, opts);
 
@@ -545,11 +741,15 @@ export class Renderer {
     const detail = smoothstep((this.peel - 0.24) / 0.48);
     const before = ctx.globalAlpha;
     ctx.globalAlpha = before * detail;
-    this.machine.drawSurveillance(ctx, this.cam, this.w, this.h, view, opts);
-    this.machine.drawAerial(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawEvidence(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawPrediction(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawSubjects(ctx, this.cam, this.w, this.h, view, opts);
+    if (this.sim.visionUnlocked) {
+      this.machine.drawSurveillance(ctx, this.cam, this.w, this.h, view, opts);
+      this.machine.drawAerial(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawEvidence(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawPrediction(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawSubjects(ctx, this.cam, this.w, this.h, view, opts);
+    } else {
+      this.machine.drawLocator(ctx, this.cam, this.w, this.h, opts);
+    }
     ctx.globalAlpha = before;
   }
 

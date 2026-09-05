@@ -72,6 +72,35 @@ describe('the story runs on simulation time', () => {
     expect(a.beats).toContain('devon-stopped');
   });
 
+  /**
+   * The advertisement runs for half a minute with the world live underneath it,
+   * so by the time the player has control `sim.tick` is already past the gates
+   * on the opening beats. Measured against the raw tick, the first two lines of
+   * dialogue land on the same frame and the second overwrites the first.
+   */
+  it('starts the afternoon when the player gets control, not when the sim does', () => {
+    const sim = makeSim();
+    const { director } = directorFor(sim);
+    const at = new Map<string, number>();
+    sim.bus.on('story:beat', (b) => { if (!at.has(b.id)) at.set(b.id, sim.tick); });
+
+    // The advertisement: the world steps, the story does not.
+    for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
+    director.begin();
+    const started = sim.tick;
+    for (let i = 0; i < 60 * 20; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
+
+    const welcome = at.get('welcome');
+    const channel = at.get('devon-suggests-channel');
+    expect(welcome).toBeDefined();
+    expect(channel).toBeDefined();
+    // Each still lands where it was authored to, relative to first control.
+    expect(welcome! - started).toBeGreaterThan(60);
+    expect(welcome! - started).toBeLessThan(60 * 4);
+    // And the two openers are a conversation, not one frame with two speakers.
+    expect(channel! - welcome!).toBeGreaterThan(60 * 8);
+  });
+
   it('does not schedule story work on any wall clock', () => {
     const src = String(StoryDirector);
     expect(src).not.toMatch(/setTimeout|setInterval|Date\.now|performance\.now/);

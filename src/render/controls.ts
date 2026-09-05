@@ -11,13 +11,26 @@
  * when a hand is off the glass.
  */
 import { clamp01, smoothstep } from '../core/math';
-import type { ControlVisual } from '../core/touch';
+import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
+import { taperedStroke } from './veneer';
+
+/** A tapering, slightly bent limb in the current stroke colour. */
+const taper = taperedStroke;
 
 export class ControlsRenderer {
   private stickFade = 0;
-  private visionFade = 0;
+  /**
+   * How open the plan view is, driven by the simulation's own blend.
+   *
+   * Not by a button: the frame this draws marks the *state*, and the state can
+   * also be entered by the keyboard or by the story cracking the veneer. There
+   * is no eye anywhere in here — the control that opens the plan view is PLAN,
+   * it is a permanent part of the HUD from the first frame, and unlocking
+   * SAFEtrace VISION does not add anything to the glass.
+   */
+  private planFade = 0;
   private homeFade = 0;
   private buttonFade = 0;
   private pulse = 0;
@@ -29,11 +42,11 @@ export class ControlsRenderer {
    * touch is the hardest moment in the game and there was nothing on screen to
    * aim it at.
    */
-  update(v: ControlVisual, dt: number, showHome = false): void {
+  update(v: ControlVisual, dt: number, showHome = false, planView = false): void {
     const to = (cur: number, on: boolean, rate: number) =>
       clamp01(cur + (on ? rate : -rate * 0.7) * dt);
     this.stickFade = to(this.stickFade, v.stick.active, 9);
-    this.visionFade = to(this.visionFade, v.vision, 6);
+    this.planFade = to(this.planFade, planView, 6);
     this.homeFade = to(this.homeFade, showHome && !v.stick.active, 3.2);
     // Buttons live at a low resting alpha rather than vanishing: they are the
     // only permanent statement of what this game lets you do.
@@ -41,12 +54,15 @@ export class ControlsRenderer {
     this.pulse = (this.pulse + dt * (this.settings.reduceMotion ? 0 : 0.85)) % 1;
   }
 
-  draw(ctx: CanvasRenderingContext2D, v: ControlVisual, w: number, h: number): void {
+  draw(
+    ctx: CanvasRenderingContext2D, v: ControlVisual, w: number, h: number,
+    safe = { top: 0, right: 0, bottom: 0, left: 0 },
+  ): void {
     if (v.aiming) return;
     if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
-    if (this.visionFade > 0.01) this.drawVisionHint(ctx, w, h);
+    if (this.planFade > 0.01) this.drawPlanFrame(ctx, w, h, safe);
   }
 
   /**
@@ -103,7 +119,19 @@ export class ControlsRenderer {
     ctx.restore();
   }
 
-  /** The three things a right thumb can do, drawn where they are. */
+  /**
+   * The right thumb's whole vocabulary, drawn with a hierarchy.
+   *
+   * Two weights, and the difference is real rather than decorative. A primary
+   * is something you press mid-run — it is full size, has a brighter rim and
+   * sits at a higher resting alpha, so the eye finds it without hunting. The
+   * secondary is a view control: smaller, thinner, quieter, and it recedes
+   * into the HUD instead of competing with the things that move the board.
+   *
+   * What does *not* differ is how easy either is to hit. The touch target is a
+   * separate number from the drawn circle, so PLAN can read as furniture and
+   * still take a 68 px-wide thumb.
+   */
   private drawButtons(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
     const a = smoothstep(this.buttonFade);
     ctx.save();
@@ -112,85 +140,155 @@ export class ControlsRenderer {
     for (const b of v.buttons) {
       const on = b.pressed;
       const dim = b.enabled ? 1 : 0.4;
+      const secondary = b.weight === 'secondary';
       // Bellhaven is a bright green suburb and a translucent dark disc on it
       // reads as a patch of grass, which is what happened on a real phone.
       // These sit on a solid, dark ground with a light rim so they are legible
       // over lawn, asphalt and concrete alike.
-      ctx.fillStyle = alpha('#121A22', (on ? 0.88 : 0.72) * a * dim);
+      const rest = secondary ? 0.58 : 0.72;
+      ctx.fillStyle = alpha('#121A22', (on ? 0.9 : rest) * a * dim);
       ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, b.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = alpha('#FFFFFF', (on ? 0.9 : 0.55) * a * dim);
-      ctx.lineWidth = on ? 2.6 : 1.8;
+
+      /*
+       * Held reads as held, on the control itself.
+       *
+       * The plan view is the one thing here that stays on while the thumb is
+       * down, so it is the one thing that needs a state and not just a press
+       * flash — otherwise the only tell is a border at the edge of the screen,
+       * a long way from the finger holding it open.
+       */
+      const rim = on && secondary ? MACHINE.data : '#FFFFFF';
+      const rimAlpha = (on ? 0.92 : secondary ? 0.40 : 0.55) * a * dim;
+      ctx.strokeStyle = alpha(rim, rimAlpha);
+      ctx.lineWidth = on ? 2.4 : secondary ? 1.3 : 1.8;
       ctx.stroke();
-      ctx.fillStyle = alpha('#F6F4EE', (on ? 1 : 0.9) * a * dim);
+
+      ctx.fillStyle = alpha(on && secondary ? MACHINE.data : '#F6F4EE',
+        (on ? 1 : secondary ? 0.72 : 0.9) * a * dim);
       this.glyph(ctx, b.id, b.pos.x, b.pos.y, b.radius);
     }
     ctx.restore();
   }
 
-  /**
-   * Words where a word is faster, shapes where a shape is: TRICK says exactly
-   * what it does, the sling is a drawn slingshot, VISION is an eye.
-   */
-  private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
+  private glyph(ctx: CanvasRenderingContext2D, id: ControlButton['id'], x: number, y: number, r: number): void {
+    /*
+     * One typographic system for all three controls.
+     *
+     * Each button is a mark over its own name, in the same face at the same
+     * size relative to the button, on the same baseline. Words because an
+     * eleven-pixel icon is a puzzle to a first-time player and a five-letter
+     * word is not; marks because a word alone gives the eye nothing to find
+     * the button by at a glance, mid-run, without looking straight at it.
+     *
+     * TRICK is the exception that proves it: a ramp or a board glyph told
+     * nobody anything a reader could not get faster from the word, and *which*
+     * trick is the board's business, so it carries the word alone — set on the
+     * same baseline as the other two so the row still reads as one system.
+     */
     const s = r * 0.5;
-    ctx.lineWidth = 2.4;
+    const label = (text: string) => {
+      ctx.font = `700 ${Math.round(r * 0.235)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText(text, x, y + r * 0.56);
+    };
+
+    ctx.lineWidth = Math.max(1.4, r * 0.06);
     ctx.strokeStyle = ctx.fillStyle as string;
     ctx.beginPath();
+
     if (id === 'trick') {
-      // The word, and nothing else. A ramp or a board glyph told the player
-      // nothing they could not read faster from five letters. Which trick is
-      // the board's business, and it is never named.
-      ctx.font = `700 ${Math.round(r * 0.38)}px ui-monospace, Menlo, monospace`;
-      ctx.fillText('TRICK', x, y + 1);
+      ctx.font = `700 ${Math.round(r * 0.33)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('TRICK', x, y);
       return;
-    } else if (id === 'sling') {
-      // An actual slingshot, drawn upright: a forked handle, two prongs, the
-      // band slack between them, and the pouch drawn back with a ball in it.
-      // The previous glyph was a generic fork and read as anything but this.
-      const px = s * 0.62;      // prong half-width
-      const py = s * 0.95;      // prong tip height above the crotch
-      const crotch = y - s * 0.05;
-      // Handle.
-      ctx.moveTo(x, y + s * 1.05); ctx.lineTo(x, crotch);
-      // Prongs.
-      ctx.moveTo(x, crotch); ctx.lineTo(x - px, crotch - py);
-      ctx.moveTo(x, crotch); ctx.lineTo(x + px, crotch - py);
-      ctx.stroke();
-      // Band, drawn back to the pouch behind the fork.
-      ctx.lineWidth = 1.3;
+    }
+
+    if (id === 'sling') {
+      /*
+       * A forked stick with string across it and a stone in the pouch.
+       *
+       * Two earlier attempts failed at the size a button actually is. A
+       * machined fork with one wide band folded through a point collapsed into
+       * a letter Y. Drawing the pouch back *below* the crotch — which is what
+       * the in-hand view does, correctly, with a whole screen to do it in —
+       * put the cords, the pouch and the handle all in the same forty pixels
+       * and fused them into a blob.
+       *
+       * What reads is the object at rest: the string spans the two tips and
+       * dips into the mouth of the fork, where there is nothing else, with the
+       * pouch and its stone at the bottom of that dip. Every element has clear
+       * air around it, the silhouette is unmistakable at a glance, and it is
+       * still honestly a stick with string tied across it — the limbs taper
+       * and bend, because a branch cut out of a hedge is not a rule.
+       */
+      const px = s * 0.70;              // prong half-width
+      const py = s * 0.86;              // prong tip height above the crotch
+      const crotch = y + s * 0.10;
+      const w = Math.max(1.7, r * 0.075);
+      const tipL = { x: x - px, y: crotch - py };
+      // Shorter, and a shade lower. A branch that forks evenly is a drawing.
+      const tipR = { x: x + px * 0.95, y: crotch - py * 0.92 };
+
+      taper(ctx, { x, y: crotch + s * 0.62 }, { x, y: crotch }, w * 1.15, w, -1.1);
+      taper(ctx, { x, y: crotch }, tipL, w, w * 0.5, -py * 0.2);
+      taper(ctx, { x, y: crotch }, tipR, w * 0.95, w * 0.48, py * 0.18);
+
+      // The string, tied tip to tip and sagging into the mouth of the fork,
+      // which is the one piece of clear space the mark has.
+      const dip = crotch - py * 0.40;
+      ctx.lineWidth = Math.max(1, r * 0.035);
       ctx.beginPath();
-      ctx.moveTo(x - px, crotch - py);
-      ctx.lineTo(x, crotch - py * 0.18);
-      ctx.lineTo(x + px, crotch - py);
+      ctx.moveTo(tipL.x, tipL.y);
+      ctx.quadraticCurveTo(x, dip + s * 0.16, tipR.x, tipR.y);
       ctx.stroke();
-      // The ball in the pouch.
+
+      // The pouch, and the stone sitting in it. The leather is drawn wider
+      // than the stone and the stone rides a little above it, so at button
+      // size the two still read as two things rather than one lump.
+      ctx.lineWidth = Math.max(1.8, r * 0.07);
       ctx.beginPath();
-      ctx.arc(x, crotch - py * 0.18, s * 0.26, 0, Math.PI * 2);
+      ctx.moveTo(x - s * 0.26, dip + s * 0.06); ctx.lineTo(x + s * 0.26, dip + s * 0.06);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
       ctx.fill();
+      label('SLING');
       return;
-    } else {
-      // An eye.
-      ctx.moveTo(x - s, y);
-      ctx.quadraticCurveTo(x, y - s * 0.9, x + s, y);
-      ctx.quadraticCurveTo(x, y + s * 0.9, x - s, y);
     }
+
+    /*
+     * PLAN: a plan of a town, and the word for it.
+     *
+     * Deliberately nothing like an eye. An eye would say "you are being shown
+     * something", which is the story's job; a square with streets through it
+     * says "this is the map", which is what the control does.
+     */
+    const q = s * 0.72;
+    const top = y - q - s * 0.34;
+    ctx.lineWidth = Math.max(1.2, r * 0.055);
+    ctx.strokeRect(x - q, top, q * 2, q * 1.7);
+    ctx.beginPath();
+    ctx.moveTo(x - q, top + q * 0.95); ctx.lineTo(x + q, top + q * 0.95);
+    ctx.moveTo(x + q * 0.16, top); ctx.lineTo(x + q * 0.16, top + q * 1.7);
     ctx.stroke();
-    if (id === 'vision') {
-      ctx.beginPath(); ctx.arc(x, y, s * 0.32, 0, Math.PI * 2); ctx.fill();
-    }
+    label('PLAN');
   }
 
   /**
-   * A thin frame while the machine is open. It is the only permanent tell that
-   * VISION is costing you something, and it is deliberately slightly wrong:
-   * the world is fine, the border is not.
+   * A thin frame while the plan view is open. It is the only permanent tell
+   * that looking is costing you something, and it is deliberately slightly
+   * wrong: the world is fine, the border is not.
    */
-  private drawVisionHint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const a = smoothstep(this.visionFade) * (this.settings.reduceMotion ? 0.5 : 1);
+  private drawPlanFrame(
+    ctx: CanvasRenderingContext2D, w: number, h: number,
+    safe: { top: number; right: number; bottom: number; left: number },
+  ): void {
+    const a = smoothstep(this.planFade) * (this.settings.reduceMotion ? 0.5 : 1);
+    // Inside the safe area, so the frame is a frame rather than something
+    // half-swallowed by a notch and a home indicator.
+    const x = safe.left + 6, y = safe.top + 6;
     ctx.save();
     ctx.strokeStyle = alpha(MACHINE.data, 0.34 * a);
     ctx.lineWidth = 2;
-    ctx.strokeRect(6, 6, w - 12, h - 12);
+    ctx.strokeRect(x, y, w - x - safe.right - 6, h - y - safe.bottom - 6);
     ctx.restore();
   }
 }

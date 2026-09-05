@@ -1,6 +1,7 @@
 /** The events the simulation publishes. The only channel to ui and audio. */
 import type { Vec2 } from '../core/math';
 import type { EscalationLevel, Evidence, Incident, Track } from './surveillance/types';
+import type { PursuitState } from './surveillance/pursuit';
 import type { ImpactKind } from './slingshot';
 
 /**
@@ -42,6 +43,12 @@ export interface SimEvents extends Record<string, unknown> {
   'evidence:created': { evidence: Evidence };
   'evidence:resolved': { evidence: Evidence; linked: boolean; candidateCount: number };
   'escalation:changed': { from: EscalationLevel; to: EscalationLevel; risk: number };
+  /**
+   * The pursuit changed state. Distinct from escalation, which is a score band:
+   * this is the answer to "is anybody actually coming", and it moves only on a
+   * reported offence, a sighting, a lost contact, or a search giving up.
+   */
+  'pursuit:changed': { from: PursuitState; to: PursuitState };
   'incident:opened': { incident: Incident };
   'match:false-positive': { identity: string; confidence: number; incidentId: string };
   'aim:entered': Record<string, never>;

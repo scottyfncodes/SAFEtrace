@@ -19,7 +19,15 @@ export interface Intent {
   aim: boolean;
   fire: boolean;
   firePressed: boolean;
-  vision: boolean;
+  /**
+   * Hold the plan view open.
+   *
+   * Named for what it is: a *view*, available from the first frame on every
+   * device. SAFEtrace VISION is the story unlock that changes what is drawn
+   * inside it, and it is deliberately not this flag — conflating the two is
+   * what grew a button on the HUD halfway through a session.
+   */
+  planView: boolean;
   interact: boolean;
   interactPressed: boolean;
   /** Aim target in screen pixels; the renderer converts to world space. */
@@ -54,7 +62,7 @@ export const emptyIntent = (): Intent => ({
   steer: 0, push: false, pushPressed: false, brake: false,
   ollieHeld: false, olliePressed: false, ollieReleased: false, trickPressed: false,
   toggleStance: false, aim: false, fire: false, firePressed: false,
-  vision: false, interact: false, interactPressed: false,
+  planView: false, interact: false, interactPressed: false,
   pointer: { x: 0, y: 0 }, pointerActive: false,
   aimVector: null, drawAmount: null, moveVector: null,
   aimModePressed: false, skip: false,
@@ -77,7 +85,7 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
   base.aim ||= add.aim;
   base.fire ||= add.fire;
   base.firePressed ||= add.firePressed;
-  base.vision ||= add.vision;
+  base.planView ||= add.planView;
   base.interact ||= add.interact;
   base.interactPressed ||= add.interactPressed;
   base.skip ||= add.skip;
@@ -91,7 +99,7 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
 
 export interface InputOptions {
   holdToAim: boolean;
-  holdForVision: boolean;
+  holdForPlanView: boolean;
 }
 
 const CODE = {
@@ -102,7 +110,7 @@ const CODE = {
   ollie: ['Space'],
   trick: ['KeyR'],
   stance: ['ShiftLeft', 'ShiftRight'],
-  vision: ['KeyQ'],
+  planView: ['KeyQ'],
   interact: ['KeyE'],
   /**
    * Stand still and line up a shot: the same state a thumb reaches with the
@@ -117,9 +125,9 @@ export class InputManager {
   private pressed = new Set<string>();
   private released = new Set<string>();
   private mouse = { x: 0, y: 0, left: false, right: false, leftPressed: false, active: false };
-  private visionToggle = false;
+  private planViewToggle = false;
   private aimToggle = false;
-  readonly options: InputOptions = { holdToAim: true, holdForVision: true };
+  readonly options: InputOptions = { holdToAim: true, holdForPlanView: true };
   private detach: Array<() => void> = [];
 
   attach(target: HTMLElement | Window = window): void {
@@ -218,12 +226,12 @@ export class InputManager {
     i.fire = this.mouse.left || (gp ? (gp.buttons[7]?.value ?? 0) > 0.4 : false);
     i.firePressed = this.mouse.leftPressed;
 
-    const visionRaw = this.any(CODE.vision, this.down) || gpBtn(4);
-    if (this.options.holdForVision) {
-      i.vision = visionRaw;
+    const planRaw = this.any(CODE.planView, this.down) || gpBtn(4);
+    if (this.options.holdForPlanView) {
+      i.planView = planRaw;
     } else {
-      if (this.any(CODE.vision, this.pressed)) this.visionToggle = !this.visionToggle;
-      i.vision = this.visionToggle;
+      if (this.any(CODE.planView, this.pressed)) this.planViewToggle = !this.planViewToggle;
+      i.planView = this.planViewToggle;
     }
 
     i.pointer.x = this.mouse.x;

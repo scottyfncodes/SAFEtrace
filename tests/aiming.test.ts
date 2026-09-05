@@ -373,20 +373,55 @@ describe('the network stays shut until the game opens it', () => {
     expect(sim.focusNode).toBeNull();
   });
 
-  it('opens once the player has a reason to look', () => {
+  /*
+   * And once it is open, it still takes an act to open it.
+   *
+   * A screen used to appear because the player was near something, which is
+   * how "CM-009" turned up over the middle of a street somebody was skating
+   * down. Standing next to a node offers it. Nothing else does.
+   */
+  it('offers a node in reach without opening anything', () => {
     const sim = makeSim();
     sim.unlockVision();
     place(sim, { x: 155, y: 250 });
     step(sim, 1);
+    expect(sim.interactCandidate?.id).toBe('JX-M1');
+    expect(sim.focusNode).toBeNull();
+  });
+
+  it('opens only when the player actually reaches for it', () => {
+    const sim = makeSim();
+    sim.unlockVision();
+    place(sim, { x: 155, y: 250 });
+    step(sim, 1);
+    expect(sim.focusNode).toBeNull();
+
+    const reach = emptyIntent();
+    reach.interactPressed = true;
+    sim.step(TICK_DT, reach, null);
     expect(sim.focusNode?.id).toBe('JX-M1');
   });
 
-  it('lets a player wave it away without skating off', () => {
+  it('never opens on proximity, however long the player stands there', () => {
+    const sim = makeSim();
+    sim.unlockVision();
+    place(sim, { x: 155, y: 250 });
+    for (let i = 0; i < 60; i++) {
+      step(sim, 0.5);
+      expect(sim.focusNode).toBeNull();
+    }
+  });
+
+  it('closes on the same press that opened it, and reopens on request', () => {
     const sim = makeSim();
     sim.unlockVision();
     place(sim, { x: 155, y: 250 });
     step(sim, 0.5);
+    const reach = emptyIntent();
+    reach.interactPressed = true;
+    sim.step(TICK_DT, reach, null);
     expect(sim.focusNode?.id).toBe('JX-M1');
+
     sim.dismissFocus();
     step(sim, 0.5);
     expect(sim.focusNode).toBeNull();

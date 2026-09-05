@@ -7,6 +7,7 @@
  */
 import { type Vec2, dist } from '../../core/math';
 import { forecastPoint } from './prediction';
+import { PURSUIT, PursuitDirector } from './pursuit';
 import { levelFor, type EscalationLevel, type Task, type Track } from './types';
 import { SYSTEM } from '../../content/copy';
 
@@ -29,26 +30,22 @@ export function resetTaskIds(): void { taskCounter = 0; }
 
 const RETASK_COOLDOWN = 90; // 1.5 s, so a wobbling score cannot spam tasking
 
-/**
- * How long a unit keeps chasing a track it can no longer see.
- *
- * Confidence halves every two and a half seconds unobserved, so this is about
- * six seconds of nobody having eyes on you — long enough that ducking behind
- * one hedge is not an escape, short enough that breaking line of sight and
- * *keeping going* is. Without it a tasked unit re-routed to the last estimate
- * for the full life of the task and then re-routed again, which is a homing
- * missile with a uniform on.
- */
-const LOST_CONTACT_TICKS = 60 * 6;
-
 export class Dispatcher {
   private lastTaskTick = new Map<string, number>();
-  /** Per track: the first tick its confidence dropped out of usable range. */
-  private coldSince = new Map<string, number>();
   /** Anomaly flags raised by noise events and REROUTE. */
   private anomalies: Array<{ pos: Vec2; tick: number; expires: number; reason: string }> = [];
 
-  reset(): void { this.lastTaskTick.clear(); this.coldSince.clear(); this.anomalies.length = 0; }
+  /**
+   * Who is being pursued, and how far along that has got.
+   *
+   * The dispatcher used to infer this from a confidence number every tick,
+   * which meant "we lost them" was a side effect rather than a state. It is a
+   * state now, it lives here, and it is the only thing permitted to hand a
+   * unit a live position.
+   */
+  readonly pursuit = new PursuitDirector();
+
+  reset(): void { this.lastTaskTick.clear(); this.pursuit.reset(); this.anomalies.length = 0; }
 
   flagAnomaly(pos: Vec2, tick: number, reason: string, durationTicks = 60 * 12): void {
     this.anomalies.push({ pos: { x: pos.x, y: pos.y }, tick, expires: tick + durationTicks, reason });
@@ -79,20 +76,20 @@ export class Dispatcher {
     }
 
     /*
-     * Lose the thread.
+     * Advance every pursuit, then act on what it says.
      *
-     * A pursuit has to be losable or it is not a pursuit, it is a countdown.
-     * Nothing has seen the subject for six seconds — no camera, no drone, no
-     * unit — so the estimate they are driving at is six seconds of guesswork
-     * and they stop driving at it. They do not forget: the score is still up,
-     * the file is still open, and anything that sees the player again starts
-     * this over.
+     * A TRACK task is the only kind that carries a trackId, and a trackId is
+     * the only way an asset can ask for a live position — so cancelling them
+     * the moment a pursuit stops being PURSUING is what makes losing somebody
+     * mechanically real rather than a wording change. What replaces them below
+     * is an INVESTIGATE task pointed at a place, which is all a unit that
+     * cannot see you is entitled to.
      */
+    const state = new Map<string, ReturnType<PursuitDirector['update']>>();
     for (const t of tracks) {
-      if (t.confidence >= 0.25) { this.coldSince.delete(t.id); continue; }
-      const since = this.coldSince.get(t.id);
-      if (since === undefined) { this.coldSince.set(t.id, tick); continue; }
-      if (tick - since < LOST_CONTACT_TICKS) continue;
+      const s = this.pursuit.update(t.id, t, tick);
+      state.set(t.id, s);
+      if (s === 'PURSUING') continue;
       for (const a of assets) {
         if (a.task?.trackId !== t.id) continue;
         cancelled.push(a.task);
@@ -125,6 +122,13 @@ export class Dispatcher {
        */
       if (tick > t.wantedUntil) continue;
       /*
+       * And there is no way onto the list except through the pursuit machine,
+       * which begins every session NOT_PURSUING and can only be started by a
+       * reported offence.
+       */
+      const pursuit = state.get(t.id) ?? 'NOT_PURSUING';
+      if (pursuit === 'NOT_PURSUING' || pursuit === 'CLEAR') continue;
+      /*
        * The score no longer decides *whether* anybody comes. It decides who,
        * and how hard: a drone goes to have a look at somebody the system has
        * something on, and a score at dispatch level is what turns that into a
@@ -136,11 +140,31 @@ export class Dispatcher {
       const last = this.lastTaskTick.get(t.id) ?? -9999;
       if (tick - last < RETASK_COOLDOWN) continue;
 
-      // Aim at the forecast, not the truth. This is the whole game.
-      const lead = lvl === 'INTERVENTION' ? 2.5 : 5.0;
-      const target = t.predictionConfidence > 0.25
-        ? forecastPoint(t, lead, speedOf(t))
-        : t.estimate;
+      /*
+       * Two completely different orders, and which one is issued is decided by
+       * whether anything can currently see the subject.
+       *
+       * PURSUING: aim at the forecast, not the truth. This is the whole game,
+       * and it is the only branch that writes a trackId — which is the only
+       * way an asset can keep asking where the subject is now.
+       *
+       * Anything else: a place. The last known location, or a point in the
+       * search pattern around it. A unit given one of these drives there, has
+       * a look, and goes back to its beat. It cannot follow somebody it cannot
+       * see, because it was never told where they are.
+       */
+      const live = pursuit === 'PURSUING';
+      let target: Vec2;
+      if (live) {
+        const lead = lvl === 'INTERVENTION' ? 2.5 : 5.0;
+        target = t.predictionConfidence > 0.25
+          ? forecastPoint(t, lead, speedOf(t))
+          : t.estimate;
+      } else {
+        const from = this.pursuit.get(t.id).lastKnown;
+        if (!from) continue;
+        target = from;
+      }
 
       /*
        * The air goes first, and the ground follows.
@@ -157,29 +181,38 @@ export class Dispatcher {
        * person's time. One of each at most: committing the whole pool to one
        * subject is exactly what a decoy is supposed to prevent.
        */
-      const wants: Array<{ kind: Asset['kind']; taskKind: Task['kind'] }> = [
-        { kind: 'drone', taskKind: 'TRACK' },
-      ];
-      if (lvl === 'PATROL_DISPATCH' || lvl === 'INTERVENTION') {
-        wants.push({ kind: 'patrol', taskKind: 'TRACK' });
-      }
+      const taskKind: Task['kind'] = live ? 'TRACK' : 'INVESTIGATE';
+      const wants: Asset['kind'][] = ['drone'];
+      if (lvl === 'PATROL_DISPATCH' || lvl === 'INTERVENTION') wants.push('patrol');
 
       let sent = false;
-      for (const want of wants) {
-        if (assets.some((a) => a.kind === want.kind && a.task?.trackId === t.id)) continue;
-        const asset = this.pickAsset(assets, want.kind, target);
+      for (const kind of wants) {
+        if (live && assets.some((a) => a.kind === kind && a.task?.trackId === t.id)) continue;
+        // Searching units are re-pointed on a slow cadence rather than every
+        // time the cooldown lapses, so a search reads as a sweep. Only this
+        // search's own orders count: a drone already out looking at a knocked
+        // bin is busy, and the pool being busy is the decoy working.
+        if (!live && assets.some((a) => a.kind === kind
+          && a.task?.reason === SYSTEM.searchingLastKnown
+          && tick - a.task.issuedTick < PURSUIT.searchRetaskTicks)) continue;
+        const at = live ? target : (this.pursuit.searchPoint(t.id, tick, `${kind}:${t.id}`) ?? target);
+        const asset = this.pickAsset(assets, kind, at);
         if (!asset) continue;
         const task: Task = {
           id: `TSK-${++taskCounter}`,
           assetId: asset.id,
-          kind: want.taskKind,
-          target,
-          trackId: t.id,
-          reason: lvl === 'INTERVENTION'
-            ? SYSTEM.interventionAuthorized
-            : `SUBJECT MONITORING — PREDICTIVE RISK ${Math.round(t.risk.total)}%`,
+          kind: taskKind,
+          target: at,
+          // Deliberately absent unless the subject is actually in view. This is
+          // the whole of "the police do not get your live coordinates".
+          trackId: live ? t.id : undefined,
+          reason: !live
+            ? SYSTEM.searchingLastKnown
+            : lvl === 'INTERVENTION'
+              ? SYSTEM.interventionAuthorized
+              : `SUBJECT MONITORING — PREDICTIVE RISK ${Math.round(t.risk.total)}%`,
           issuedTick: tick,
-          expiresTick: tick + (lvl === 'INTERVENTION' ? 60 * 40 : 60 * 22),
+          expiresTick: tick + (live ? (lvl === 'INTERVENTION' ? 60 * 40 : 60 * 22) : PURSUIT.searchRetaskTicks),
         };
         asset.task = task;
         asset.available = false;
