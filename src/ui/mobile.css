@@ -3,6 +3,14 @@
    desktop composition stays readable and the phone rules stay auditable. */
 
 :root {
+  /* Where the thumbs are, published by the touch layer at every viewport
+     change. The canvas draws the controls and the DOM draws the panels, so
+     without these the two layers collide — and they did: the node panel's own
+     touch surface sat on top of the PLAN button on a 375x629 phone and ate
+     every press of it. Fallbacks keep the desktop composition unchanged. */
+  --control-right: 0px;
+  --control-top: 0px;
+  --pad-right: 0px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -57,33 +65,47 @@ html, body {
   /* Four notifications is already a lot of a phone screen. */
   .note:nth-child(n + 4) { display: none; }
 
-  /* The inspect panel sits above the thumb zones, centred, so it is reachable
-     with either hand without covering the road ahead. */
+  /* The inspect panel clears the control cluster rather than guessing at a
+     height: it sits directly above the topmost button's touch target, so it
+     is reachable with either hand and can never cover a control. */
   #inspect {
-    left: 50%;
-    right: auto;
-    bottom: calc(var(--safe-bottom) + 34vh);
-    transform: translate(-50%, 8px);
-    width: min(92vw, 340px);
+    left: calc(var(--safe-left) + 10px);
+    right: calc(var(--safe-right) + 10px);
+    /* Above the cluster on a phone; the desktop offset when there is no
+       cluster, because this media query also catches a narrow browser window
+       that has no touch controls in it at all. */
+    bottom: max(calc(var(--safe-bottom) + 24px), calc(var(--control-top) + 8px));
+    transform: translateY(8px);
+    width: auto;
+    max-width: 340px;
+    margin: 0 auto;
     padding: 10px 12px;
   }
-  #inspect.show { transform: translate(-50%, 0); }
+  #inspect.show { transform: translateY(0); }
 
   /* One line, small, and gone within the first minute. It sits low because the
-     thumbs are already there, and it never blocks the road ahead. */
+     thumbs are already there, and it stops short of the button cluster instead
+     of running underneath it. */
   #prompts {
+    left: calc(var(--safe-left) + 10px);
+    right: max(calc(var(--safe-right) + 10px), var(--control-right));
+    transform: none;
+    justify-content: flex-start;
     bottom: calc(var(--safe-bottom) + 6px);
     padding: 5px 11px;
     font-size: calc(9px * var(--text-scale));
     letter-spacing: 0.05em;
-    gap: 9px;
-    white-space: nowrap;
-    max-width: calc(100vw - 24px);
+    gap: 4px 9px;
+    /* It stops at the control cluster, so it wraps rather than running its
+       last words underneath a button and clipping them. */
+    white-space: normal;
+    flex-wrap: wrap;
+    max-width: none;
     background: rgba(16, 23, 31, 0.38);
   }
 
   #dialogue {
-    bottom: calc(var(--safe-bottom) + 42vh);
+    bottom: max(calc(var(--safe-bottom) + 84px), calc(var(--control-top) + 76px));
     max-width: 88vw;
     font-size: calc(13.5px * var(--text-scale));
   }
@@ -98,9 +120,16 @@ html, body {
   #debug { font-size: 9px; left: calc(8px + var(--safe-left)); }
 }
 
-/* Landscape on a phone: the thumb zones get shorter, so the panels move in. */
+/* Landscape on a phone: there is no vertical room to sit above the cluster, and
+   plenty of horizontal room to sit beside it. So the panels stop at the strip
+   the controls claim on the right instead of climbing off the top. */
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
-  #inspect { bottom: calc(var(--safe-bottom) + 8px); width: min(60vw, 320px); }
+  #inspect {
+    bottom: calc(var(--safe-bottom) + 8px);
+    right: max(calc(var(--safe-right) + 10px), var(--control-right));
+    max-width: 340px;
+    margin: 0;
+  }
   #dialogue { bottom: calc(var(--safe-bottom) + 52px); }
   #prompts { display: none; }
   .note:nth-child(n + 3) { display: none; }
@@ -116,7 +145,11 @@ html, body {
   display: inline-flex;
   align-items: center;
 }
-html.touch #inspect { pointer-events: auto; }
+/* The panel is a readout; only its chips are controls.
+   It used to take pointer events across its whole surface, which meant a
+   translucent box of text silently swallowed presses of any canvas control
+   underneath it. Nothing but a chip accepts a thumb now. */
+html.touch #inspect { pointer-events: none; }
 html.touch #inspect .verb {
   min-height: 44px;
   min-width: 80px;

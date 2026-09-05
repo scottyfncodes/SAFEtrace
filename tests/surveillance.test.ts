@@ -342,12 +342,12 @@ describe('sensor cone geometry', () => {
 
 describe('what it costs to look', () => {
   /**
-   * Seeing the machine comes at the expense of acting normally. This lived only
-   * in the touch layer, which meant the rule did not exist on a keyboard.
+   * Looking at the plan comes at the expense of acting normally. This lived
+   * only in the touch layer, which meant the rule did not exist on a keyboard.
    */
   const looking = () => {
     const i = emptyIntent();
-    i.vision = true;
+    i.planView = true;
     i.push = true;
     i.pushPressed = true;
     i.aim = true;
@@ -360,10 +360,9 @@ describe('what it costs to look', () => {
     return i;
   };
 
-  it('will not let the player push, aim, or ollie while VISION is held', () => {
+  it('will not let the player push, aim, or ollie while the plan is held', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 6, y: 0 });
-    sim.unlockVision();
     for (let i = 0; i < 90; i++) sim.step(TICK_DT, looking(), { x: 200, y: 215 });
 
     expect(sim.player.aiming).toBe(false);
@@ -374,18 +373,44 @@ describe('what it costs to look', () => {
   it('still lets the player hold their line and stop, so looking is not a crash', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 8, y: 0 });
-    sim.unlockVision();
     const heading = sim.player.heading;
     for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
     expect(sim.player.heading).not.toBe(heading);
-    expect(sim.visionActive).toBe(true);
+    expect(sim.planViewActive).toBe(true);
+  });
+
+  /*
+   * The plan view is a view, and SAFEtrace VISION is a story unlock. They were
+   * the same flag, which is how a phone ended up growing a button the moment
+   * the story fired — and how the keyboard's Q did nothing at all for the
+   * first several minutes of a session.
+   */
+  it('opens the plan from the very first frame, long before VISION exists', () => {
+    const sim = makeSim();
+    expect(sim.visionUnlocked).toBe(false);
+    for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
+    expect(sim.planViewActive).toBe(true);
+    expect(sim.planViewBlend).toBeGreaterThan(0.5);
+    // And unlocking changes nothing about how it opens.
+    expect(sim.visionUnlocked).toBe(false);
+  });
+
+  it('does not change how the plan opens when VISION unlocks', () => {
+    const before = makeSim();
+    for (let i = 0; i < 60; i++) before.step(TICK_DT, looking(), null);
+
+    const after = makeSim();
+    after.unlockVision();
+    for (let i = 0; i < 60; i++) after.step(TICK_DT, looking(), null);
+
+    expect(after.planViewActive).toBe(before.planViewActive);
+    expect(after.planViewBlend).toBeCloseTo(before.planViewBlend, 6);
   });
 
   it('applies the same rule whatever the device, because the device is not asked', () => {
     // The intent is identical; only the simulation decides.
     const sim = makeSim();
     place(sim, { x: 155, y: 215 });
-    sim.unlockVision();
     const i = looking();
     sim.step(TICK_DT, i, null);
     // The caller's intent object is not mutated: suppression is internal.

@@ -17,11 +17,12 @@ const KEY_PROMPTS = [
   '<span><kbd>Space</kbd>ollie</span>',
   '<span><kbd>S</kbd>slide</span>',
   '<span><kbd>F</kbd>sling</span>',
+  '<span><kbd>Q</kbd>plan</span>',
   '<span><kbd>E</kbd>interact</span>',
 ].join('');
 
-// Two lines, not three. The ollie and the sling are buttons you can see, so
-// there is nothing left to tell anybody about them.
+// Two lines, not three. The ollie, the sling and the plan view are all buttons
+// you can see, so there is nothing left to tell anybody about them.
 const TOUCH_PROMPTS = [
   '<span>hold to roll</span>',
   '<span>push the way you want to go</span>',

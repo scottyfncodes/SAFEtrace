@@ -309,6 +309,43 @@ export class MachineRenderer {
     }
   }
 
+  /**
+   * Where the player is, on a map that is only a map.
+   *
+   * The plan view opens from the first frame on every device, and before
+   * SAFEtrace VISION it draws the town and nothing else: streets, buildings,
+   * the road graph. That is a plan of a suburb, which is a thing a resident is
+   * entitled to have — and it is useless without a "you are here", so the
+   * player gets exactly that. One dot, a heading, and the district they are
+   * standing in. No brackets, no identity, no score, because the system's
+   * reading of a person is precisely what has not been unlocked yet.
+   */
+  drawLocator(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, o: MachineOptions): void {
+    const m = this.M(o);
+    const p = this.sim.player;
+    const c = cam.toScreen(p.pos, w, h);
+    const r = Math.max(7, cam.zoom * 1.1);
+
+    ctx.strokeStyle = alpha(m.structureBright, 0.9);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = m.structureBright;
+    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(2, r * 0.3), 0, Math.PI * 2); ctx.fill();
+
+    // Which way they are facing, so the map can be read while moving.
+    const dir = { x: Math.cos(p.heading), y: Math.sin(p.heading) };
+    ctx.beginPath();
+    ctx.moveTo(c.x + dir.x * r, c.y + dir.y * r);
+    ctx.lineTo(c.x + dir.x * (r + 9), c.y + dir.y * (r + 9));
+    ctx.stroke();
+
+    const district = this.sim.world.districtAt(p.pos);
+    this.label(ctx, { x: c.x + r * 0.7, y: c.y - r * 0.7 }, [
+      SYSTEM.planView,
+      (district?.name ?? 'BELLHAVEN').toUpperCase(),
+    ], alpha(m.structureBright, 0.85), 0.62);
+  }
+
   /** The player's own forecast, unrolled ahead of them along the road. */
   drawPrediction(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, o: MachineOptions): void {
     const m = this.M(o);

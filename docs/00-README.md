@@ -33,6 +33,7 @@ before implementation and is the authority for what the game is trying to be.
 | 26 | [A Smaller Town, Two Thumbs, and Rocks](26-miniature-scale-and-two-thumbs.md) | The miniature, a thumb each, and no ammunition |
 | 27 | [Pursuit, Speed, and a Rider with Joints](27-pursuit-and-the-rig.md) | What was actually mobilising the police |
 | 28 | [Gameplay Cleanup and Interaction Clarity](28-gameplay-cleanup-and-interaction-clarity.md) | The pursuit state machine, the two-thumb slingshot, and no haunted UI |
+| 29 | [Mobile UX and the Plan View](29-mobile-ux-and-plan-view.md) | Plan view as a control, VISION as content, and a thumb-first HUD |
 
 ## The one-sentence pitch
 

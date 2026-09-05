@@ -88,7 +88,7 @@ class Game {
     // both simply work.
     this.input.attach(window);
     this.input.options.holdToAim = this.settings.holdToAim;
-    this.input.options.holdForVision = this.settings.holdForVision;
+    this.input.options.holdForPlanView = this.settings.holdForPlanView;
     this.touchAdapter.attach(window);
     this.syncViewport();
 
@@ -117,6 +117,9 @@ class Game {
     if (import.meta.env.DEV) {
       (window as unknown as Record<string, unknown>).safetrace = {
         sim: this.sim, renderer: this.renderer, story: this.story, settings: this.settings,
+        // The touch layout is geometry, and geometry is worth being able to
+        // measure on a real device rather than reasoning about from a diagram.
+        touch: this.touch,
       };
     }
 
@@ -132,17 +135,52 @@ class Game {
     this.renderer.resize();
     const cs = getComputedStyle(document.documentElement);
     const inset = (name: string) => parseFloat(cs.getPropertyValue(name)) || 0;
-    this.touch.setViewport({
-      w: this.renderer.w,
-      h: this.renderer.h,
-      safe: {
-        top: inset('--safe-top'),
-        right: inset('--safe-right'),
-        bottom: inset('--safe-bottom'),
-        left: inset('--safe-left'),
-      },
-    });
+    const safe = {
+      top: inset('--safe-top'),
+      right: inset('--safe-right'),
+      bottom: inset('--safe-bottom'),
+      left: inset('--safe-left'),
+    };
+    this.touch.setViewport({ w: this.renderer.w, h: this.renderer.h, safe });
+    // The canvas draws its own controls and its own frame, so it needs the
+    // same insets the stylesheet gives the DOM layer.
+    this.renderer.safe = safe;
+    this.publishControlBox();
     document.documentElement.classList.toggle('touch', this.touchPrimary);
+  }
+
+  /**
+   * Tell the stylesheet where the thumbs are.
+   *
+   * The controls are drawn on the canvas and the panels are DOM, so the two
+   * layers had no way to know about each other — and they collided. On a
+   * 375x629 phone the node panel's own touch surface sat exactly on top of the
+   * PLAN button and swallowed every press of it, which is invisible on a
+   * desktop viewport and total on a phone.
+   *
+   * Publishing the cluster's bounding box as custom properties makes the touch
+   * layout the single source of truth for both layers: move a button in
+   * `TOUCH_TUNING` and the panels move out of its way on their own.
+   */
+  private publishControlBox(): void {
+    const style = document.documentElement.style;
+    if (!this.touchPrimary) {
+      style.setProperty('--control-right', '0px');
+      style.setProperty('--control-top', '0px');
+      style.setProperty('--pad-right', '0px');
+      return;
+    }
+    let left = Infinity;
+    let top = Infinity;
+    for (const b of this.touch.buttonLayout()) {
+      left = Math.min(left, b.pos.x - b.hit);
+      top = Math.min(top, b.pos.y - b.hit);
+    }
+    // Measured inward from the right and bottom edges, which is how the CSS
+    // wants to think about it, plus a little air.
+    style.setProperty('--control-right', `${Math.max(0, Math.round(this.renderer.w - left)) + 10}px`);
+    style.setProperty('--control-top', `${Math.max(0, Math.round(this.renderer.h - top)) + 10}px`);
+    style.setProperty('--pad-right', `${Math.round(this.touch.padRight())}px`);
   }
 
   // ------------------------------------------------------------------ startup
@@ -444,6 +482,10 @@ class Game {
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
     this.renderer.slingGrip = this.sim.aimMode ? this.touch.slingGrip : null;
     this.renderer.slingHand = this.sim.aimMode ? this.touch.slingHand : null;
+    // At rest the fork sits in the middle of the half of the glass that holds
+    // it, so the object and the control agree before anybody has touched
+    // anything: one hand here, one hand over there on the band.
+    this.renderer.slingRest = this.touch.slingRestPoint();
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;
@@ -455,9 +497,9 @@ class Game {
       p.speed, this.sim.playerMaxSpeed,
       this.sim.world.surfaceAt(p.pos),
       p.stance !== 'AIR' && p.onBoard,
-      this.sim.visionBlend, p.flow,
+      this.sim.planViewBlend, p.flow,
     );
-    this.audio.duck(this.sim.visionBlend);
+    this.audio.duck(this.sim.planViewBlend);
   }
 }
 

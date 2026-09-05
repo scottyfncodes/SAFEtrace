@@ -2,7 +2,8 @@
 
 export interface Settings {
   holdToAim: boolean;
-  holdForVision: boolean;
+  /** Hold Q for the plan view, rather than toggling it. */
+  holdForPlanView: boolean;
   /** 0 = no flashing, soft cross-fade only. 1 = full peel. */
   transitionIntensity: number;
   cameraShake: number;
@@ -18,7 +19,7 @@ export interface Settings {
 
 export const defaultSettings = (): Settings => ({
   holdToAim: true,
-  holdForVision: true,
+  holdForPlanView: true,
   transitionIntensity: 1,
   cameraShake: 1,
   textScale: 1,

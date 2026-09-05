@@ -57,7 +57,17 @@ export const SYSTEM = {
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
   identityUnresolved: 'IDENTITY UNRESOLVED',
   holdStill: 'COME TO A STOP TO INTERFERE',
-  visionAvailable: 'SAFEtrace VISION — AVAILABLE',
+  /**
+   * What VISION actually gives you.
+   *
+   * This used to read "SAFEtrace VISION — AVAILABLE" alongside a hint naming a
+   * control, because unlocking it grew a button on the HUD. The plan view is
+   * now a control the player has had since the first frame; what changes here
+   * is what is drawn inside it. So the line names the content, not a key.
+   */
+  visionAvailable: 'SAFEtrace VISION — SUBJECT LAYER ENABLED',
+  /** The plan view's own caption, before there is anything else to say. */
+  planView: 'PLAN VIEW',
   queryAvailable: 'QUERY AND TRACE AVAILABLE',
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
@@ -126,21 +136,21 @@ export const AD_REPRISE_ANNOTATIONS: Record<number, string> = {
   5: 'RETENTION: INDEFINITE',
 };
 
-/** Dialogue. Kept short: the strongest moments in this game are notifications. */
-/** How a verb is reached, phrased for the device in the player's hands. */
 /*
- * What unlocking VISION gives you, said honestly per device.
+ * Two different kinds of sentence, and only one of them names a control.
  *
- * On a keyboard it is two things: the held plan view, and the network becoming
- * something you can reach into. On a phone it is only the second — the eye
- * button that used to hold the view open is gone, and it is not coming back as
- * a hidden two-finger gesture either, because a control nobody can see is
- * worse than one that is simply absent. So the phone is told the true half
- * rather than a hint for a control it does not have.
+ * `inspect` is a control: reaching into a node is a new verb the player has
+ * not used before, and they are told which button does it on the device in
+ * their hands. `vision` is not a control and must never read like one — the
+ * plan view has been one hold away since the first frame, on every device.
+ * What the unlock changes is what that view contains, so the line describes
+ * the content and is the same sentence everywhere.
  */
+const VISION_UNLOCKED = 'COVERAGE AND SUBJECTS NOW IN PLAN VIEW';
+
 export const HINTS = {
-  keyboard: { vision: 'HOLD Q', inspect: 'PRESS E' },
-  touch: { vision: 'NODES ARE NOW READABLE', inspect: 'TAP THE NODE' },
+  keyboard: { vision: VISION_UNLOCKED, inspect: 'PRESS E' },
+  touch: { vision: VISION_UNLOCKED, inspect: 'TAP THE NODE' },
 };
 
 export const DIALOGUE = {

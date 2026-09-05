@@ -132,10 +132,19 @@ export class Sim {
    * that does not go through `reportOffence`. Skating is not a path.
    */
   private lastPursuit: PursuitState = 'NOT_PURSUING';
+  /**
+   * Whether SAFEtrace VISION has been unlocked by the story.
+   *
+   * This is a *content* gate, not a control one. The plan view below opens on
+   * every device from the first frame; what VISION changes is how much of the
+   * machine is legible inside it — coverage, subjects, forecast, evidence —
+   * and whether the network can be reached into at all. Keeping the two apart
+   * is what stops the HUD growing a button halfway through a session.
+   */
   visionUnlocked = false;
-  /** 0..1 blend into machine vision; the renderer drives the peel from this. */
-  visionBlend = 0;
-  visionActive = false;
+  /** 0..1 blend into the plan view; the renderer drives the peel from this. */
+  planViewBlend = 0;
+  planViewActive = false;
   /** A forced, brief crack in the veneer. Seconds. */
   crackTimer = 0;
 
@@ -274,10 +283,10 @@ export class Sim {
     this.tick++;
     this.time += dt;
 
-    // Seeing the machine costs you the ability to act on it. The touch layer
-    // enforced this for thumbs; it belongs here, so it holds for every device
-    // and cannot drift between them.
-    const looking = this.visionUnlocked && intent.vision;
+    // Seeing the town as a plan costs you the ability to act on it. The touch
+    // layer enforced this for thumbs; it belongs here, so it holds for every
+    // device and cannot drift between them.
+    const looking = intent.planView;
     if (looking) intent = suppressWhileLooking(intent);
 
     if (intent.aimModePressed) {
@@ -333,7 +342,7 @@ export class Sim {
     if (looking && this.hack) this.cancelHack();
     this.updateHack(intent, dt);
     this.updateNetwork();
-    this.updateVision(intent, dt);
+    this.updatePlanView(intent, dt);
 
     // 14. Deliver events.
     this.bus.flush();
@@ -1370,19 +1379,19 @@ export class Sim {
 
   // ---------------------------------------------------------------- vision
 
-  private updateVision(intent: Intent, dt: number): void {
+  private updatePlanView(intent: Intent, dt: number): void {
     if (this.crackTimer > 0) {
       this.crackTimer -= dt;
-      this.visionBlend = Math.min(1, this.visionBlend + dt * 2.6);
-      this.visionActive = true;
+      this.planViewBlend = Math.min(1, this.planViewBlend + dt * 2.6);
+      this.planViewActive = true;
       return;
     }
-    this.visionActive = this.visionUnlocked && intent.vision;
-    const target = this.visionActive ? 1 : 0;
+    this.planViewActive = intent.planView;
+    const target = this.planViewActive ? 1 : 0;
     // Roughly 600 ms in, 430 ms out. Coming back is faster, so the real world
     // returns a little too suddenly, which is the correct feeling.
-    const rate = this.visionActive ? 1.45 : 2.3;
-    this.visionBlend += Math.sign(target - this.visionBlend) * Math.min(Math.abs(target - this.visionBlend), rate * dt);
+    const rate = this.planViewActive ? 1.45 : 2.3;
+    this.planViewBlend += Math.sign(target - this.planViewBlend) * Math.min(Math.abs(target - this.planViewBlend), rate * dt);
   }
 
   crackTheVeneer(seconds: number): void {

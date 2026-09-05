@@ -40,11 +40,56 @@ export interface Viewport {
   safe: { top: number; right: number; bottom: number; left: number };
 }
 
+/**
+ * The control geometry, in one place, with the reasoning attached.
+ *
+ * Everything below is in CSS pixels and is derived from how a thumb actually
+ * works rather than from what looks tidy on a desktop viewport:
+ *
+ *  - A thumb tip is 9–11 mm, roughly 44 px on a phone at typical density, and
+ *    that is Apple's floor for a touch target. Every hit radius here clears it.
+ *  - The visible circle and the touch target are deliberately different sizes.
+ *    A control can look quiet and still be easy to hit, and the secondary
+ *    control depends on exactly that.
+ *  - Both right-hand primaries and the secondary sit on the arc a right thumb
+ *    sweeps from its pivot at the bottom-right corner, so none of them is a
+ *    reach *across* the glass and none is reached *through* another control.
+ *  - Separation is measured between hit circles, not between the drawn ones.
+ *    `separation` is the gap an imperfect press has to fall into before it can
+ *    reach the wrong control, and the layout test asserts it on every viewport.
+ */
 export const TOUCH_TUNING = {
   /** Fraction of the viewport width given to the movement thumb. */
-  padWidth: 0.55,
+  padWidth: 0.52,
   /** Fraction of the viewport height, from the bottom, that accepts a thumb. */
   padHeight: 0.55,
+  /** The pad never gets narrower than this, however cramped the screen. */
+  padMinWidth: 108,
+  /** Clear air between the movement pad and the nearest button's hit circle. */
+  padClearance: 20,
+
+  /** Drawn radius, and the radius that actually accepts a thumb. */
+  primaryRadius: 34,
+  primaryHit: 44,
+  secondaryRadius: 24,
+  secondaryHit: 34,
+
+  /** Visible circles sit this far inside the safe area, on both axes. */
+  edgeInset: 28,
+  /** Minimum gap between any two hit circles. */
+  separation: 16,
+  /**
+   * Where the two primaries and the secondary sit relative to the anchor
+   * button, which is the one in the corner under the resting thumb.
+   *
+   * TRICK is up *and* left rather than straight left: that is the direction the
+   * thumb sweeps anyway, and the vertical component is what buys clearance from
+   * the movement pad on a 320 px-wide phone. PLAN is straight up the column,
+   * far enough that it is a deliberate extension rather than something a thumb
+   * brushes on its way back from TRICK.
+   */
+  trickOffset: { x: -76, y: -84 },
+  planOffset: { x: 0, y: -158 },
   /**
    * The stick reaches full deflection this far from where it was planted.
    *
@@ -58,9 +103,6 @@ export const TOUCH_TUNING = {
   stickDead: 6,
   /** Below this magnitude the character coasts instead of pushing. */
   moveThreshold: 0.16,
-  /** Buttons: radius, and the gaps between their centres in the cluster. */
-  buttonRadius: 32,
-  buttonGap: 78,
   /** A tap: short, and barely moved. */
   tapMs: 240,
   tapSlop: 14,
@@ -88,7 +130,10 @@ export const TOUCH_TUNING = {
   pullMin: 14,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'aim' | 'pull' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'idle';
+
+/** How much weight a control carries, which decides how it is drawn. */
+export type ControlWeight = 'primary' | 'secondary';
 
 interface Track {
   id: number;
@@ -101,9 +146,13 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick';
+  id: 'sling' | 'trick' | 'plan';
   pos: { x: number; y: number };
+  /** What is drawn. */
   radius: number;
+  /** What accepts a thumb. Never smaller than `radius`, usually larger. */
+  hit: number;
+  weight: ControlWeight;
   pressed: boolean;
   /** Dimmed when the action is unavailable. */
   enabled: boolean;
@@ -175,26 +224,85 @@ export class TouchEngine {
   }
 
   /**
-   * Two buttons, in the bottom-right corner.
+   * Three controls, on the arc a right thumb sweeps.
    *
-   * There were four once, then three. POP went because the TRICK button pops
-   * on its own. The eye went because VISION is not a thing the HUD is allowed
-   * to grow a control for on its own: it appeared mid-session the moment the
-   * story unlocked it, which is a control materialising in front of somebody
-   * who was skating, and it is exactly the kind of thing this pass exists to
-   * stop. Two buttons is the whole of the right thumb's vocabulary.
+   * There were four once, then three, then two. POP went because the TRICK
+   * button pops on its own. The eye went — and stays gone — because VISION is
+   * a story unlock and must never grow a control: a button appearing in front
+   * of somebody who was mid-push is the thing that keeps being reported.
+   *
+   * PLAN is not that button. It is here from the very first frame, before the
+   * story has said anything, because the plan view is a *view* and every
+   * device needs a way into it — keyboard has Q, and a phone has this. What
+   * VISION later changes is what is drawn inside the view, not how it opens.
+   *
+   * The arrangement:
+   *
+   *   SLING sits in the corner where the thumb rests, because it is the one
+   *   control that leads somewhere — a whole mode — and it should be the
+   *   easiest thing on the glass to find without looking.
+   *
+   *   TRICK sits up and to the left, along the sweep, so reaching it is a
+   *   flick rather than a stretch and its hit circle stays clear of the
+   *   movement pad even on a 320 px phone.
+   *
+   *   PLAN sits further up the same column, smaller and quieter. It is a
+   *   deliberate extension of the thumb, not somewhere a thumb ends up by
+   *   accident on its way back from TRICK.
    */
   buttonLayout(): ControlButton[] {
+    const t = this.tuning;
     const { w, h, safe } = this.viewport;
-    const r = this.tuning.buttonRadius;
-    const right = w - safe.right - r - 26;
-    const left = right - this.tuning.buttonGap;
-    const low = h - safe.bottom - r - 24;
+    const R = t.primaryRadius;
+    const anchor = {
+      x: w - safe.right - t.edgeInset - R,
+      y: h - safe.bottom - t.edgeInset - R,
+    };
+    // A very short viewport (landscape, or a browser with a lot of chrome)
+    // must not push the column off the top of the screen.
+    const ceiling = safe.top + t.secondaryHit + 12;
+    const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
+    const trickY = Math.max(ceiling + 40, anchor.y + t.trickOffset.y);
 
     return [
-      { id: 'sling', pos: { x: right, y: low }, radius: r, pressed: false, enabled: this.canSling },
-      { id: 'trick', pos: { x: left, y: low }, radius: r, pressed: false, enabled: true },
+      {
+        id: 'sling', pos: { ...anchor },
+        radius: R, hit: t.primaryHit, weight: 'primary',
+        pressed: false, enabled: this.canSling,
+      },
+      {
+        id: 'trick', pos: { x: anchor.x + t.trickOffset.x, y: trickY },
+        radius: R, hit: t.primaryHit, weight: 'primary',
+        pressed: false, enabled: true,
+      },
+      {
+        id: 'plan', pos: { x: anchor.x + t.planOffset.x, y: planY },
+        radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
+        pressed: false, enabled: true,
+      },
     ];
+  }
+
+  /**
+   * The right-hand edge of the movement pad.
+   *
+   * Derived from the layout rather than fixed, because a fraction of the width
+   * is the wrong tool: at 430 px a 52% pad is nowhere near the buttons, and at
+   * 320 px it runs straight into TRICK's hit circle. The pad is whichever is
+   * smaller — its share of the width, or the clear air left to the leftmost
+   * button — with a floor so it stays usable on any phone that exists.
+   */
+  padRight(): number {
+    const t = this.tuning;
+    let limit = Infinity;
+    for (const b of this.buttonLayout()) limit = Math.min(limit, b.pos.x - b.hit - t.padClearance);
+    return Math.max(t.padMinWidth, Math.min(this.viewport.w * t.padWidth, limit));
+  }
+
+  /** The top of the band that accepts a movement thumb. */
+  padTop(): number {
+    const { h, safe } = this.viewport;
+    return h - safe.bottom - (h - safe.top - safe.bottom) * this.tuning.padHeight;
   }
 
   /**
@@ -227,25 +335,22 @@ export class TouchEngine {
        */
       return x < this.viewport.w * this.tuning.aimPadWidth ? 'aim' : 'pull';
     }
+    /*
+     * A plain circle, at the hit radius.
+     *
+     * It used to be an ellipse stretched by different factors in each
+     * direction, which was a way of buying a bigger target out of a small
+     * drawn button — and it made "can these two be pressed at once" a question
+     * nobody could answer by looking. The drawn circle and the touch target
+     * are separate numbers now, so the target can simply *be* the right size,
+     * and the separation between two of them is one subtraction that a test
+     * can check on every viewport.
+     */
     for (const b of this.buttonLayout()) {
-      /*
-       * A generous target, but not in every direction: a thumb is eleven
-       * millimetres wide, so the buttons grow outward toward the corner they
-       * live in and stay tight on the side facing the movement pad. Otherwise
-       * the left column's forgiveness reaches across into the stick's half of
-       * the screen and eats thumbs that were trying to skate.
-       */
-      const dx = x - b.pos.x;
-      const dy = y - b.pos.y;
-      const kx = dx < 0 ? 1.08 : 1.35;
-      const ky = dy < 0 ? 1.15 : 1.35;
-      if (Math.hypot(dx / kx, dy / ky) <= b.radius) return b.id;
+      if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.hit) return b.id;
     }
-    const { w, h, safe } = this.viewport;
-    const bottom = h - safe.bottom;
-    const padTop = bottom - h * this.tuning.padHeight;
-    if (y < padTop) return 'idle';
-    return x < w * this.tuning.padWidth ? 'stick' : 'idle';
+    if (y < this.padTop()) return 'idle';
+    return x < this.padRight() ? 'stick' : 'idle';
   }
 
   handle(phase: PointerPhase, s: PointerSample): void {
@@ -357,6 +462,17 @@ export class TouchEngine {
     return undefined;
   }
 
+  /**
+   * The plan view is a hold, exactly as Q is a hold.
+   *
+   * Not a toggle, because the two devices must not learn different habits, and
+   * not a gesture, because a control nobody can see is worse than no control.
+   */
+  private get planHeld(): boolean {
+    for (const t of this.tracks.values()) if (t.role === 'plan') return true;
+    return false;
+  }
+
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
   sample(): Intent {
     const i = emptyIntent();
@@ -416,6 +532,7 @@ export class TouchEngine {
       }
     }
 
+    if (this.planHeld) i.planView = true;
     if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
     if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
@@ -468,11 +585,19 @@ export class TouchEngine {
     return tap;
   }
 
+  /**
+   * Where a left thumb is invited to land on the very first touch.
+   *
+   * Low and well inside the pad: a thumb pivots from the bottom-left corner,
+   * so its resting arc passes through here, and planting the stick here leaves
+   * room to push in every direction without running out of glass.
+   */
   homePoint(): { x: number; y: number } {
-    const { w, h, safe } = this.viewport;
+    const { h, safe } = this.viewport;
+    const left = safe.left + this.tuning.edgeInset;
     return {
-      x: safe.left + (w - safe.left - safe.right) * 0.20,
-      y: h - safe.bottom - Math.min(150, h * 0.20),
+      x: left + Math.max(48, (this.padRight() - left) * 0.34),
+      y: h - safe.bottom - Math.min(132, (h - safe.top - safe.bottom) * 0.19),
     };
   }
 
@@ -500,6 +625,26 @@ export class TouchEngine {
       },
       buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) })),
       aiming: this.aiming,
+    };
+  }
+
+  /** True while the plan view is being held open by a thumb. */
+  get planViewHeld(): boolean { return this.planHeld; }
+
+  /**
+   * Where the slingshot sits when no thumb is on it.
+   *
+   * Low in the half of the glass that holds it, not on the movement pad's
+   * home ring — the two are different jobs and, in aiming, the left thumb owns
+   * the whole left half rather than a pad in the corner. Resting the fork in
+   * the middle of that half is what makes the object read as an invitation:
+   * one hand here, one hand over there on the band.
+   */
+  slingRestPoint(): { x: number; y: number } {
+    const { w, h, safe } = this.viewport;
+    return {
+      x: safe.left + (w * this.tuning.aimPadWidth - safe.left) * 0.52,
+      y: h - safe.bottom - (h - safe.top - safe.bottom) * 0.28,
     };
   }
 }

@@ -49,9 +49,17 @@ export class Renderer {
    * because which gesture opens a node is a fact about the device.
    */
   interactVerb = 'INTERACT';
+  /**
+   * The device's safe-area insets, in CSS pixels, set by the host.
+   *
+   * Anything the renderer draws hard against an edge — the plan-view frame
+   * most of all — has to know where the notch and the home indicator are, or
+   * it draws a border the phone crops.
+   */
+  safe = { top: 0, right: 0, bottom: 0, left: 0 };
   private ctx: CanvasRenderingContext2D;
   w = 0; h = 0; dpr = 1;
-  /** 0..1 wavefront progress, separate from sim.visionBlend so it can overshoot. */
+  /** 0..1 wavefront progress, separate from sim.planViewBlend so it can overshoot. */
   private peel = 0;
   private residual = 0;
   private ripples: Array<{ pos: Vec2; t: number; life: number }> = [];
@@ -134,27 +142,27 @@ export class Renderer {
      * Two views, and which one you are in means something.
      *
      * Third person is your body: you, the board, the pavement, and the camera
-     * on the wall that is pointing at you. The plan view is the machine's
-     * picture of you — coverage, edges, forecast, evidence — and it is drawn
-     * against the flat camera because that is where those things are legible.
-     * Holding VISION crosses from one to the other, which is what the peel has
-     * always been for.
+     * on the wall that is pointing at you. The plan view is the town drawn as
+     * data, from above, because a plan is where structure is legible — and,
+     * once SAFEtrace VISION is unlocked, it is also where coverage, edges,
+     * forecast and evidence become readable. Holding PLAN crosses from one to
+     * the other, which is what the peel has always been for.
      */
     this.chase.update(sim, dt);
-    if (sim.visionBlend < 0.999) {
+    if (sim.planViewBlend < 0.999) {
       const eye = this.chase.state(sim);
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawSkateHud(ctx);
       this.drawInteractPrompt(ctx, eye, dt);
     }
-    if (sim.visionBlend <= 0.001) {
+    if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
-        this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.visionActive);
-        this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+        this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
+        this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }
       return;
     }
-    ctx.globalAlpha = sim.visionBlend;
+    ctx.globalAlpha = sim.planViewBlend;
 
     this.cam.follow(
       sim.player.pos, sim.player.vel, sim.player.speed, sim.playerMaxSpeed, dt,
@@ -163,7 +171,7 @@ export class Renderer {
 
     // The peel leads the blend slightly on the way in and trails on the way out,
     // which is what makes it feel like a wave rather than a fade.
-    const target = sim.visionBlend;
+    const target = sim.planViewBlend;
     const rate = target > this.peel ? 5.2 : 6.0;
     this.peel += Math.sign(target - this.peel) * Math.min(Math.abs(target - this.peel), rate * dt);
     this.peel = clamp01(this.peel);
@@ -189,8 +197,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     if (this.controlVisual) {
-      this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.visionActive);
-      this.controls.draw(ctx, this.controlVisual, this.w, this.h);
+      this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
+      this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
     }
   }
 
@@ -293,12 +301,12 @@ export class Renderer {
     const grip = this.slingGrip;
     const hand = this.slingHand;
     const base = this.h + 18;
-    // Where the fork is: under the left thumb, or resting low and left of
-    // centre when that thumb is off the glass. It never jumps between the two,
+    // Where the fork is: under the left thumb, or resting where that thumb is
+    // invited to land when it is off the glass. It never jumps between the two,
     // because the aim does not live in this number — the aim is a total of
     // drags, and this is only where the object is drawn.
-    const fx = hand ? hand.x : this.w * 0.30;
-    const forkY = (hand ? hand.y : this.h * 0.72) - 54;
+    const fx = hand ? hand.x : this.slingRest.x;
+    const forkY = (hand ? hand.y : this.slingRest.y) - 54;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
     const skin = '#E8BE9B';
@@ -347,27 +355,36 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(pullX - 1, pullY - 1.1, 5.4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#9AA1A8';
     ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
-    if (grip) {
-      ctx.strokeStyle = shade(VENEER.player, -0.34);
-      ctx.lineWidth = 22;
-      ctx.beginPath();
-      ctx.moveTo(this.w * 0.92, base);
-      ctx.lineTo(pullX + 8, pullY + 16);
-      ctx.stroke();
-      ctx.fillStyle = skin;
-      ctx.beginPath(); ctx.arc(pullX + 6, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
-    }
+
     /*
-     * There is no ring hinting where the sling can be picked up.
+     * The drawing hand, always — including before it is doing anything.
      *
-     * There was one — a dashed circle low on the right — from when the band
-     * had to be found in a particular rectangle. The band is now the whole
-     * right half of the glass and the sling is drawn in front of the player
-     * with a rock already in the pouch, so the hint was marking a spot that is
-     * no more special than any other spot, which is worse than no hint.
+     * This used to appear only once the right thumb was already on the glass,
+     * which meant a player entering the mode saw a slingshot held in one hand
+     * and had to be told the other half. Now the arm is there from the first
+     * frame, reaching up from the bottom-right corner to the pouch, so the
+     * object itself says where each thumb goes: one hand on the fork at the
+     * left, one on the band at the right. There is no ring, no label and no
+     * hint text, because the thing in front of the player is the instruction.
      */
+    ctx.strokeStyle = shade(VENEER.player, -0.34);
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(this.w * 0.92, base);
+    ctx.lineTo(pullX + 8, pullY + 16);
+    ctx.stroke();
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(pullX + 6, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+
+  /**
+   * Where the sling sits when no thumb is on it.
+   *
+   * Set by the host to the same point the movement pad invites a first touch,
+   * so the fork rests exactly where the left thumb already is.
+   */
+  slingRest = { x: 120, y: 560 };
 
   /**
    * The only thing the skating view puts on top of itself.
@@ -596,6 +613,21 @@ export class Renderer {
   ): void {
     ctx.fillStyle = this.machine.voidColour(opts);
     ctx.fillRect(0, 0, this.w, this.h);
+
+    /*
+     * The plan, and then the machine's reading of it.
+     *
+     * These are two different things and the split is the whole of the plan
+     * view / VISION separation. The first half is a plan of a suburb —
+     * streets, buildings, the road graph — and a resident is entitled to that
+     * from the first frame, on any device, by holding one control.
+     *
+     * The second half is what SAFEtrace makes of the same town: who it can
+     * see, what it thinks they are doing, where it thinks they are going, and
+     * what it is holding against them. That arrives when the story says so.
+     * Unlocking VISION does not hand the player a new button; it fills in the
+     * map they already had.
+     */
     this.machine.drawGround(ctx, this.cam, this.w, this.h, view, opts);
     this.machine.drawStructure(ctx, this.cam, this.w, this.h, view, opts);
 
@@ -603,11 +635,15 @@ export class Renderer {
     const detail = smoothstep((this.peel - 0.24) / 0.48);
     const before = ctx.globalAlpha;
     ctx.globalAlpha = before * detail;
-    this.machine.drawSurveillance(ctx, this.cam, this.w, this.h, view, opts);
-    this.machine.drawAerial(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawEvidence(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawPrediction(ctx, this.cam, this.w, this.h, opts);
-    this.machine.drawSubjects(ctx, this.cam, this.w, this.h, view, opts);
+    if (this.sim.visionUnlocked) {
+      this.machine.drawSurveillance(ctx, this.cam, this.w, this.h, view, opts);
+      this.machine.drawAerial(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawEvidence(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawPrediction(ctx, this.cam, this.w, this.h, opts);
+      this.machine.drawSubjects(ctx, this.cam, this.w, this.h, view, opts);
+    } else {
+      this.machine.drawLocator(ctx, this.cam, this.w, this.h, opts);
+    }
     ctx.globalAlpha = before;
   }
 
