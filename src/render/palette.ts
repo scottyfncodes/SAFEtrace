@@ -32,6 +32,30 @@ export const VENEER = {
   player: '#E8563F',
   friend: '#3F8FE8',
   tree: '#5E8A54',
+  /*
+   * People, and telling them apart.
+   *
+   * A resident used to be one grey-blue and an officer a slightly darker one,
+   * on the same silhouette. At the size a person subtends on a phone through a
+   * long lens those are the same figure — so every one of the town's nineteen
+   * residents read as police, and the two actual officers read as nobody in
+   * particular. A player who cannot tell a neighbour from a constable is being
+   * hunted by the whole town.
+   *
+   * Residents wear their own clothes, picked per person and stable for the
+   * life of the session. None of them is the uniform.
+   */
+  civilian: [
+    '#B4705A', '#7E9B6A', '#C9A15B', '#8C7BA6',
+    '#5E9AA8', '#B98FA0', '#9A9382', '#6E7A88',
+  ],
+  /** The uniform: darker and bluer than anything a resident wears. */
+  uniform: '#28374D',
+  uniformDark: '#1A2432',
+  /** Worn at the shoulder, and only when a unit is actually doing something. */
+  responding: '#E8A33D',
+  intervening: '#FF5C47',
+  skin: '#F2D3B8',
   treeLight: '#7BA766',
   glass: 'rgba(180,214,232,0.85)',
 };

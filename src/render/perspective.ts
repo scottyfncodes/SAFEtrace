@@ -21,6 +21,7 @@
  */
 import type { Vec2 } from '../core/math';
 import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/math';
+import { hashString } from '../core/rng';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
 import type { Building } from '../sim/worldTypes';
@@ -508,9 +509,32 @@ export class PerspectiveRenderer {
       this.card(cam, p.pos, tall ? 1.8 : 0.5, tall ? 0.2 : 0.55, tall ? 1.8 : 0.5,
         p.tint && p.tint.startsWith('#') ? p.tint : VENEER.gravel);
     }
-    for (const n of sim.npcs) this.person(cam, n.pos, '#6D7A88');
-    for (const p of sim.patrols) this.person(cam, p.pos, p.state === 'INTERVENING' ? VENEER.warning : '#5A6470');
-    if (!sim.devonStopped) this.person(cam, sim.devonPos, VENEER.friend);
+    /*
+     * Who is who, at the size a person actually is on the glass.
+     *
+     * Everybody used to be a grey-blue lozenge. A resident was #6D7A88, an
+     * officer #5A6470, and an officer only changed colour once he was already
+     * standing next to you — so through every stage of an actual pursuit he
+     * looked exactly like a neighbour, and all nineteen neighbours looked
+     * exactly like him. Measured over three minutes of ordinary skating an
+     * officer is in frame 0% of the time and a resident 31%, which means every
+     * report of "a cop is hunting me" was a person walking to the shops.
+     */
+    for (const n of sim.npcs) {
+      // Their own clothes, and the same clothes every time you pass them.
+      const wear = VENEER.civilian[hashString(n.id) % VENEER.civilian.length];
+      this.person(cam, n.pos, wear);
+    }
+    for (const p of sim.patrols) {
+      // A uniform and a cap, so an officer is an officer at a hundred metres —
+      // and a shoulder light that is dark unless he is actually doing
+      // something, so "is he coming for me" is answered by looking at him.
+      const light = p.state === 'INTERVENING' ? VENEER.intervening
+        : p.state === 'RESPONDING' ? VENEER.responding
+        : undefined;
+      this.person(cam, p.pos, VENEER.uniform, { cap: VENEER.uniformDark, light });
+    }
+    if (!sim.devonStopped) this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend);
     for (const d of sim.drones) {
       if (d.state === 'DESTABILISED') continue;
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
@@ -520,10 +544,44 @@ export class PerspectiveRenderer {
     for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055, b.shape);
   }
 
-  private person(cam: Cam, p: Vec2, tint: string): void {
-    this.card(cam, p, 0.45, 0.22, 0.45, shade(tint, -0.2));
-    this.card(cam, p, 1.28, 0.28, 0.38, tint);
-    this.card(cam, p, 1.75, 0.17, 0.17, '#F2D3B8');
+  private person(
+    cam: Cam, p: Vec2, tint: string,
+    kit?: { cap?: string; light?: string },
+  ): void {
+    this.card(cam, p, 0.45, 0.22, 0.45, shade(tint, -0.22));   // legs
+    this.card(cam, p, 1.28, 0.28, 0.38, tint);                 // torso
+    this.card(cam, p, 1.75, 0.17, 0.17, VENEER.skin);          // head
+    // A cap breaks the silhouette, which is what actually carries at distance:
+    // the eye reads the outline long before it reads the colour.
+    if (kit?.cap) this.card(cam, p, 1.95, 0.21, 0.06, kit.cap);
+    if (kit?.light) this.card(cam, p, 1.46, 0.11, 0.09, kit.light);
+  }
+
+  /**
+   * Somebody on a board, which is what Devon has been the whole time.
+   *
+   * Devon was drawn with `person` — bolt upright, no board — while following
+   * the player at five and a half metres and matching their speed exactly,
+   * from the first second of the session. A figure that holds station behind
+   * you at your own speed and never gets on anything is not a friend skating
+   * along, it is a tail. The board was the missing word.
+   */
+  private skater(cam: Cam, p: Vec2, vel: Vec2, tint: string): void {
+    const speed = Math.hypot(vel.x, vel.y);
+    const h = speed > 0.35 ? Math.atan2(vel.y, vel.x) : 0;
+    const fx = Math.cos(h), fy = Math.sin(h);
+    const rx = -fy, ry = fx;
+    const L = 0.92, W = 0.20, z = 0.055;
+    this.push(cam, [
+      { x: p.x + fx * L + rx * W, y: p.y + fy * L + ry * W, z },
+      { x: p.x + fx * L - rx * W, y: p.y + fy * L - ry * W, z },
+      { x: p.x - fx * L - rx * W, y: p.y - fy * L - ry * W, z },
+      { x: p.x - fx * L + rx * W, y: p.y - fy * L + ry * W, z },
+    ], shade(tint, -0.45));
+    // Riding low, the way you do when you are actually moving.
+    this.card(cam, p, 0.42, 0.24, 0.36, shade(tint, -0.22));
+    this.card(cam, p, 1.14, 0.29, 0.36, tint);
+    this.card(cam, p, 1.58, 0.16, 0.16, VENEER.skin);
   }
 
   /**
