@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeUnlockedSim, place, shootAt, step } from './harness';
+import { interact, makeUnlockedSim, place, shootAt, step } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
@@ -13,6 +13,65 @@ const PERSON_Z = 1.15;
 function shoot(sim: Sim, at: Vec2 | (() => Vec2), z: number | (() => number) = 0): void {
   shootAt(sim, at, z);
 }
+
+describe('every rock is a rock, and no two are the same rock', () => {
+  /*
+   * The projectile was one hard-coded outline at one angle, so a street the
+   * player had been shooting in ended up with a dozen identical pebbles in it —
+   * the sort of thing you notice once and then cannot stop noticing.
+   *
+   * The variation is restrained on purpose. These are rocks, not a collection:
+   * a shade bigger or smaller, a little wider than tall, turned to their own
+   * angle, lumpier or smoother round the edge. Nothing that could read as a
+   * second kind of ammunition, because there is only one kind.
+   */
+  const rocks = (n: number) => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 });
+    for (let i = 0; i < n; i++) shootAt(sim, { x: 175, y: 30 });
+    return sim.droppedRocks.map((r) => r.shape);
+  };
+
+  it('gives each stone its own silhouette', () => {
+    const shapes = rocks(12);
+    expect(shapes.length).toBe(12);
+    for (const key of ['size', 'squash', 'spin', 'jag', 'phase'] as const) {
+      const distinct = new Set(shapes.map((s) => s[key].toFixed(4)));
+      expect({ key, varied: distinct.size > shapes.length * 0.7 })
+        .toEqual({ key, varied: true });
+    }
+  });
+
+  it('keeps every one of them inside "that is a rock"', () => {
+    for (const s of rocks(40)) {
+      // Never half again as big or small as the next one, never a sliver, and
+      // never lumpy enough to lose the round.
+      expect(s.size).toBeGreaterThan(0.8);
+      expect(s.size).toBeLessThan(1.2);
+      expect(s.squash).toBeGreaterThan(0.8);
+      expect(s.squash).toBeLessThan(1.2);
+      expect(s.jag).toBeLessThanOrEqual(1.4);
+    }
+  });
+
+  it('throws the same stones on a replay, and the one that lands is the one that flew', () => {
+    const a = rocks(6).map((s) => `${s.size}:${s.squash}:${s.spin}:${s.jag}:${s.phase}`);
+    const b = rocks(6).map((s) => `${s.size}:${s.squash}:${s.spin}:${s.jag}:${s.phase}`);
+    expect(a).toEqual(b);
+
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 });
+    const it = emptyIntent();
+    it.aim = true;
+    for (let i = 0; i < 40; i++) sim.step(TICK_DT, it, { x: 175, y: 30 });
+    const f = emptyIntent();
+    f.aim = true; f.fire = true; f.firePressed = true;
+    sim.step(TICK_DT, f, { x: 175, y: 30 });
+    const thrown = sim.projectiles[0].shape;
+    for (let i = 0; i < 300 && sim.projectiles.length > 0; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.droppedRocks[sim.droppedRocks.length - 1].shape).toEqual(thrown);
+  });
+});
 
 describe('the slingshot loop', () => {
   it('takes a camera out of service, and costs nothing but the throw', () => {
@@ -208,6 +267,8 @@ describe('the hacking loop', () => {
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
 
+    expect(sim.interactCandidate?.id).toBe('CM-207');
+    expect(interact(sim)).toBe(true);
     expect(sim.focusNode?.id).toBe('CM-207');
     sim.startHack('QUERY');
     step(sim, 1.2);
@@ -223,6 +284,7 @@ describe('the hacking loop', () => {
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
+    interact(sim);
 
     sim.startHack('LOOP');
     step(sim, 3);
@@ -240,6 +302,7 @@ describe('the hacking loop', () => {
     const node = sim.network.get('CM-207')!;
     place(sim, { x: node.pos.x + 4, y: node.pos.y + 4 });
     step(sim, 0.1);
+    interact(sim);
     sim.startHack('LOOP');
     step(sim, 0.5);
     expect(sim.hack).not.toBeNull();

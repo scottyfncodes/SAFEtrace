@@ -61,35 +61,34 @@ export const TOUCH_TUNING = {
   /** Buttons: radius, and the gaps between their centres in the cluster. */
   buttonRadius: 32,
   buttonGap: 78,
-  buttonRowGap: 82,
   /** A tap: short, and barely moved. */
   tapMs: 240,
   tapSlop: 14,
-  /**
-   * Aiming: the left thumb is a look stick, not a drag.
+  /*
+   * Aiming: the left thumb drags the slingshot. That is the whole of it.
    *
-   * Dragging the world under a fixed reticle needs the whole screen and the
-   * hand that is holding the sling, which is how the two thumbs ended up
-   * fighting over the same glass. A stick is a rate: deflect it and the view
-   * turns, hold it and it keeps turning, let go and it stops — and because it
-   * is anchored where the thumb landed, nothing about the *other* thumb can
-   * ever move it.
+   * It was a rate stick before — an invisible anchor, a dead zone, a squared
+   * response curve and a radians-per-second ceiling — and every one of those
+   * is a thing the player has to model before they can point at anything. A
+   * human called the result "too complicated", which is the correct word for
+   * an aim you have to learn the transfer function of.
+   *
+   * A drag has no transfer function to learn. The sling goes where the thumb
+   * goes, linearly, at the same rate everywhere on the glass, with no anchor
+   * to remember and no threshold to cross. Lifting the thumb and putting it
+   * down somewhere else moves nothing, because only the *change* is read —
+   * which is also why nothing the other thumb does can ever shift the aim.
    */
-  lookFull: 72,
-  lookDead: 5,
-  /** Radians per second at full deflection. */
-  lookYawRate: 2.5,
-  lookPitchRate: 1.35,
-  /** Fraction of the width given to the look thumb while aiming. */
-  lookPadWidth: 0.5,
-  /** A drag this small on release is a cancel, not a shot. */
-  aimTapSlop: 10,
+  aimYawPerPixel: 0.0045,
+  aimPitchPerPixel: 0.0035,
+  /** Fraction of the width given to the thumb that holds the sling. */
+  aimPadWidth: 0.5,
   /** Pull this far back from the grab for a full draw. */
   pullFull: 118,
   pullMin: 14,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'vision' | 'look' | 'pull' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'aim' | 'pull' | 'idle';
 
 interface Track {
   id: number;
@@ -102,7 +101,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick' | 'vision';
+  id: 'sling' | 'trick';
   pos: { x: number; y: number };
   radius: number;
   pressed: boolean;
@@ -122,7 +121,6 @@ export interface ControlVisual {
     vector: { x: number; y: number };
   };
   buttons: ControlButton[];
-  vision: boolean;
   aiming: boolean;
 }
 
@@ -134,18 +132,18 @@ export class TouchEngine {
   private pendingTrick = false;
   private pendingAimMode = false;
   private pendingFire = false;
-  /** Accumulated look delta while aiming, consumed once per frame. */
-  /** Aim offset contributed by where the sling is pulled to. */
+  /**
+   * Screen pixels the aiming thumb has dragged since the last frame read it.
+   *
+   * Accumulated as the events arrive — coalesced samples included — rather
+   * than sampled from a position once a frame, so a burst of pointer moves
+   * turns into one smooth sweep instead of a jump.
+   */
+  private aimDrag = { x: 0, y: 0 };
   /** The draw at the moment of release, so the shot frame still has it. */
   private firedDraw = 0;
   private aiming = false;
   private canSling = true;
-  /**
-   * VISION does nothing until the story unlocks it, and a control that does
-   * nothing is worse than no control: a human pressed the eye repeatedly and
-   * concluded the game was broken. It is not drawn until it works.
-   */
-  private canVision = false;
   readonly tuning = { ...TOUCH_TUNING };
 
   /** True while any finger is on the screen; used to keep audio awake. */
@@ -158,10 +156,13 @@ export class TouchEngine {
     if (this.aiming === on) return;
     this.aiming = on;
     this.tracks.clear();
+    // A drag half-made under the old vocabulary must not arrive as a swing of
+    // the aim under the new one.
+    this.aimDrag.x = 0;
+    this.aimDrag.y = 0;
   }
 
   setSlingAvailable(on: boolean): void { this.canSling = on; }
-  setVisionAvailable(on: boolean): void { this.canVision = on; }
 
   reset(): void {
     this.tracks.clear();
@@ -169,17 +170,19 @@ export class TouchEngine {
     this.pendingTrick = false;
     this.pendingAimMode = false;
     this.pendingFire = false;
+    this.aimDrag.x = 0;
+    this.aimDrag.y = 0;
   }
 
   /**
-   * Three buttons, in the bottom-right corner.
+   * Two buttons, in the bottom-right corner.
    *
-   * There were four, and one of them was POP. A dedicated jump button is what
-   * a game gives you when it does not trust its tricks: the TRICK button pops
-   * on its own, because that is one motion under a foot, and a skater who
-   * wants air presses the thing that makes the board do something. So POP is
-   * gone and nothing has replaced it — three buttons is less to learn and it
-   * gives the corner back some room.
+   * There were four once, then three. POP went because the TRICK button pops
+   * on its own. The eye went because VISION is not a thing the HUD is allowed
+   * to grow a control for on its own: it appeared mid-session the moment the
+   * story unlocked it, which is a control materialising in front of somebody
+   * who was skating, and it is exactly the kind of thing this pass exists to
+   * stop. Two buttons is the whole of the right thumb's vocabulary.
    */
   buttonLayout(): ControlButton[] {
     const { w, h, safe } = this.viewport;
@@ -188,32 +191,24 @@ export class TouchEngine {
     const left = right - this.tuning.buttonGap;
     const low = h - safe.bottom - r - 24;
 
-    const out: ControlButton[] = [
+    return [
       { id: 'sling', pos: { x: right, y: low }, radius: r, pressed: false, enabled: this.canSling },
       { id: 'trick', pos: { x: left, y: low }, radius: r, pressed: false, enabled: true },
     ];
-    if (this.canVision) {
-      out.push({
-        id: 'vision',
-        pos: { x: right, y: low - this.tuning.buttonRowGap },
-        radius: r * 0.9, pressed: false, enabled: true,
-      });
-    }
-    return out;
   }
 
   /**
-   * The half of the glass the slingshot is held in: the right one.
+   * The half of the glass the band is pulled in: the right one.
    *
    * Aiming and shooting used to be the same thumb's problem — drag anywhere to
    * look, and grab a small rectangle in the bottom-left to draw. Two jobs, one
    * hand, and a sling that had to be found. They are two hands now: the left
-   * one looks, the right one draws, and the right one gets a whole half of the
-   * screen so there is nothing to find.
+   * one holds and points the sling, the right one draws and lets go, and each
+   * gets a whole half of the screen so there is nothing to find.
    */
   slingZone(): { x: number; y: number; w: number; h: number } {
     const { w, h, safe } = this.viewport;
-    const x = w * this.tuning.lookPadWidth;
+    const x = w * this.tuning.aimPadWidth;
     return { x, y: safe.top, w: w - safe.right - x, h: h - safe.top - safe.bottom };
   }
 
@@ -225,11 +220,12 @@ export class TouchEngine {
        *
        * This is the whole of the input requirement: the side a finger lands on
        * decides what that finger is, once, and nothing afterwards reassigns
-       * it. The left thumb looks until the left thumb is lifted. The right one
-       * draws and fires. Letting go of either cannot promote or re-target the
-       * other, because roles are per-pointer and each carries its own anchor.
+       * it. The left thumb holds the sling and points it until the left thumb
+       * is lifted. The right one draws and fires. Letting go of either cannot
+       * promote or re-target the other, because roles are per-pointer and
+       * neither reads anything but its own movement.
        */
-      return x < this.viewport.w * this.tuning.lookPadWidth ? 'look' : 'pull';
+      return x < this.viewport.w * this.tuning.aimPadWidth ? 'aim' : 'pull';
     }
     for (const b of this.buttonLayout()) {
       /*
@@ -264,7 +260,7 @@ export class TouchEngine {
     let role = this.zoneAt(s.x, s.y);
     // One of each at a time; a second thumb on the same side does nothing.
     // A stray palm must never be able to take over a job a thumb is doing.
-    if ((role === 'stick' || role === 'look' || role === 'pull')
+    if ((role === 'stick' || role === 'aim' || role === 'pull')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
     if (role === 'sling' && !this.canSling) role = 'idle';
 
@@ -278,17 +274,26 @@ export class TouchEngine {
   }
 
   private onMove(track: Track, s: PointerSample): void {
+    const prev = track.cur;
     track.cur = { x: s.x, y: s.y, t: s.t };
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
     if (track.role === 'pull') return;   // read from its position on sample()
 
-    if (track.role === 'stick' || track.role === 'look') {
+    if (track.role === 'aim') {
+      // Only the change. Where the thumb happens to be on the glass means
+      // nothing, which is what makes lifting and re-placing it free.
+      this.aimDrag.x += s.x - prev.x;
+      this.aimDrag.y += s.y - prev.y;
+      return;
+    }
+
+    if (track.role === 'stick') {
       // The anchor follows a thumb that has run out of room, so the stick can
       // never be pinned to an unreachable corner of the screen.
       const dx = s.x - track.anchor.x;
       const dy = s.y - track.anchor.y;
-      const limit = (track.role === 'look' ? this.tuning.lookFull : this.tuning.stickFull) * 1.3;
+      const limit = this.tuning.stickFull * 1.3;
       const d = Math.hypot(dx, dy);
       if (d > limit) {
         track.anchor.x = s.x - (dx / d) * limit;
@@ -303,8 +308,10 @@ export class TouchEngine {
     const isTap = !cancelled && held <= this.tuning.tapMs && track.moved <= this.tuning.tapSlop;
 
     switch (track.role) {
-      case 'look':
-        // Looking around is looking around. A tap on nothing leaves the mode.
+      case 'aim':
+        // Pointing the sling is pointing the sling. A tap — no drag at all —
+        // is the way back out of the mode, and it is the only thing the left
+        // thumb can do besides aim. It can never fire.
         if (!cancelled && isTap) this.pendingAimMode = true;
         break;
       case 'pull': {
@@ -340,19 +347,14 @@ export class TouchEngine {
     return undefined;
   }
 
-  private get lookTrack(): Track | undefined {
-    for (const t of this.tracks.values()) if (t.role === 'look') return t;
+  private get aimTrack(): Track | undefined {
+    for (const t of this.tracks.values()) if (t.role === 'aim') return t;
     return undefined;
   }
 
   private get pullTrack(): Track | undefined {
     for (const t of this.tracks.values()) if (t.role === 'pull') return t;
     return undefined;
-  }
-
-  private get visionHeld(): boolean {
-    for (const t of this.tracks.values()) if (t.role === 'vision') return true;
-    return false;
   }
 
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
@@ -414,7 +416,6 @@ export class TouchEngine {
       }
     }
 
-    if (this.visionHeld) { i.vision = true; i.aim = false; }
     if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
     if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
@@ -422,34 +423,30 @@ export class TouchEngine {
   }
 
   /**
-   * How fast the view should be turning, in radians per second.
+   * How far the sling has been dragged since this was last asked, in radians.
    *
-   * A rate rather than a delta, because the left thumb is a stick: its
-   * deflection from where it was planted is the speed, so the reading depends
-   * on nothing but that one pointer's own position and its own anchor. A
-   * finger lifting anywhere else on the glass cannot change this number, which
-   * is the entire point.
+   * Consumed, not sampled: the caller gets every pixel the thumb travelled
+   * between frames exactly once, so a burst of pointer events becomes a smooth
+   * sweep and a dropped frame loses nothing. There is no rate, no dead zone
+   * and no anchor — drag it and it moves, stop and it stops.
    */
-  lookRate(): { yaw: number; pitch: number } {
-    const l = this.lookTrack;
-    if (!l) return { yaw: 0, pitch: 0 };
+  takeAimDrag(): { yaw: number; pitch: number } {
     const t = this.tuning;
-    const dx = l.cur.x - l.anchor.x;
-    const dy = l.cur.y - l.anchor.y;
-    const d = Math.hypot(dx, dy);
-    if (d <= t.lookDead) return { yaw: 0, pitch: 0 };
-    // Squared, so small movements near the centre are for fine work and the
-    // fast pan lives at the edge of the throw.
-    const mag = clamp01((d - t.lookDead) / (t.lookFull - t.lookDead));
-    const k = (mag * mag) / d;
-    return { yaw: dx * k * t.lookYawRate, pitch: -dy * k * t.lookPitchRate };
+    const out = {
+      yaw: this.aimDrag.x * t.aimYawPerPixel,
+      // Screen up is -y, and pushing the sling up points it up. Subtracted
+      // rather than negated so a still thumb reports +0 and not -0.
+      pitch: 0 - this.aimDrag.y * t.aimPitchPerPixel,
+    };
+    this.aimDrag.x = 0;
+    this.aimDrag.y = 0;
+    return out;
   }
 
-  /** Where the look stick is planted and where the thumb has it, for drawing. */
-  get lookStick(): { anchor: { x: number; y: number }; thumb: { x: number; y: number } } | null {
-    const l = this.lookTrack;
-    if (!l) return null;
-    return { anchor: { x: l.anchor.x, y: l.anchor.y }, thumb: { x: l.cur.x, y: l.cur.y } };
+  /** Where the hand holding the sling is, for drawing it. Null when let go. */
+  get slingHand(): { x: number; y: number } | null {
+    const a = this.aimTrack;
+    return a ? { x: a.cur.x, y: a.cur.y } : null;
   }
 
   /** Where the sling is being held and pulled to, for drawing it. */
@@ -502,12 +499,9 @@ export class TouchEngine {
         vector,
       },
       buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) })),
-      vision: this.visionHeld,
       aiming: this.aiming,
     };
   }
-
-  get visionActive(): boolean { return this.visionHeld; }
 }
 
 /**

@@ -26,7 +26,6 @@ let clock = 1000;
 function make(): TouchEngine {
   const e = new TouchEngine();
   e.setViewport(VIEWPORT);
-  e.setVisionAvailable(true);
   return e;
 }
 
@@ -48,16 +47,16 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'sling' | 'trick' | 'vision') =>
+const button = (e: TouchEngine, id: 'sling' | 'trick') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
-beforeEach(() => { engine = make(); clock = 1000; engine.setVisionAvailable(true); });
+beforeEach(() => { engine = make(); clock = 1000; });
 
 describe('zones', () => {
   it('gives the movement thumb the bottom-left and the buttons the bottom-right', () => {
     expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
     expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('idle');
-    for (const id of ['sling', 'trick', 'vision'] as const) {
+    for (const id of ['sling', 'trick'] as const) {
       const p = button(engine, id);
       expect({ id, zone: engine.zoneAt(p.x, p.y) }).toEqual({ id, zone: id });
     }
@@ -188,12 +187,35 @@ describe('the stick names a direction', () => {
 });
 
 describe('the buttons are the whole rest of the vocabulary', () => {
-  it('does not draw VISION before the story has given it to the player', () => {
+  it('has no eye, in any state the engine can be put into', () => {
+    /*
+     * The eye was removed once and grew back, because the button list was
+     * built conditionally: unlock VISION and the touch layer added a control
+     * on its own, mid-session, in front of a player who was mid-push. There is
+     * no condition to satisfy now — 'vision' is not a button id, not a role,
+     * and not a zone — so there is nothing for a regression to switch on.
+     */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
     expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['sling', 'trick']);
-    fresh.setVisionAvailable(true);
-    expect(fresh.buttonLayout().map((b) => b.id)).toContain('vision');
+
+    fresh.setSlingAvailable(false);
+    fresh.setAiming(true);
+    fresh.setAiming(false);
+    fresh.setSlingAvailable(true);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['sling', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['sling', 'trick']);
+  });
+
+  it('never reports a VISION hold, because nothing on the glass is one', () => {
+    // Every square millimetre of the pad, and none of it is an eye.
+    for (let x = 8; x < VIEWPORT.w; x += 16) {
+      for (let y = 60; y < VIEWPORT.h; y += 16) {
+        const e = make();
+        e.handle('down', at({ x, y }, 1, clock));
+        expect(e.sample().vision).toBe(false);
+      }
+    }
   });
 
   it('does a trick on a tap, with no flick to discover', () => {
@@ -209,16 +231,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const ids = engine.buttonLayout().map((b) => b.id);
     expect(ids).not.toContain('ollie');
-    expect(ids.length).toBeLessThanOrEqual(3);
-  });
-
-  it('opens the machine while VISION is held, and closes it when let go', () => {
-    const p = button(engine, 'vision');
-    engine.handle('down', at(p, 1, clock));
-    expect(engine.sample().vision).toBe(true);
-    clock += 500;
-    engine.handle('up', at(p, 1, clock));
-    expect(engine.sample().vision).toBe(false);
+    expect(ids.length).toBeLessThanOrEqual(2);
   });
 
   it('asks for the aiming mode on a tap of the sling', () => {
@@ -234,74 +247,131 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   });
 });
 
-describe('aiming: the left thumb looks, the right thumb shoots', () => {
+describe('aiming: the left thumb moves the sling, the right thumb shoots', () => {
   /*
-   * Three models in, and this is the one the request asked for.
+   * Four models in, and this is the one the request asked for.
    *
    * The first made the whole screen one gesture: any drag looked *and* any
    * release fired, so you could not look around without shooting. The second
    * split them by target — drag anywhere to look, grab a small rectangle in
    * the bottom-left to draw — which separated the verbs but still asked one
-   * hand to do both jobs on the same glass, and let the drawing thumb swing
-   * the aim the other one had set.
+   * hand to do both jobs on the same glass. The third gave the screen a side
+   * each and made the left one a rate stick, which separated the hands but
+   * handed the player an invisible anchor, a dead zone and a response curve to
+   * learn before they could point at anything. A human called it complicated,
+   * and it was.
    *
-   * Now the screen has a side each. Left looks. Right draws and fires. The
-   * side a finger lands on decides what it is, once, and nothing that happens
-   * to any other finger can change it.
+   * This one has nothing to learn. Left thumb: drag, and the sling goes that
+   * far. Right thumb: pull, and let go. The side a finger lands on decides
+   * what it is, once, and nothing that happens to any other finger can change
+   * it — the aim reads only its own pointer's own movement.
    */
   beforeEach(() => { engine.setAiming(true); });
 
-  const LOOK = { x: 90, y: 520 };
+  const HAND = { x: 90, y: 520 };
   const slingAt = (e: TouchEngine) => {
     const z = e.slingZone();
     return { x: z.x + z.w * 0.5, y: z.y + z.h * 0.7 };
   };
-  /** Hold the look stick out and read the rate it is asking for. */
-  const holdLook = (e: TouchEngine, to: { x: number; y: number }, id = 1): void => {
-    e.handle('down', at(LOOK, id, clock));
+  /** Put the sling-holding thumb down and drag it somewhere. */
+  const dragSling = (e: TouchEngine, to: { x: number; y: number }, id = 1): void => {
+    e.handle('down', at(HAND, id, clock));
     clock += 16;
     e.handle('move', at(to, id, clock));
   };
 
-  it('gives the left half to looking and the right half to the sling', () => {
-    expect(engine.zoneAt(LOOK.x, LOOK.y)).toBe('look');
-    expect(engine.zoneAt(20, 120)).toBe('look');
+  it('gives the left half to the sling hand and the right half to the band', () => {
+    expect(engine.zoneAt(HAND.x, HAND.y)).toBe('aim');
+    expect(engine.zoneAt(20, 120)).toBe('aim');
     expect(engine.zoneAt(360, 120)).toBe('pull');
     expect(engine.zoneAt(slingAt(engine).x, slingAt(engine).y)).toBe('pull');
   });
 
-  it('turns the view at a rate while the thumb is held out, and stops when it is let go', () => {
-    holdLook(engine, { x: LOOK.x + 80, y: LOOK.y });
-    expect(engine.lookRate().yaw).toBeGreaterThan(0.5);
+  it('moves the sling exactly as far as the thumb moved, and no further', () => {
+    dragSling(engine, { x: HAND.x + 80, y: HAND.y });
+    const a = engine.takeAimDrag();
+    expect(a.yaw).toBeCloseTo(80 * TOUCH_TUNING.aimYawPerPixel, 6);
+    expect(a.pitch).toBeCloseTo(0, 6);
+  });
+
+  it('stops the moment the thumb stops, because there is no rate to keep running', () => {
+    dragSling(engine, { x: HAND.x + 80, y: HAND.y });
+    engine.takeAimDrag();
+    // Held out at the same place, frame after frame. A stick would still be
+    // turning. A drag is not moving, so nothing moves.
+    expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
     clock += 16;
-    engine.handle('up', at({ x: LOOK.x + 80, y: LOOK.y }, 1, clock));
-    expect(engine.lookRate()).toEqual({ yaw: 0, pitch: 0 });
+    expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
   });
 
-  it('turns faster the further the thumb is pushed, both ways', () => {
-    holdLook(engine, { x: LOOK.x + 24, y: LOOK.y }, 1);
-    const small = engine.lookRate().yaw;
-    engine.handle('up', at({ x: LOOK.x + 24, y: LOOK.y }, 1, clock));
-    holdLook(engine, { x: LOOK.x + 200, y: LOOK.y }, 2);
-    const big = engine.lookRate().yaw;
-    expect(small).toBeGreaterThan(0);
-    expect(big / small).toBeGreaterThan(2.5);
-    engine.handle('up', at({ x: LOOK.x + 200, y: LOOK.y }, 2, clock));
-    holdLook(engine, { x: LOOK.x, y: LOOK.y - 90 }, 3);
-    expect(engine.lookRate().pitch).toBeGreaterThan(0);
+  it('travels the same distance per pixel wherever on the glass the drag happens', () => {
+    // No dead zone to cross and no curve to climb: the second half of a drag
+    // moves the sling exactly as far as the first half did.
+    const first = (() => {
+      const e = make(); e.setAiming(true);
+      e.handle('down', at(HAND, 1, clock));
+      clock += 16;
+      e.handle('move', at({ x: HAND.x + 30, y: HAND.y }, 1, clock));
+      return e.takeAimDrag().yaw;
+    })();
+    const second = (() => {
+      const e = make(); e.setAiming(true);
+      e.handle('down', at({ x: 20, y: 200 }, 1, clock));
+      clock += 16;
+      e.handle('move', at({ x: 50, y: 200 }, 1, clock));
+      return e.takeAimDrag().yaw;
+    })();
+    expect(second).toBeCloseTo(first, 6);
   });
 
-  it('has no limit on the horizontal: the view goes all the way round', () => {
-    holdLook(engine, { x: LOOK.x + 200, y: LOOK.y });
-    // A rate, held: three seconds of it is more than a full turn, and nothing
-    // in the engine clamps the total.
-    expect(Math.abs(engine.lookRate().yaw) * 3).toBeGreaterThan(Math.PI * 2);
-  });
-
-  it('never fires from looking around, however far the thumb goes', () => {
-    holdLook(engine, { x: LOOK.x + 240, y: LOOK.y - 60 });
+  it('costs nothing to lift the thumb and put it back down somewhere else', () => {
+    /*
+     * The requirement in the words it was asked in: no aiming jump. Only the
+     * change is read, so where the thumb happens to be when it lands is not a
+     * number the aim has ever seen.
+     */
+    dragSling(engine, { x: HAND.x + 60, y: HAND.y });
+    engine.takeAimDrag();
     clock += 16;
-    engine.handle('up', at({ x: LOOK.x + 240, y: LOOK.y - 60 }, 1, clock));
+    engine.handle('up', at({ x: HAND.x + 60, y: HAND.y }, 1, clock));
+    expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
+    // Down again on the far side of the pad: still nothing.
+    engine.handle('down', at({ x: 20, y: 180 }, 2, clock));
+    expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it('sums every sample of a drag, so a burst of events is one smooth sweep', () => {
+    engine.handle('down', at(HAND, 1, clock));
+    for (let i = 1; i <= 10; i++) {
+      clock += 4;
+      engine.handle('move', at({ x: HAND.x + i * 9, y: HAND.y }, 1, clock));
+    }
+    expect(engine.takeAimDrag().yaw).toBeCloseTo(90 * TOUCH_TUNING.aimYawPerPixel, 6);
+  });
+
+  it('points the sling up when the thumb goes up', () => {
+    dragSling(engine, { x: HAND.x, y: HAND.y - 90 });
+    expect(engine.takeAimDrag().pitch).toBeGreaterThan(0);
+  });
+
+  it('has no limit on the horizontal: the sling goes all the way round', () => {
+    // Nothing in the engine clamps the total, so a long sweep, or several,
+    // carries the aim past a full turn.
+    let yaw = 0;
+    for (let n = 0; n < 12; n++) {
+      const e = make(); e.setAiming(true);
+      e.handle('down', at({ x: 10, y: 400 }, 1, clock));
+      clock += 16;
+      e.handle('move', at({ x: 190, y: 400 }, 1, clock));
+      yaw += e.takeAimDrag().yaw;
+    }
+    expect(yaw).toBeGreaterThan(Math.PI * 2);
+  });
+
+  it('never fires from moving the sling, however far the thumb goes', () => {
+    dragSling(engine, { x: HAND.x + 240, y: HAND.y - 60 });
+    clock += 16;
+    engine.handle('up', at({ x: HAND.x + 240, y: HAND.y - 60 }, 1, clock));
     expect(engine.sample().fire).toBe(false);
   });
 
@@ -341,40 +411,29 @@ describe('aiming: the left thumb looks, the right thumb shoots', () => {
   describe('the two thumbs are strangers', () => {
     /*
      * The requirement this exists for: releasing the shooting finger must
-     * never make the aimer jump. It used to be able to, because looking was a
-     * drag — any pointer that was not on the sling contributed to it, so
-     * lifting one finger while another was down could hand the look to a
-     * thumb that had been doing something else entirely, from wherever that
-     * thumb happened to be sitting.
+     * never make the aimer jump, and the shooting finger must never reposition
+     * the sling. It used to be able to do both — looking was a drag that any
+     * pointer not on the sling contributed to, so lifting one finger while
+     * another was down could hand the aim to a thumb that had been doing
+     * something else entirely, from wherever it happened to be sitting.
      *
      * Roles are decided once, at touch-down, by which side of the glass the
-     * finger landed on, and the look is read from its own pointer's own
-     * anchor. There is nothing left to reassign.
+     * finger landed on, and the aim accumulates only from its own pointer's
+     * own movement. There is nothing left to reassign.
      */
-    it('does not move the aim when the shooting thumb is released', () => {
+    it('does not move the sling when the shooting thumb arrives, moves, or fires', () => {
       const g = slingAt(engine);
-      // Left thumb parked, holding a steady turn.
-      holdLook(engine, { x: LOOK.x + 40, y: LOOK.y }, 1);
-      const before = engine.lookRate();
-      // Right thumb draws and lets go, somewhere else entirely.
+      dragSling(engine, { x: HAND.x + 40, y: HAND.y }, 1);
+      engine.takeAimDrag();
+
       engine.handle('down', at(g, 2, clock));
       clock += 16;
       engine.handle('move', at({ x: g.x + 100, y: g.y + 60 }, 2, clock));
-      expect(engine.lookRate()).toEqual(before);
+      expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
       clock += 16;
       engine.handle('up', at({ x: g.x + 100, y: g.y + 60 }, 2, clock));
-      expect(engine.lookRate()).toEqual(before);
-    });
-
-    it('does not move the aim when the shooting thumb arrives, moves, or fires', () => {
-      const g = slingAt(engine);
-      holdLook(engine, { x: LOOK.x - 30, y: LOOK.y + 20 }, 1);
-      const before = engine.lookRate();
-      drag(engine, 2, [g, { x: g.x + 140, y: g.y - 80 }]);
-      engine.handle('up', at({ x: g.x + 140, y: g.y - 80 }, 2, clock));
-      const i = engine.sample();
-      expect(i.fire).toBe(true);
-      expect(engine.lookRate()).toEqual(before);
+      expect(engine.sample().fire).toBe(true);
+      expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
     });
 
     it('will not let a second finger on the right take the sling from the first', () => {
@@ -387,13 +446,13 @@ describe('aiming: the left thumb looks, the right thumb shoots', () => {
       expect(engine.sample().drawAmount).toBe(0);
     });
 
-    it('will not let a second finger on the left take the look from the first', () => {
-      holdLook(engine, { x: LOOK.x + 30, y: LOOK.y }, 1);
-      const before = engine.lookRate();
+    it('will not let a second finger on the left take the sling from the first', () => {
+      dragSling(engine, { x: HAND.x + 30, y: HAND.y }, 1);
+      engine.takeAimDrag();
       engine.handle('down', at({ x: 40, y: 300 }, 2, clock));
       clock += 16;
       engine.handle('move', at({ x: 160, y: 300 }, 2, clock));
-      expect(engine.lookRate()).toEqual(before);
+      expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
     });
 
     it('keeps the sling from steering: drawing it aims nothing', () => {
@@ -404,27 +463,28 @@ describe('aiming: the left thumb looks, the right thumb shoots', () => {
       const i = engine.sample();
       expect(i.aimVector).toBeNull();
       expect(i.drawAmount).toBeGreaterThan(0);
+      expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
     });
   });
 
   it('leaves the mode on a tap out in the world', () => {
-    tap(engine, LOOK);
+    tap(engine, HAND);
     const i = engine.sample();
     expect(i.fire).toBe(false);
     expect(i.aimModePressed).toBe(true);
   });
 
   it('never asks the character to move while a shot is being lined up', () => {
-    holdLook(engine, { x: LOOK.x, y: LOOK.y - 80 });
+    dragSling(engine, { x: HAND.x, y: HAND.y - 80 });
     const i = engine.sample();
     expect(i.moveVector).toBeNull();
     expect(i.push).toBe(false);
   });
 
   it('drops any half-made gesture when the mode changes under it', () => {
-    holdLook(engine, { x: LOOK.x + 90, y: LOOK.y });
+    dragSling(engine, { x: HAND.x + 90, y: HAND.y });
     engine.setAiming(false);
-    expect(engine.lookRate()).toEqual({ yaw: 0, pitch: 0 });
+    expect(engine.takeAimDrag()).toEqual({ yaw: 0, pitch: 0 });
     expect(engine.sample().fire).toBe(false);
   });
 });

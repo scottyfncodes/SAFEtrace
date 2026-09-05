@@ -62,6 +62,17 @@ export const SYSTEM = {
   interventionAuthorized: 'INTERVENTION AUTHORIZED',
   loopActive: (id: string) => `NODE ${id} — FEED NOMINAL`,
   /*
+   * The pursuit says out loud what it does and does not know.
+   *
+   * A player who breaks contact and is then found anyway learns that escaping
+   * is not a thing this game does. These three lines are the system admitting,
+   * in its own register, that the fix is stale — and each of them corresponds
+   * to a state the dispatcher is actually in, so the words are never a bluff.
+   */
+  contactLost: 'VISUAL CONTACT LOST — LAST KNOWN POSITION HELD',
+  searchingLastKnown: 'UNITS SEARCHING — LAST KNOWN POSITION',
+  pursuitCleared: 'SUBJECT NOT LOCATED — SEARCH STOOD DOWN',
+  /*
    * A bearing hit somebody. SAFEtrace does not say "you hurt them", because
    * nobody was hurt and the system would not care if they had been. It logs an
    * incident against a subject, which is the only language it has.
@@ -117,9 +128,19 @@ export const AD_REPRISE_ANNOTATIONS: Record<number, string> = {
 
 /** Dialogue. Kept short: the strongest moments in this game are notifications. */
 /** How a verb is reached, phrased for the device in the player's hands. */
+/*
+ * What unlocking VISION gives you, said honestly per device.
+ *
+ * On a keyboard it is two things: the held plan view, and the network becoming
+ * something you can reach into. On a phone it is only the second — the eye
+ * button that used to hold the view open is gone, and it is not coming back as
+ * a hidden two-finger gesture either, because a control nobody can see is
+ * worse than one that is simply absent. So the phone is told the true half
+ * rather than a hint for a control it does not have.
+ */
 export const HINTS = {
   keyboard: { vision: 'HOLD Q', inspect: 'PRESS E' },
-  touch: { vision: 'TWO FINGERS', inspect: 'TAP THE NODE' },
+  touch: { vision: 'NODES ARE NOW READABLE', inspect: 'TAP THE NODE' },
 };
 
 export const DIALOGUE = {

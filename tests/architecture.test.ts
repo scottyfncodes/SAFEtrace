@@ -59,6 +59,46 @@ describe('architecture', () => {
     expect(offenders).toEqual([]);
   });
 
+  /*
+   * The eye button was removed once and came back, because "removed" meant a
+   * conditional that stopped firing rather than code that stopped existing.
+   * These are the cheapest possible statement that it is gone: there is no
+   * button id, no touch role, no control-visual field and no glyph branch for
+   * it anywhere in the input or presentation layers, so there is nothing left
+   * for a component or state regression to switch back on.
+   */
+  it('has no eye button anywhere in the input or HUD layers', () => {
+    const offenders: string[] = [];
+    for (const f of [...walk('src/core'), ...walk('src/render'), ...walk('src/ui')]) {
+      const code = read(f).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+      // A control called vision: an id in a list, a role, a case, a field.
+      for (const pat of [/'vision'/, /\bid === 'vision'/, /setVisionAvailable/, /visionHeld/]) {
+        if (pat.test(code)) offenders.push(`${f}: ${pat}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('gives the pursuit exactly one way to start', () => {
+    /*
+     * `wantedUntil` is the file being open, and an open file is what sends
+     * somebody. It used to be written from wherever an offence happened, so a
+     * pursuit could begin without anything knowing it had begun. Every writer
+     * now goes through Sim.reportOffence, which is also what tells the state
+     * machine where the pursuit starts from.
+     */
+    const writers: string[] = [];
+    for (const f of simFiles) {
+      const code = read(f).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+      for (const m of code.matchAll(/(\w+)\.wantedUntil\s*=/g)) writers.push(`${f}: ${m[0]}`);
+    }
+    // One in Sim.reportOffence, one in the pursuit machine's CLEAR state.
+    expect(writers).toEqual([
+      'src/sim/sim.ts: track.wantedUntil =',
+      'src/sim/surveillance/pursuit.ts: track.wantedUntil =',
+    ]);
+  });
+
   it('keeps every player-visible SAFEtrace string in one file', () => {
     // Tone control: this voice must be edited as a single document or it drifts.
     const offenders: string[] = [];

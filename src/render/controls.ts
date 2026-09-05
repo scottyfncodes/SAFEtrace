@@ -4,19 +4,28 @@
  * These used to be almost invisible on purpose — no permanent joystick sitting
  * on Bellhaven, just a board that responded. Two human playtests said the same
  * thing: you cannot respond to a control you cannot find. So the stick is drawn
- * where the thumb plants it, the three things a thumb can press are drawn where
+ * where the thumb plants it, the two things a thumb can press are drawn where
  * they are, and nothing in the game is a gesture you have to be told about.
  *
  * It is still restrained. Thin rings, no labels shouting, and it all fades back
  * when a hand is off the glass.
  */
 import { clamp01, smoothstep } from '../core/math';
-import type { ControlVisual } from '../core/touch';
+import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
 
 export class ControlsRenderer {
   private stickFade = 0;
+  /**
+   * Driven by the simulation's own VISION blend rather than by a button.
+   *
+   * There is no eye on the HUD. There was, it was removed, and it came back
+   * because the touch layer grew it on its own the moment the story unlocked
+   * the mechanic — a control appearing in front of a player who was mid-push.
+   * The frame below still marks the machine being open, because the machine
+   * can still be opened; nothing on the glass offers to open it.
+   */
   private visionFade = 0;
   private homeFade = 0;
   private buttonFade = 0;
@@ -29,11 +38,11 @@ export class ControlsRenderer {
    * touch is the hardest moment in the game and there was nothing on screen to
    * aim it at.
    */
-  update(v: ControlVisual, dt: number, showHome = false): void {
+  update(v: ControlVisual, dt: number, showHome = false, vision = false): void {
     const to = (cur: number, on: boolean, rate: number) =>
       clamp01(cur + (on ? rate : -rate * 0.7) * dt);
     this.stickFade = to(this.stickFade, v.stick.active, 9);
-    this.visionFade = to(this.visionFade, v.vision, 6);
+    this.visionFade = to(this.visionFade, vision, 6);
     this.homeFade = to(this.homeFade, showHome && !v.stick.active, 3.2);
     // Buttons live at a low resting alpha rather than vanishing: they are the
     // only permanent statement of what this game lets you do.
@@ -103,7 +112,7 @@ export class ControlsRenderer {
     ctx.restore();
   }
 
-  /** The three things a right thumb can do, drawn where they are. */
+  /** The two things a right thumb can do, drawn where they are. */
   private drawButtons(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
     const a = smoothstep(this.buttonFade);
     ctx.save();
@@ -129,9 +138,13 @@ export class ControlsRenderer {
 
   /**
    * Words where a word is faster, shapes where a shape is: TRICK says exactly
-   * what it does, the sling is a drawn slingshot, VISION is an eye.
+   * what it does, and the sling is a drawn slingshot.
+   *
+   * There is no third case. The eye that used to live here is gone, and so is
+   * the branch that drew it — an obsolete control that can still be rendered
+   * is an obsolete control that will come back.
    */
-  private glyph(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, r: number): void {
+  private glyph(ctx: CanvasRenderingContext2D, id: ControlButton['id'], x: number, y: number, r: number): void {
     const s = r * 0.5;
     ctx.lineWidth = 2.4;
     ctx.strokeStyle = ctx.fillStyle as string;
@@ -167,16 +180,6 @@ export class ControlsRenderer {
       ctx.beginPath();
       ctx.arc(x, crotch - py * 0.18, s * 0.26, 0, Math.PI * 2);
       ctx.fill();
-      return;
-    } else {
-      // An eye.
-      ctx.moveTo(x - s, y);
-      ctx.quadraticCurveTo(x, y - s * 0.9, x + s, y);
-      ctx.quadraticCurveTo(x, y + s * 0.9, x - s, y);
-    }
-    ctx.stroke();
-    if (id === 'vision') {
-      ctx.beginPath(); ctx.arc(x, y, s * 0.32, 0, Math.PI * 2); ctx.fill();
     }
   }
 

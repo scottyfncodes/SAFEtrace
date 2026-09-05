@@ -22,6 +22,7 @@
 import type { Vec2 } from '../core/math';
 import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/math';
 import type { Sim } from '../sim/sim';
+import type { RockShape } from '../sim/slingshot';
 import type { Building } from '../sim/worldTypes';
 import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
 
@@ -451,7 +452,7 @@ export class PerspectiveRenderer {
   }
 
   /**
-   * A rock, not a floating cube.
+   * A rock, not a floating cube, and not the same rock every time.
    *
    * The projectile was a steel bearing and it was drawn as a flat square card,
    * which at the size a small object subtends read as a blocky thing rather
@@ -460,24 +461,44 @@ export class PerspectiveRenderer {
    * an irregular outline, a dark side and a lit side. Drawn a little larger
    * than life for the same reason a tracer is: at true scale it is two pixels
    * and a player cannot follow their own shot.
+   *
+   * The seven-sided outline used to be one hard-coded list of radii, so every
+   * rock in the town was the same rock at the same angle — twenty identical
+   * pebbles lying in a road is the sort of thing you only notice once and then
+   * cannot stop noticing. The lumpiness now comes from the stone's own rolled
+   * shape: slightly different size, slightly different proportion, turned to
+   * its own angle, and a different set of dents. All of it stays inside a band
+   * narrow enough that every one of them still plainly reads as gravel.
    */
-  private rock(cam: Cam, p: Vec2, z: number, r: number): void {
+  private rock(cam: Cam, p: Vec2, z: number, r: number, shape: RockShape): void {
     const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
     if (d > FAR || d < 0.25) return;
     const ux = -(p.y - cam.pos.y) / d, uy = (p.x - cam.pos.x) / d;
-    // A seven-sided lump: irregular enough not to read as a machined ball.
-    const JAG = [1, 0.82, 1.05, 0.88, 1.0, 0.79, 0.94];
-    const lump = (rad: number, dx: number, dz: number, fill: string): void => {
+    const SIDES = 7;
+    const rad = r * shape.size;
+    const lump = (scale: number, dx: number, dz: number, fill: string): void => {
       const pts: P3[] = [];
-      for (let i = 0; i < JAG.length; i++) {
-        const a = (i / JAG.length) * Math.PI * 2;
-        const c = Math.cos(a) * rad * JAG[i] + dx, sz = Math.sin(a) * rad * JAG[i] + dz;
-        pts.push({ x: p.x + ux * c, y: p.y + uy * c, z: z + sz });
+      for (let i = 0; i < SIDES; i++) {
+        const a = (i / SIDES) * Math.PI * 2;
+        // Two offset waves round the outline: enough to read as chipped stone,
+        // never enough to read as a star or a blob.
+        const wobble = 1 + shape.jag * 0.11 * (
+          Math.sin(a * 3 + shape.phase) + 0.6 * Math.sin(a * 5 - shape.phase * 1.7)
+        );
+        // The squash, applied about the stone's own turn.
+        const t = a + shape.spin;
+        const c = Math.cos(t) * shape.squash;
+        const s = Math.sin(t) / shape.squash;
+        pts.push({
+          x: p.x + ux * (c * rad * scale * wobble + dx),
+          y: p.y + uy * (c * rad * scale * wobble + dx),
+          z: z + s * rad * scale * wobble + dz,
+        });
       }
       this.push(cam, pts, fill);
     };
-    lump(r, 0, 0, '#565C63');
-    lump(r * 0.66, -r * 0.18, r * 0.18, '#7C838B');
+    lump(1, 0, 0, '#565C63');
+    lump(0.66, -rad * 0.18, rad * 0.18, '#7C838B');
   }
 
   private collectActors(sim: Sim, cam: Cam): void {
@@ -495,8 +516,8 @@ export class PerspectiveRenderer {
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
-    for (const pr of sim.projectiles) this.rock(cam, pr.pos, pr.z, 0.07);
-    for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055);
+    for (const pr of sim.projectiles) this.rock(cam, pr.pos, pr.z, 0.07, pr.shape);
+    for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055, b.shape);
   }
 
   private person(cam: Cam, p: Vec2, tint: string): void {

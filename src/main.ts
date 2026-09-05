@@ -70,6 +70,9 @@ class Game {
       if (this.sim.hack) this.sim.cancelHack();
       else this.sim.startHack(verb, nodeId);
     });
+    // The world's contextual prompt names the thing the player will actually
+    // do, on the device they are actually holding.
+    this.renderer.interactVerb = this.touchPrimary ? 'TAP' : 'E';
     this.ad = new Advertisement(document.body, this.renderer, this.audio, this.touchPrimary);
     this.story = new StoryDirector({
       sim: this.sim,
@@ -185,8 +188,26 @@ class Game {
     });
   }
 
+  /**
+   * Nothing half-done survives a change of mode.
+   *
+   * The advertisement and its reprise take the screen while the world keeps
+   * running underneath. A sling still drawn, a node panel still open or an
+   * interference still counting down would all be waiting on the other side —
+   * a screen the player did not open, on a frame they did not ask for. Every
+   * transition goes through here, so there is one place this is true.
+   */
+  private clearTransientState(): void {
+    this.sim.exitAimMode();
+    this.sim.dismissFocus();
+    this.touch.reset();
+    this.touch.setAiming(false);
+    this.hud.clearSay();
+  }
+
   private startAd(): void {
     this.phase = 'ad';
+    this.clearTransientState();
     this.hud.setVisible(false);
     this.loop.start();
     this.ad.play({
@@ -200,6 +221,7 @@ class Game {
 
   private playReprise(): void {
     this.phase = 'reprise';
+    this.clearTransientState();
     this.hud.setVisible(false);
     this.ad.play({
       reprise: true,
@@ -323,21 +345,24 @@ class Game {
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
     this.touch.setSlingAvailable(!this.sim.hack);
-    this.touch.setVisionAvailable(this.sim.visionUnlocked);
 
     if (this.sim.aimMode) {
       /*
-       * The look stick turns the view, and the view eases onto it.
+       * The left thumb drags the slingshot, and the sling goes exactly that
+       * far. No rate, no ramp, no ceiling.
        *
-       * The stick reports a rate, so the target integrates here and the camera
-       * damps onto that target — which keeps a pointer stream that arrives in
-       * bursts, as a phone's does, from showing up as judder.
+       * The drag arrives already converted to radians and already consumed —
+       * every pixel the thumb travelled since the last frame, counted once —
+       * so a pointer stream that arrives in bursts, as a phone's does, sums to
+       * the same sweep as one that arrives evenly. The remaining damp is a
+       * frame of smoothing on top of that, small enough that the sling stops
+       * when the thumb does.
        */
-      const look = this.touch.lookRate();
-      this.lookTargetYaw += look.yaw * dt;
-      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + look.pitch * dt);
-      this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.028, dt);
-      this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.028, dt);
+      const drag = this.touch.takeAimDrag();
+      this.lookTargetYaw += drag.yaw;
+      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + drag.pitch);
+      this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.012, dt);
+      this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.012, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
       this.story.update();
       return;
@@ -418,13 +443,7 @@ class Game {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
     this.renderer.slingGrip = this.sim.aimMode ? this.touch.slingGrip : null;
-    this.renderer.lookStick = this.sim.aimMode ? this.touch.lookStick : null;
-    if (this.sim.aimMode && this.touchPrimary) {
-      const z = this.touch.slingZone();
-      this.renderer.slingZoneHint = { x: z.x + z.w * 0.5, y: z.y + z.h * 0.78 };
-    } else {
-      this.renderer.slingZoneHint = null;
-    }
+    this.renderer.slingHand = this.sim.aimMode ? this.touch.slingHand : null;
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;

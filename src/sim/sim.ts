@@ -17,7 +17,7 @@ import type { SimEvents } from './events';
 import { TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
-  type DroppedRock, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
+  type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
@@ -30,6 +30,7 @@ import { scoreRisk } from './surveillance/risk';
 import { analyse, makeEvidence, resetEvidenceIds } from './surveillance/evidence';
 import { Network, VERBS, permits, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
 import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
+import { PURSUIT, type PursuitState } from './surveillance/pursuit';
 import type { EscalationLevel, Evidence, Incident, Observation, Subject, Track } from './surveillance/types';
 import type { MessagePriority } from './events';
 import type { RecordContext } from './worldTypes';
@@ -124,6 +125,13 @@ export class Sim {
   readNodes = new Set<string>();
 
   escalation: EscalationLevel = 'PASSIVE';
+  /**
+   * Whether anybody is after the player, and how far along that has got.
+   *
+   * A new session starts here, at NOT_PURSUING, and there is no path out of it
+   * that does not go through `reportOffence`. Skating is not a path.
+   */
+  private lastPursuit: PursuitState = 'NOT_PURSUING';
   visionUnlocked = false;
   /** 0..1 blend into machine vision; the renderer drives the peel from this. */
   visionBlend = 0;
@@ -594,7 +602,9 @@ export class Sim {
           ? { tick: this.tick, hit: true, label: impact.targetId }
           : { tick: this.tick, hit: false, label: SHOT.ground };
         // Hitting the pavement is a miss with a sound, not a result.
-        this.resolveImpact(impact.kind, impact.pos, impact.vel, impact.vz, impact.z, impact.targetId);
+        this.resolveImpact(
+          impact.kind, impact.pos, impact.vel, impact.vz, impact.z, proj.shape, impact.targetId,
+        );
         continue;
       }
       if (proj.life > 0) keep.push(proj);
@@ -614,10 +624,12 @@ export class Sim {
   }
 
   private resolveImpact(
-    kind: string, pos: Vec2, vel: Vec2, vz: number, z: number, targetId?: string,
+    kind: string, pos: Vec2, vel: Vec2, vz: number, z: number, shape: RockShape,
+    targetId?: string,
   ): void {
     this.bus.emit('projectile:impact', { kind: kind as never, pos, targetId });
-    this.droppedRocks.push({ pos: { ...pos }, tick: this.tick });
+    // The rock that lands is the rock that was thrown, lump for lump.
+    this.droppedRocks.push({ pos: { ...pos }, tick: this.tick, shape });
     if (this.droppedRocks.length > 40) this.droppedRocks.shift();
 
     const observedBy = this.sensorsObserving(pos);
@@ -750,7 +762,7 @@ export class Sim {
     if (observedBy.length > 0) {
       incident.associated.push(this.playerTrack.attributedIdentity);
       // Seen doing it: now they come.
-      this.playerTrack.wantedUntil = Math.max(this.playerTrack.wantedUntil, this.tick + WANTED_TICKS);
+      this.reportOffence(this.playerTrack, pos, SYSTEM.incidentPerson);
     }
     this.playerSubject.priorContacts += 1;
   }
@@ -945,7 +957,7 @@ export class Sim {
          * they also consider a matter for a unit.
          */
         if (t && PURSUABLE_EVIDENCE.has(e.kind)) {
-          t.wantedUntil = Math.max(t.wantedUntil, this.tick + WANTED_TICKS);
+          this.reportOffence(t, e.pos, e.label);
         }
         this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
       } else if (e.kind !== 'NOISE') {
@@ -977,9 +989,18 @@ export class Sim {
       if (p) a.pos = p.pos;
     }
 
+    /*
+     * How fast the system thinks the subject is going.
+     *
+     * This used to read the player's true speed, which is a small leak with a
+     * large consequence: the forecast a unit drives at was partly built from
+     * something no camera had told anybody. It is the track's own estimated
+     * velocity now, so a stale track produces a stale lead, which is exactly
+     * what should happen to somebody nobody can see.
+     */
     const result = this.dispatcher.update(
       this.tick, this.allTracks, this.assets,
-      (t) => (t === this.playerTrack ? Math.max(4, this.player.speed) : 4),
+      (t) => Math.max(4, Math.hypot(t.estimatedVel.x, t.estimatedVel.y)),
     );
 
     for (const task of result.issued) {
@@ -1001,6 +1022,8 @@ export class Sim {
       if (p) assignPatrolTask(p, null, this.world);
     }
 
+    this.announcePursuit();
+
     this.escalation = result.level;
     if (this.escalation !== this.lastEscalation) {
       this.bus.emit('escalation:changed', {
@@ -1013,18 +1036,81 @@ export class Sim {
     }
   }
 
+  /**
+   * The one door onto the list.
+   *
+   * `wantedUntil` used to be written from two places directly, which meant the
+   * pursuit could begin without anything knowing it had begun. Every reason to
+   * send somebody after a subject now goes through here, so "why is there a
+   * unit coming" always has an answer with a place and a sentence attached to
+   * it. There is no other caller, and there must never be one.
+   */
+  reportOffence(track: Track, at: Vec2, reason: string): void {
+    track.wantedUntil = Math.max(track.wantedUntil, this.tick + WANTED_TICKS);
+    this.dispatcher.pursuit.report(track.id, track, this.tick, at, reason);
+  }
+
+  /** What the pursuit machine currently says about the player. */
+  get pursuit(): PursuitState { return this.dispatcher.pursuit.stateOf(this.playerTrack.id); }
+
+  /**
+   * The only place the town believes the player to be while it cannot see them.
+   * Null when nobody is looking. Exposed so the machine view can draw the thing
+   * the units are actually driving at, rather than implying they know more.
+   */
+  get pursuitLastKnown(): Vec2 | null {
+    return this.dispatcher.pursuit.get(this.playerTrack.id).lastKnown;
+  }
+
+  /**
+   * Say out loud what the pursuit just did.
+   *
+   * These are the only messages about being chased, and each is tied to a real
+   * transition — so a player who reads "SEARCH STOOD DOWN" has genuinely got
+   * away, and will not be picked back up two streets later.
+   */
+  private announcePursuit(): void {
+    const now = this.pursuit;
+    if (now === this.lastPursuit) return;
+    const was = this.lastPursuit;
+    this.lastPursuit = now;
+    if (now === 'LOST' && was === 'PURSUING') {
+      this.message('SYSTEM', [SYSTEM.contactLost], 3.4, 'normal', 'important');
+    } else if (now === 'SEARCHING') {
+      this.message('SYSTEM', [SYSTEM.searchingLastKnown], 3.6, 'normal', 'important');
+    } else if (now === 'CLEAR') {
+      this.message('SYSTEM', [SYSTEM.pursuitCleared], 4.0, 'normal', 'important');
+    }
+    this.bus.emit('pursuit:changed', { from: was, to: now });
+  }
+
   private releaseAsset(id: string): void {
     const a = this.assets.find((x) => x.id === id);
     if (a) { a.task = null; a.available = true; }
   }
 
+  /**
+   * Where a tasked asset is allowed to re-route to, this tick.
+   *
+   * A unit only gets a moving destination while the pursuit is PURSUING, which
+   * means something can see the subject right now. The instant that stops being
+   * true it gets the target it was issued — a place, frozen — and the
+   * dispatcher takes the task off it shortly afterwards. This is the single
+   * choke point for "the police must not continuously receive live
+   * coordinates", and it is deliberately the only branch that reads a track
+   * estimate at all.
+   */
+  private liveTargetFor(task: { kind: string; trackId?: string; target: Vec2 }): Vec2 | null {
+    if (task.kind !== 'TRACK' || !task.trackId) return null;
+    const t = this.allTracks.find((x) => x.id === task.trackId);
+    if (!t) return null;
+    const pursuing = this.dispatcher.pursuit.stateOf(t.id) === 'PURSUING';
+    return pursuing && t.confidence >= PURSUIT.contact ? t.estimate : task.target;
+  }
+
   private updateAssets(dt: number): void {
     for (const d of this.drones) {
-      let live: Vec2 | null = null;
-      if (d.task?.kind === 'TRACK' && d.task.trackId) {
-        const t = this.allTracks.find((x) => x.id === d.task!.trackId);
-        if (t) live = t.confidence > 0.25 ? t.estimate : d.task.target;
-      }
+      const live = d.task ? this.liveTargetFor(d.task) : null;
       const before = d.state;
       updateDrone(d, dt, live);
       if (before !== 'DESTABILISED' && d.state === 'PATROL' && d.task === null) this.releaseAsset(d.id);
@@ -1032,12 +1118,9 @@ export class Sim {
     }
 
     for (const p of this.patrols) {
-      let live: Vec2 | null = null;
-      if (p.task?.kind === 'TRACK' && p.task.trackId) {
-        const t = this.allTracks.find((x) => x.id === p.task!.trackId);
-        // The unit routes to the forecast, not to the truth.
-        if (t) live = t.confidence > 0.25 ? t.estimate : p.task.target;
-      }
+      // The unit routes to the forecast, not to the truth — and only while
+      // somebody is actually looking at the subject.
+      const live = p.task ? this.liveTargetFor(p.task) : null;
       updatePatrol(p, dt, this.world, live);
 
       if (p.state === 'INTERVENING' && dist(p.pos, this.player.pos) < PATROL.contactRadius) {
@@ -1063,56 +1146,73 @@ export class Sim {
 
   // ---------------------------------------------------------------- hacking
 
-  /**
-   * A node the player has waved away. Proximity alone will not put it back.
-   */
-  private dismissedNodeId: string | null = null;
-
   dismissFocus(): void {
-    this.dismissedNodeId = this.focusNode?.id ?? null;
     this.selectedNodeId = null;
     this.focusNode = null;
     if (this.hack) this.cancelHack();
   }
 
   /**
-   * The node the player could act on right now.
+   * The node the player is *close enough to reach*, which is not the same
+   * thing as the node they are reading.
    *
-   * Gated on VISION being unlocked, and that is a usability fix rather than a
-   * design change. The panel used to open on proximity from the first minute of
-   * play: the spawn is forty-four metres from JX-M1, so the first thing a new
-   * player met was a box reading "JX-M1 / SEGMENT S-M1 / NOMINAL" and five verb
-   * buttons, before the story had said the word node. A human hit exactly that
-   * and could not tell whether it was danger, an objective, or furniture.
+   * This is the contextual prompt's whole job: the world says "CM-009 —
+   * INTERACT" over a thing you are standing next to, and nothing opens until
+   * you say so. Null when there is nothing in reach, so the prompt is present
+   * exactly when the action is.
+   */
+  interactCandidate: NetworkNode | null = null;
+
+  /**
+   * Open whatever is in reach. The keyboard's interact key and a thumb tapping
+   * the node in the world both land here, so "I did a thing, therefore a screen
+   * opened" is true on every device.
+   */
+  interactWithNearest(): boolean {
+    const n = this.interactCandidate;
+    if (!n) return false;
+    this.selectNode(n.id);
+    return true;
+  }
+
+  /**
+   * The node the player has chosen to act on, and the one they could choose.
    *
-   * Until Devon is stopped, Bellhaven is a nice place with nothing to inspect,
-   * which is the whole opening move of the game.
+   * A panel used to open because the player was *near* something. That is the
+   * bug behind "the CM-009 screen appeared while I was skating down the middle
+   * of the street": Maple Court has a camera on it, the reach radius was
+   * fourteen metres, and skating past one silently opened a box of verbs over
+   * the road. Proximity is now allowed to do exactly one thing — offer a
+   * prompt — and only an explicit selection opens anything.
+   *
+   * Still gated on VISION, which is a separate and older decision: until Devon
+   * is stopped, Bellhaven is a nice place with nothing to inspect, and that is
+   * the opening move of the game.
    */
   updateFocus(): void {
     if (!this.visionUnlocked) {
       this.focusNode = null;
       this.selectedNodeId = null;
+      this.interactCandidate = null;
       return;
     }
-    if (this.selectedNodeId) {
-      const chosen = this.network.get(this.selectedNodeId);
-      if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
-        this.focusNode = chosen;
-        if (chosen.discovered) this.readNodes.add(chosen.id);
-        return;
-      }
-      // Skating away from a node lets it go, without a menu to dismiss.
-      this.selectedNodeId = null;
-      if (this.hack) this.cancelHack();
+
+    // What is in reach, for the prompt. Never for opening anything.
+    const near = this.network.nearest(this.player.pos, SELECT_RANGE) ?? null;
+    this.interactCandidate = near && near.id !== this.selectedNodeId ? near : null;
+
+    if (!this.selectedNodeId) { this.focusNode = null; return; }
+
+    const chosen = this.network.get(this.selectedNodeId);
+    if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
+      this.focusNode = chosen;
+      if (chosen.discovered) this.readNodes.add(chosen.id);
+      return;
     }
-    const near = this.network.nearest(this.player.pos, 14) ?? null;
-    // Walking away from a dismissed node clears the dismissal, so it is a
-    // "not now", not a permanent mute.
-    if (this.dismissedNodeId && (!near || near.id !== this.dismissedNodeId)) {
-      this.dismissedNodeId = null;
-    }
-    this.focusNode = near && near.id === this.dismissedNodeId ? null : near;
-    if (this.focusNode?.discovered) this.readNodes.add(this.focusNode.id);
+    // Skating away from a node lets it go, without a menu to dismiss.
+    this.selectedNodeId = null;
+    this.focusNode = null;
+    if (this.hack) this.cancelHack();
   }
 
   /**
@@ -1131,7 +1231,6 @@ export class Sim {
     if (!node) return;
     if (node.kind !== 'SERVICE' && dist(node.pos, this.player.pos) > SELECT_RANGE) return;
     if (node.kind === 'SERVICE' && !node.discovered) return;
-    if (this.dismissedNodeId === id) this.dismissedNodeId = null;
     this.selectedNodeId = id;
     this.focusNode = node;
   }
@@ -1178,6 +1277,17 @@ export class Sim {
 
   private updateHack(intent: Intent, _dt: number): void {
     this.updateFocus();
+    /*
+     * The explicit act.
+     *
+     * One press, one screen. Pressing it again with the same thing in reach
+     * puts the screen away, so the control that opens it is the control that
+     * closes it and there is never a panel the player cannot get rid of.
+     */
+    if (intent.interactPressed) {
+      if (this.focusNode) this.dismissFocus();
+      else this.interactWithNearest();
+    }
     if (!this.hack) return;
     // The cost of interfering is time standing still, in a town full of cameras.
     if (this.player.speed > 1.4 || intent.toggleStance) { this.cancelHack(); return; }

@@ -33,11 +33,16 @@ in the veneer, SAFEtrace VISION, and the advertisement's reprise.
 | `Space` | ollie; hold briefly to load |
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
-| Right mouse | aim the slingshot; time does not slow |
-| Left mouse | release |
-| `E` then `1`–`6` | inspect a network node and act on it |
+| `F` | take out the slingshot, and stand still to use it |
+| Left mouse | draw the band; release to throw |
+| `E` then `1`–`6` | reach for the node you are standing next to, and act on it |
 | `Q` | hold for SAFEtrace VISION, once you have earned it |
-| `F3` | diagnostics, including the full risk decomposition |
+| `F3` | diagnostics, including the pursuit state and the risk decomposition |
+
+Nothing opens on its own. A node's panel appears because you pressed `E` — or,
+on a phone, because you tapped the thing itself — and never because you skated
+past it. On a phone the slingshot is two thumbs: the left one drags the sling
+where you want it, the right one pulls the band back and lets go.
 
 ## The idea, in one table
 
