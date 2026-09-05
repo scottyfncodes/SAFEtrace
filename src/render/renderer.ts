@@ -15,7 +15,7 @@ import { ViewCamera } from './camera';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
-import { VeneerRenderer, ROOF_K, roundRect } from './veneer';
+import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
 
 /** Where a node's label hangs: roughly the height its housing sits at. */
@@ -313,6 +313,31 @@ export class Renderer {
     const pullX = grip ? grip.thumb.x : fx + 26;
     const pullY = grip ? grip.thumb.y : forkY + prong * 0.4;
 
+    /*
+     * A stick and a string, which is what this is.
+     *
+     * It used to be a machined fork with a wide rubber band folded through a
+     * point: two straight lines, one thick V, and a dot. That is a diagram of a
+     * catapult, and at any size it collapsed into a letter Y.
+     *
+     * What a fourteen-year-old actually has is a forked branch cut out of a
+     * hedge — thicker at the grip than at the tips, never straight, with a stub
+     * where a twig was taken off — with cord whipped onto each prong and a
+     * scrap of leather between the two cords holding the stone. Every part of
+     * that is drawn below, because every part of it is why the object reads as
+     * something somebody made rather than something the game issued them.
+     */
+    const crotch = { x: fx, y: forkY };
+    const grab = { x: fx, y: forkY + prong * 1.2 };
+    const tipL = { x: fx - span, y: forkY - prong };
+    // The right prong is shorter and sits a little lower. A branch that forks
+    // symmetrically is a branch nobody believes.
+    const tipR = { x: fx + span * 0.92, y: forkY - prong * 0.9 };
+    const BARK = '#6E5236';
+    const LIT = '#9C7B51';
+    const CORD = '#D8C7A4';
+    const LEATHER = '#5A452E';
+
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -323,38 +348,102 @@ export class Renderer {
     ctx.lineWidth = 22;
     ctx.beginPath();
     ctx.moveTo(this.w * 0.08, base);
-    ctx.lineTo(fx, forkY + prong * 0.9);
+    ctx.lineTo(fx, forkY + prong * 1.05);
+    ctx.stroke();
+
+    // --- the branch ---------------------------------------------------------
+    // Drawn before the hand, so the hand closes around the grip rather than
+    // the stick being laid on top of a fist.
+    ctx.strokeStyle = BARK;
+    taperedStroke(ctx, grab, crotch, 12, 9.5, -3);
+    taperedStroke(ctx, crotch, tipL, 9, 4.6, -7);
+    taperedStroke(ctx, crotch, tipR, 8.5, 4.2, 6);
+    // The stub, where a twig was cut off. One detail, and it does more than
+    // the other three put together.
+    taperedStroke(ctx,
+      { x: fx + 1, y: forkY + prong * 0.52 },
+      { x: fx + 11, y: forkY + prong * 0.34 }, 5.5, 2.4, 2, 4);
+
+    // The lit side, up and to the left, thinner and offset just enough to read
+    // as a round stick rather than a flat one.
+    ctx.strokeStyle = LIT;
+    taperedStroke(ctx,
+      { x: grab.x - 1.8, y: grab.y - 1.8 }, { x: crotch.x - 1.8, y: crotch.y - 1.8 },
+      4.5, 3.4, -3);
+    taperedStroke(ctx,
+      { x: crotch.x - 1.8, y: crotch.y - 2 }, { x: tipL.x - 1.4, y: tipL.y - 1.6 },
+      3.4, 1.6, -7);
+    taperedStroke(ctx,
+      { x: crotch.x - 1.2, y: crotch.y - 2 }, { x: tipR.x - 1.2, y: tipR.y - 1.6 },
+      3.2, 1.5, 6);
+
+    // --- cord, whipping and pouch -------------------------------------------
+    // Where the pouch hangs, and which way round it is: its length lies across
+    // the pull, because that is where the two cords come in from.
+    const ax = pullX - fx, ay = pullY - forkY;
+    const len = Math.hypot(ax, ay) || 1;
+    const perp = { x: -ay / len, y: ax / len };
+    const half = 8.5;
+    const endA = { x: pullX + perp.x * half, y: pullY + perp.y * half };
+    const endB = { x: pullX - perp.x * half, y: pullY - perp.y * half };
+    /*
+     * Which cord goes to which end of the pouch.
+     *
+     * "Whichever end is nearer" is the obvious rule and it is wrong: at a long
+     * draw the pouch is nearly edge-on, so the two distances differ by a
+     * couple of pixels out of three hundred and the answer flips — and a
+     * flipped answer draws the cords crossing each other in mid-air. Of the two
+     * possible pairings the shorter *total* is always the one that does not
+     * cross, which is true for any geometry the player can produce, including
+     * drawing back past the fork.
+     */
+    const d = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.hypot(a.x - b.x, a.y - b.y);
+    const straight = d(tipL, endA) + d(tipR, endB) <= d(tipL, endB) + d(tipR, endA);
+    const nearL = straight ? endA : endB;
+    const nearR = straight ? endB : endA;
+
+    // Slack when it is not drawn, taut when it is. String does not thin the way
+    // rubber does, so the tension has to read from the sag instead.
+    const sag = (1 - draw) * 7;
+    ctx.strokeStyle = CORD;
+    ctx.lineWidth = 2.2;
+    for (const [tip, end] of [[tipL, nearL], [tipR, nearR]] as const) {
+      ctx.beginPath();
+      ctx.moveTo(tip.x, tip.y);
+      ctx.quadraticCurveTo((tip.x + end.x) / 2, (tip.y + end.y) / 2 + sag, end.x, end.y);
+      ctx.stroke();
+    }
+
+    // Whipping: the turns of thread that actually hold a cord onto a stick.
+    // Kept just below the tip and just inside the branch's own width, so it
+    // reads as binding rather than as something caught on the end.
+    ctx.lineWidth = 1.5;
+    for (const tip of [tipL, tipR]) {
+      const dx = crotch.x - tip.x, dy = crotch.y - tip.y;
+      const n = Math.hypot(dx, dy) || 1;
+      const ux = dx / n, uy = dy / n;
+      for (let i = 0; i < 3; i++) {
+        const at = { x: tip.x + ux * (3.5 + i * 3.2), y: tip.y + uy * (3.5 + i * 3.2) };
+        ctx.beginPath();
+        ctx.moveTo(at.x - uy * 3.1, at.y + ux * 3.1);
+        ctx.lineTo(at.x + uy * 3.1, at.y - ux * 3.1);
+        ctx.stroke();
+      }
+    }
+
+    // Seated back along the draw, so the fingers are behind the pouch rather
+    // than on top of it: the stone is the thing the player is aiming, and it
+    // has to stay visible at every draw length.
+    const back = { x: pullX + (ax / len) * 12, y: pullY + (ay / len) * 12 };
+    ctx.strokeStyle = shade(VENEER.player, -0.34);
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(this.w * 0.92, base);
+    ctx.lineTo(back.x + 2, back.y + 14);
     ctx.stroke();
     ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.72, 13, 0, Math.PI * 2); ctx.fill();
-
-    // The fork.
-    ctx.strokeStyle = '#8A6A4A';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(fx, forkY + prong * 0.9);
-    ctx.lineTo(fx, forkY);
-    ctx.moveTo(fx, forkY); ctx.lineTo(fx - span, forkY - prong);
-    ctx.moveTo(fx, forkY); ctx.lineTo(fx + span, forkY - prong);
-    ctx.stroke();
-
-    // The band. It thins as it stretches, which is the whole read on tension.
-    ctx.strokeStyle = '#3B4149';
-    ctx.lineWidth = Math.max(1.8, 5.2 - draw * 2.6);
-    ctx.beginPath();
-    ctx.moveTo(fx - span, forkY - prong);
-    ctx.lineTo(pullX, pullY);
-    ctx.lineTo(fx + span, forkY - prong);
-    ctx.stroke();
-
-    // The rock in the pouch, lit from up and left so it reads as a lump of
-    // stone rather than a dot.
-    ctx.fillStyle = '#4E545B';
-    ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#767D85';
-    ctx.beginPath(); ctx.arc(pullX - 1, pullY - 1.1, 5.4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#9AA1A8';
-    ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(back.x, back.y + 8, 13, 0, Math.PI * 2); ctx.fill();
 
     /*
      * The drawing hand, always — including before it is doing anything.
@@ -364,17 +453,34 @@ export class Renderer {
      * and had to be told the other half. Now the arm is there from the first
      * frame, reaching up from the bottom-right corner to the pouch, so the
      * object itself says where each thumb goes: one hand on the fork at the
-     * left, one on the band at the right. There is no ring, no label and no
+     * left, one on the pouch at the right. There is no ring, no label and no
      * hint text, because the thing in front of the player is the instruction.
      */
-    ctx.strokeStyle = shade(VENEER.player, -0.34);
-    ctx.lineWidth = 22;
+    // The pouch: a scrap of leather, drawn as one round-capped stroke across
+    // the pull, with the stone sitting in it.
+    ctx.strokeStyle = LEATHER;
+    ctx.lineWidth = 9;
     ctx.beginPath();
-    ctx.moveTo(this.w * 0.92, base);
-    ctx.lineTo(pullX + 8, pullY + 16);
+    ctx.moveTo(endA.x, endA.y); ctx.lineTo(endB.x, endB.y);
     ctx.stroke();
+    ctx.strokeStyle = shade(LEATHER, 0.22);
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(endA.x - 1, endA.y - 1.4); ctx.lineTo(endB.x - 1, endB.y - 1.4);
+    ctx.stroke();
+
+    // The stone, lit from up and left so it reads as a lump off a driveway
+    // rather than a dot.
+    ctx.fillStyle = '#4E545B';
+    ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#767D85';
+    ctx.beginPath(); ctx.arc(pullX - 1, pullY - 1.1, 5.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9AA1A8';
+    ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
+
+    // The forward hand, closed around the grip.
     ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(pullX + 6, pullY + 11, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.82, 13, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 

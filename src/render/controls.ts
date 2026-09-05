@@ -14,6 +14,10 @@ import { clamp01, smoothstep } from '../core/math';
 import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
+import { taperedStroke } from './veneer';
+
+/** A tapering, slightly bent limb in the current stroke colour. */
+const taper = taperedStroke;
 
 export class ControlsRenderer {
   private stickFade = 0;
@@ -199,33 +203,52 @@ export class ControlsRenderer {
 
     if (id === 'sling') {
       /*
-       * An actual slingshot: a forked handle, two prongs, and the band drawn
-       * back past the crotch with a stone in the pouch.
+       * A forked stick with string across it and a stone in the pouch.
        *
-       * The band used to be slack between the prong tips, which put its "V" on
-       * top of the fork's "V" — so at the size a button actually is, the whole
-       * thing collapsed into a letter Y. Pulling the pouch back below the
-       * crotch separates the two shapes, and it also says what the control
-       * does rather than what the object is.
+       * Two earlier attempts failed at the size a button actually is. A
+       * machined fork with one wide band folded through a point collapsed into
+       * a letter Y. Drawing the pouch back *below* the crotch — which is what
+       * the in-hand view does, correctly, with a whole screen to do it in —
+       * put the cords, the pouch and the handle all in the same forty pixels
+       * and fused them into a blob.
+       *
+       * What reads is the object at rest: the string spans the two tips and
+       * dips into the mouth of the fork, where there is nothing else, with the
+       * pouch and its stone at the bottom of that dip. Every element has clear
+       * air around it, the silhouette is unmistakable at a glance, and it is
+       * still honestly a stick with string tied across it — the limbs taper
+       * and bend, because a branch cut out of a hedge is not a rule.
        */
-      const px = s * 0.66;             // prong half-width
-      const py = s * 0.78;             // prong tip height above the crotch
-      const crotch = y - s * 0.22;
-      const pouch = crotch + s * 0.52; // the band, drawn back
-      ctx.moveTo(x, crotch + s * 0.52); ctx.lineTo(x, crotch);
-      ctx.moveTo(x, crotch); ctx.lineTo(x - px, crotch - py);
-      ctx.moveTo(x, crotch); ctx.lineTo(x + px, crotch - py);
-      ctx.stroke();
+      const px = s * 0.70;              // prong half-width
+      const py = s * 0.86;              // prong tip height above the crotch
+      const crotch = y + s * 0.10;
+      const w = Math.max(1.7, r * 0.075);
+      const tipL = { x: x - px, y: crotch - py };
+      // Shorter, and a shade lower. A branch that forks evenly is a drawing.
+      const tipR = { x: x + px * 0.95, y: crotch - py * 0.92 };
 
+      taper(ctx, { x, y: crotch + s * 0.62 }, { x, y: crotch }, w * 1.15, w, -1.1);
+      taper(ctx, { x, y: crotch }, tipL, w, w * 0.5, -py * 0.2);
+      taper(ctx, { x, y: crotch }, tipR, w * 0.95, w * 0.48, py * 0.18);
+
+      // The string, tied tip to tip and sagging into the mouth of the fork,
+      // which is the one piece of clear space the mark has.
+      const dip = crotch - py * 0.40;
       ctx.lineWidth = Math.max(1, r * 0.035);
       ctx.beginPath();
-      ctx.moveTo(x - px, crotch - py);
-      ctx.lineTo(x, pouch);
-      ctx.lineTo(x + px, crotch - py);
+      ctx.moveTo(tipL.x, tipL.y);
+      ctx.quadraticCurveTo(x, dip + s * 0.16, tipR.x, tipR.y);
       ctx.stroke();
 
+      // The pouch, and the stone sitting in it. The leather is drawn wider
+      // than the stone and the stone rides a little above it, so at button
+      // size the two still read as two things rather than one lump.
+      ctx.lineWidth = Math.max(1.8, r * 0.07);
       ctx.beginPath();
-      ctx.arc(x, pouch, s * 0.24, 0, Math.PI * 2);
+      ctx.moveTo(x - s * 0.26, dip + s * 0.06); ctx.lineTo(x + s * 0.26, dip + s * 0.06);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
       ctx.fill();
       label('SLING');
       return;

@@ -439,6 +439,48 @@ export class VeneerRenderer {
   }
 }
 
+/**
+ * A stroke that gets thinner as it goes, along a curve.
+ *
+ * Canvas has one line width per path, so anything that tapers — a branch, a
+ * limb, a twig — has to be drawn as a run of short segments with round joins
+ * doing the smoothing. That is the whole trick, and it is worth having in one
+ * place because a slingshot cut from a hedge is the difference between an
+ * object and a letter Y.
+ *
+ * `bend` bows the curve sideways by that many pixels at its midpoint, which is
+ * what stops a branch reading as a ruler.
+ */
+export function taperedStroke(
+  ctx: CanvasRenderingContext2D,
+  a: { x: number; y: number }, b: { x: number; y: number },
+  w0: number, w1: number, bend = 0, steps = 7,
+): void {
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // The control point, pushed off the chord's midpoint at right angles.
+  const cx = mx - (dy / len) * bend, cy = my + (dx / len) * bend;
+  const at = (t: number) => {
+    const u = 1 - t;
+    return {
+      x: u * u * a.x + 2 * u * t * cx + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * cy + t * t * b.y,
+    };
+  };
+  let prev = a;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const p = at(t);
+    ctx.lineWidth = w0 + (w1 - w0) * (t - 0.5 / steps);
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    prev = p;
+  }
+}
+
 export function roundRect(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number,
 ): void {

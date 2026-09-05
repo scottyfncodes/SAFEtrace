@@ -104,10 +104,46 @@ while it is held. The only other tell was a border at the edge of the screen, a
 long way from the finger holding it open.
 
 All three now share one typographic system: a mark over its own name, same face,
-same size relative to the button, same baseline. The slingshot glyph also had
-its band pulled back below the crotch — slack between the prong tips put its
-"V" on top of the fork's "V", and at button size the whole thing collapsed into
-a letter Y.
+same size relative to the button, same baseline.
+
+### The slingshot, as a stick and a string
+
+It was a machined fork with one wide rubber band folded through a point: two
+straight lines, one thick V and a dot. That is a diagram of a catapult, and it
+collapsed into a letter Y at every size it was drawn at.
+
+What a fourteen-year-old actually has is a forked branch cut out of a hedge, and
+the in-hand view now draws exactly that — limbs that taper from the grip to the
+tips and bend rather than ruling straight, a stub where a twig was taken off,
+whipping turns where the cord is bound to each prong, two separate cords, and a
+scrap of leather between them holding the stone. Canvas has one line width per
+path, so the taper is a run of short segments with round joins doing the
+smoothing; that lives in `taperedStroke`, next to `roundRect`, because it is the
+difference between an object and a letter.
+
+Two things fell out of drawing it honestly:
+
+- **String does not stretch the way rubber does**, so tension can no longer read
+  from a band that thins. It reads from *sag* instead: the cords bow when the
+  sling is slack and pull straight as the draw comes up.
+- **Which cord goes to which end of the pouch** cannot be "whichever end is
+  nearer". At a long draw the pouch is nearly edge-on, the two distances differ
+  by a couple of pixels out of three hundred, and the answer flips — which draws
+  the cords crossing in mid-air. Of the two possible pairings the shorter
+  *total* is always the one that does not cross, for any geometry the player can
+  produce, including drawing back past the fork.
+
+The drawing hand is also seated back along the draw axis and behind the pouch
+now, rather than at a fixed offset that covered the stone at long draws. The
+stone is the thing being aimed; it stays visible.
+
+The button glyph is the same object, but it is **not** the same drawing. Pulling
+the pouch back below the crotch — correct in the aiming view, which has a whole
+screen — put the cords, the pouch and the handle inside the same forty pixels
+and fused them. What reads at button size is the object *at rest*: the string
+spans the two tips and dips into the mouth of the fork, which is the one piece
+of clear space the mark has, with the pouch and its stone at the bottom of the
+dip. The limbs still taper and still bend.
 
 ### The bug this pass actually found
 
