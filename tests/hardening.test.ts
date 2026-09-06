@@ -6,6 +6,7 @@ import { buildBellhaven } from '../src/content/bellhaven';
 import { aimSway, TUNE } from '../src/sim/player';
 import { StoryDirector } from '../src/content/story';
 import type { Sim } from '../src/sim/sim';
+import { dist } from '../src/core/math';
 
 /**
  * The story director needs a host. These stand in for the parts of the game
@@ -104,6 +105,56 @@ describe('the story runs on simulation time', () => {
   it('does not schedule story work on any wall clock', () => {
     const src = String(StoryDirector);
     expect(src).not.toMatch(/setTimeout|setInterval|Date\.now|performance\.now/);
+  });
+});
+
+/**
+ * Devon is the only figure in the game who is *supposed* to be behind you, so
+ * he is the one who most easily reads as the wrong thing. The previous pass
+ * gave him a board; this is about what he does rather than how he is drawn.
+ */
+describe('the friend behind you reads as a friend', () => {
+  it('does not close on a player who is not moving', () => {
+    const sim = makeSim();
+    const start = dist(sim.devonPos, sim.player.pos);
+
+    // The opening advertisement: half a minute in which the player is frozen
+    // by definition. Devon used to cross eight metres of it at walking pace
+    // and end up under three metres off their back.
+    for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
+
+    expect(dist(sim.devonPos, sim.player.pos)).toBeCloseTo(start, 5);
+    expect(sim.devon.speed).toBe(0);
+  });
+
+  it('still skates after a player who is actually going somewhere', () => {
+    const sim = makeSim();
+    const push = () => { const i = emptyIntent(); i.push = true; i.pushPressed = true; return i; };
+    for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
+
+    let closest = Infinity;
+    for (let i = 0; i < 60 * 20; i++) {
+      sim.step(TICK_DT, push(), null);
+      if (i > 60) closest = Math.min(closest, dist(sim.devonPos, sim.player.pos));
+    }
+
+    // He comes along, at something like the player's pace...
+    expect(sim.devon.speed).toBeGreaterThan(1);
+    expect(dist(sim.devonPos, sim.player.pos)).toBeLessThan(9);
+    // ...without ever arriving in their personal space on the way.
+    expect(closest).toBeGreaterThan(3.5);
+
+    // And once the player has rolled to a halt, so has he. He keeps station
+    // through the coast, which is right — a board does not stop when you stop
+    // pushing — and then both of them are simply standing there.
+    for (let i = 0; i < 60 * 20; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.player.speed).toBe(0);
+    expect(sim.devon.speed).toBe(0);
+
+    const held = dist(sim.devonPos, sim.player.pos);
+    expect(held).toBeGreaterThan(3.5);
+    for (let i = 0; i < 60 * 20; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(dist(sim.devonPos, sim.player.pos)).toBeCloseTo(held, 5);
   });
 });
 

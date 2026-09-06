@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 354 tests: simulation, determinism, architecture, content, touch
+npm test         # 356 tests: simulation, determinism, architecture, content, touch
 npm run build
 ```
 
@@ -126,7 +126,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-354 tests, all headless, in about ten seconds.
+356 tests, all headless, in about ten seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.

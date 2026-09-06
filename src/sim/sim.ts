@@ -388,7 +388,28 @@ export class Sim {
       y: this.player.pos.y - Math.sin(this.player.heading) * 5.5,
     };
     const d = dist(this.devonPos, target);
-    const speed = Math.min(this.player.speed * 1.05 + 1.2, Math.max(0, d) * 2.2);
+    /*
+     * A friend who is going nowhere stands still.
+     *
+     * The closing speed used to carry a flat `+ 1.2` floor, so Devon moved at
+     * walking pace at a player who was not moving at all — and because his
+     * station is a point 5.5 m *behind* them, the straight line to it goes
+     * past their shoulder. Measured over the opening advertisement, where the
+     * player is frozen by definition: he closed 11.3 m to **2.8 m**, then
+     * settled at 5.2 m and held it. Somebody crossing eight metres of grass to
+     * stand three metres off your back while you cannot move is not what
+     * waiting for your mate looks like. It is the single most tail-like thing
+     * in the build, it is the first thing that happens, and it is very
+     * probably what three passes of "the cop is hunting me immediately" were
+     * actually looking at — the renderer pass fixed how he is drawn without
+     * touching what he does.
+     *
+     * The floor now scales with the player instead of being constant, so it is
+     * unchanged at any speed anybody skates at and goes to zero when they
+     * stop. Stand still, and Devon stands still too.
+     */
+    const floor = Math.min(1.2, this.player.speed);
+    const speed = Math.min(this.player.speed * 1.05 + floor, Math.max(0, d) * 2.2);
     if (d > 0.4) {
       const dir = norm({ x: target.x - this.devonPos.x, y: target.y - this.devonPos.y });
       const to = { x: this.devonPos.x + dir.x * speed * dt, y: this.devonPos.y + dir.y * speed * dt };

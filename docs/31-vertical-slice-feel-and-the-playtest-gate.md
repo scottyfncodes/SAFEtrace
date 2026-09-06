@@ -113,5 +113,78 @@ a person's first ten minutes, and the only instrument for that is a person.
 
 ## What was tested
 
-354 tests. `npm run typecheck` clean, `npm test` 354 passing across 11 files in
+356 tests. `npm run typecheck` clean, `npm test` 356 passing across 11 files in
 about fourteen seconds, `npx vite build` green at 202 kB / 68 kB gzipped.
+
+---
+
+## Addendum — "Here he comes"
+
+The pass above went out, the site went live, and the first report back was a
+screenshot of the opening advertisement with three words attached:
+
+> Here he comes.
+
+The blue figure is Devon. He has a board now, which is the previous pass
+working. What that pass did not touch is what he *does*, and this is the
+measurement over the thirty-three seconds of the advertisement — during which
+the player is frozen, because the advertisement steps the world with an empty
+intent:
+
+```
+ 0s  gap = 11.31 m   devon 0.00   player 0.00
+ 3s  gap =  7.88 m   devon 1.20   player 0.00
+ 6s  gap =  4.69 m   devon 1.20   player 0.00
+ 9s  gap =  2.81 m   devon 1.20   player 0.00     <- closest
+15s  gap =  5.16 m   devon 0.00   player 0.00
+```
+
+Devon crossed **eight and a half metres of grass at walking pace to stand
+2.8 m off the back of a player who could not move**, and then settled at five
+and held it. That is the first thing that happens in the game, over the words
+*"A place worth looking after."*
+
+The cause is one term:
+
+```ts
+const speed = Math.min(this.player.speed * 1.05 + 1.2, Math.max(0, d) * 2.2);
+//                                          ^^^^^
+```
+
+A flat floor, so Devon closes at 1.2 m/s regardless of whether the player is
+moving at all. And because his station is a point 5.5 m *behind* the player,
+the straight line to it goes past their shoulder — which is where the 2.8 m
+comes from. He is not stopping next to you; he is walking through you to get
+to a spot behind you.
+
+The floor now scales with the player:
+
+```ts
+const floor = Math.min(1.2, this.player.speed);
+```
+
+Identical at any speed anybody actually skates at, zero when they are standing
+still. Stand still, and Devon stands still.
+
+| | Before | After |
+| --- | --- | --- |
+| Gap through the advertisement | 11.31 → **2.81** → 5.16 m | 11.31 m, unchanged |
+| Devon's speed while the player is frozen | 1.20 m/s | 0.00 m/s |
+| Closest approach over a 20 s ride | — | 4.54 m |
+| Still follows a moving player | yes | yes — 10.98 m/s against the player's 11.25 |
+
+### The lesson, again, one layer further in
+
+Pass 30 concluded that when a report survives a fix the tests say worked, the
+question is not "what else is wrong with the mechanism" but "what is the player
+actually looking at". That was right, and it was still not the whole answer.
+
+Devon was drawn wrong *and* behaved wrong, and fixing the drawing made the
+behaviour easier to see rather than fixing it. A figure that crosses open ground
+toward you while you cannot move is the most tail-like event in the build, it
+happens before the player has ever had control, and four passes of "the cop is
+hunting me immediately" were very likely looking straight at it.
+
+The thing that finally located it was not reading the follow code. It was
+printing the gap, in metres, once a second, over exactly the window the player
+was complaining about.
