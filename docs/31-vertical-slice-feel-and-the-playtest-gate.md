@@ -188,3 +188,47 @@ hunting me immediately" were very likely looking straight at it.
 The thing that finally located it was not reading the follow code. It was
 printing the gap, in metres, once a second, over exactly the window the player
 was complaining about.
+
+---
+
+## Second addendum — "Oh that's Devon?? I thought that was the cop!"
+
+The Devon-distance fix above went live, and the next report was a reaction to
+the very screenshot that proved it worked: Devon, correctly held back at a
+friendly distance, standing still on a sidewalk. And the read was still wrong.
+
+The distance was never the only problem. His colour is `#3F8FE8` — a bright,
+saturated blue. The uniform, from pass 30, is `#28374D` — a dark, desaturated
+blue. Different shades, same hue family, and this is a game about being
+watched by the police. "Blue figure, standing still, near you" is a read the
+eye makes before it gets anywhere near comparing shade or saturation. Pass 30
+fixed the officer reading as a neighbour; it never rechecked Devon's colour
+against the uniform it had just invented, because Devon's colour predates that
+pass by several sessions.
+
+Devon is green now — `#5FBF52` — a hue nothing else on a person's silhouette
+in this game uses: not the uniform's blue, not the civilian palette (he is a
+named character, not one more resident), not the officer's own amber/red alert
+lights, not the player's orange.
+
+A test now pins this down structurally rather than leaving it to be noticed a
+third time: `tests/legibility.test.ts` converts both colours to hue and asserts
+Devon sits more than sixty degrees from the uniform and more than forty from
+either of the officer's alert states. It does **not** extend the same
+assertion to the civilian palette — one resident colour, `#6E7A88`, sits closer
+to the uniform by hue alone than that bar would allow, and pass 30's own
+frustum probe already measured that this reads fine in play (0% of officers
+mistaken for residents), because the cap and the shoulder light are doing that
+disambiguation, not hue. Asserting a threshold the codebase doesn't actually
+need would have manufactured a bug rather than guarded a real one.
+
+### The pattern across three reports
+
+"Here he comes" was about *where* Devon was. "I thought that was the cop" was
+about *what colour* he was. Both are the same lesson from pass 30, applied to
+the one character the game had not yet applied it to: a person is told apart
+from another person by several independent signals at once — position, motion,
+colour, silhouette — and getting three of the four right does not mean a
+fourth cannot still say the wrong thing before anyone reads the rest.
+
+358 tests, typecheck clean, build green.

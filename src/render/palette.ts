@@ -30,7 +30,20 @@ export const VENEER = {
   accent: '#2C8C8C',
   warning: '#E8A33D',
   player: '#E8563F',
-  friend: '#3F8FE8',
+  /*
+   * Devon was blue. The uniform, below, is also blue — darker and greyer, but
+   * this is a game about being watched by the police, and "blue figure,
+   * standing still, near you" is a read the eye makes before it gets as far
+   * as comparing shades. A playtester's first reaction to a screenshot of
+   * their own best friend was "oh that's Devon?? I thought that was the cop!"
+   *
+   * So blue is the uniform's alone now. Devon gets a colour from nowhere near
+   * it: not the civilian palette below (he is a named character, not one more
+   * resident), not amber or red (those are the officer's own alert states),
+   * not the player's orange (that would read as a second player). Green is
+   * the one hue nothing else in a person's silhouette uses.
+   */
+  friend: '#5FBF52',
   tree: '#5E8A54',
   /*
    * People, and telling them apart.
