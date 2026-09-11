@@ -201,6 +201,14 @@ export class ControlsRenderer {
       return;
     }
 
+    if (id === 'grab') {
+      // The same reasoning as TRICK: which grab is the cycle's business, not
+      // the player's, so the button carries the word alone.
+      ctx.font = `700 ${Math.round(r * 0.33)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('GRAB', x, y);
+      return;
+    }
+
     if (id === 'sling') {
       /*
        * A forked stick with string across it and a stone in the pouch.

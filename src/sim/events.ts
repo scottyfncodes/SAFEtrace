@@ -61,6 +61,8 @@ export interface SimEvents extends Record<string, unknown> {
   'player:pop': { pos: Vec2 };
   /** The board came all the way round and the feet caught it. */
   'player:trick': { pos: Vec2; name: string };
+  /** Still holding it when the wheels touched down. */
+  'player:grab': { pos: Vec2; name: string };
   'player:fire': { pos: Vec2; draw: number };
   'projectile:impact': { kind: ImpactKind; pos: Vec2; targetId?: string };
   'noise:event': { pos: Vec2; label: string };

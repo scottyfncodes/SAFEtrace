@@ -15,6 +15,8 @@ export interface Intent {
   ollieReleased: boolean;
   /** One press, one trick. Which trick is not the input layer's business. */
   trickPressed: boolean;
+  /** One press, one grab. Which grab — same as a trick — is not this layer's business. */
+  grabPressed: boolean;
   toggleStance: boolean;
   aim: boolean;
   fire: boolean;
@@ -61,6 +63,7 @@ export interface Intent {
 export const emptyIntent = (): Intent => ({
   steer: 0, push: false, pushPressed: false, brake: false,
   ollieHeld: false, olliePressed: false, ollieReleased: false, trickPressed: false,
+  grabPressed: false,
   toggleStance: false, aim: false, fire: false, firePressed: false,
   planView: false, interact: false, interactPressed: false,
   pointer: { x: 0, y: 0 }, pointerActive: false,
@@ -81,6 +84,7 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
   base.olliePressed ||= add.olliePressed;
   base.ollieReleased ||= add.ollieReleased;
   base.trickPressed ||= add.trickPressed;
+  base.grabPressed ||= add.grabPressed;
   base.toggleStance ||= add.toggleStance;
   base.aim ||= add.aim;
   base.fire ||= add.fire;
@@ -109,6 +113,7 @@ const CODE = {
   brake: ['KeyS', 'ArrowDown'],
   ollie: ['Space'],
   trick: ['KeyR'],
+  grab: ['KeyG'],
   stance: ['ShiftLeft', 'ShiftRight'],
   planView: ['KeyQ'],
   interact: ['KeyE'],
@@ -208,6 +213,7 @@ export class InputManager {
     i.olliePressed = this.any(CODE.ollie, this.pressed);
     i.ollieReleased = this.any(CODE.ollie, this.released);
     i.trickPressed = this.any(CODE.trick, this.pressed);
+    i.grabPressed = this.any(CODE.grab, this.pressed);
     i.toggleStance = this.any(CODE.stance, this.pressed) || gpBtn(3);
     i.interact = this.any(CODE.interact, this.down);
     i.interactPressed = this.any(CODE.interact, this.pressed);

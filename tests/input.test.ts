@@ -74,3 +74,14 @@ describe('the mouse slingshot is one control, the way the README says', () => {
     expect(i.firePressed).toBe(false);
   });
 });
+
+describe('the keyboard grab binding', () => {
+  it('asks for a grab on G, and only for the one frame it was pressed', () => {
+    const { target, input } = harness();
+    target.fire('keydown', { code: 'KeyG', repeat: false });
+    expect(input.sample().grabPressed).toBe(true);
+    // A press is a press, not a hold — the next sample sees nothing new
+    // unless the key comes back up and down again.
+    expect(input.sample().grabPressed).toBe(false);
+  });
+});

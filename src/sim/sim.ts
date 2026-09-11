@@ -14,7 +14,7 @@ import {
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
 import type { SimEvents } from './events';
-import { TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
+import { GRABS, TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
   type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
@@ -309,6 +309,7 @@ export class Sim {
     // 1-2. Input and movement.
     this.updateAim(intent, pointerWorld);
     this.requestTrick(intent);
+    this.requestGrab(intent);
     updatePlayer(this.player, intent, this.world, dt);
     this.holdAimAnchor();
     this.emitPlayerFeedback();
@@ -376,11 +377,28 @@ export class Sim {
     this.player.trickRequest = TRICKS[this.rng.int(0, TRICKS.length - 1)];
   }
 
+  /**
+   * Which grab, decided here rather than by the player — but cycled, not
+   * rolled. A trick is over in under half a second, so which one it turns out
+   * to be is the discovery; a grab is held for as long as you can stay in the
+   * air, so it is the one the player is actually choosing to go for, and
+   * choosing means the same press does not hand back whatever it already gave
+   * you. Advances on every press, whether or not the grab is landed, so a
+   * bailed attempt is not also a wasted turn of the wheel.
+   */
+  private requestGrab(intent: Intent): void {
+    if (!intent.grabPressed) return;
+    if (this.aimMode || !this.player.onBoard || this.player.trick || this.player.grab) return;
+    this.player.grabRequest = GRABS[this.player.grabIndex];
+    this.player.grabIndex = (this.player.grabIndex + 1) % GRABS.length;
+  }
+
   private emitPlayerFeedback(): void {
     const p = this.player;
     if (p.pushedThisTick) this.bus.emit('player:push', { pos: p.pos, speed: p.speed });
     if (p.poppedThisTick) this.bus.emit('player:pop', { pos: p.pos });
     if (p.trickedThisTick) this.bus.emit('player:trick', { pos: p.pos, name: p.trickedThisTick.name });
+    if (p.grabbedThisTick) this.bus.emit('player:grab', { pos: p.pos, name: p.grabbedThisTick.name });
     if (p.landedThisTick) this.bus.emit('player:land', { pos: p.pos, speed: p.speed });
     if (p.bailedThisTick) this.bus.emit('player:bail', { pos: p.pos });
   }

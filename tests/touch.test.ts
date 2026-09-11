@@ -47,7 +47,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') =>
+const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan' | 'grab') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
 beforeEach(() => { engine = make(); clock = 1000; });
@@ -186,11 +186,13 @@ describe('the controls are laid out for a thumb, on the phones that exist', () =
          * reaches the middle third where the board and the road actually are.
          */
         const covered = buttons.reduce((n, b) => n + Math.PI * b.radius * b.radius, 0);
-        // Seven per cent of the glass, worst case, on the smallest phone in
-        // the list. The targets deliberately do not shrink on a small screen —
-        // that is exactly the screen where a thumb needs them most — so the
-        // budget is set by the 320 px SE and everything else has more room.
-        expect(covered / (usable.w * usable.h)).toBeLessThan(0.07);
+        // Eight per cent of the glass, worst case, on the smallest phone in
+        // the list — up from seven now that GRAB is a fourth circle rather
+        // than three. The targets deliberately do not shrink on a small
+        // screen — that is exactly the screen where a thumb needs them
+        // most — so the budget is set by the 320 px SE and everything else
+        // has more room.
+        expect(covered / (usable.w * usable.h)).toBeLessThan(0.08);
         for (const b of buttons) {
           const intrudes = b.pos.x - b.radius < v.w * 0.42 && b.pos.y - b.radius < v.h * 0.55;
           expect({ id: b.id, intrudes }).toEqual({ id: b.id, intrudes: false });
@@ -362,14 +364,14 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
 
     fresh.setSlingAvailable(false);
     fresh.setAiming(true);
     fresh.setAiming(false);
     fresh.setSlingAvailable(true);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
-    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
   });
 
   /*
@@ -428,18 +430,26 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     /*
      * A dedicated jump button is what a game gives you when it does not trust
      * its tricks. TRICK pops on its own — that is one motion under a foot —
-     * so there is nothing here to press for air on its own, by design.
+     * and GRAB pops on its own the same way, so there is nothing here to
+     * press for air on its own, by design, however many buttons join it.
      */
     const ids = engine.buttonLayout().map((b) => b.id);
     expect(ids).not.toContain('ollie');
-    // Two primaries and one secondary. Nothing is allowed to make it four.
-    expect(ids.length).toBe(3);
+    expect(ids).not.toContain('pop');
+    // Two primaries, and everything added since has come in as a secondary —
+    // SLING and TRICK are the only two an unlooked-for press should ever
+    // reach at full size.
     expect(engine.buttonLayout().filter((b) => b.weight === 'primary').length).toBe(2);
   });
 
   it('asks for the aiming mode on a tap of the sling', () => {
     tap(engine, button(engine, 'sling'));
     expect(engine.sample().aimModePressed).toBe(true);
+  });
+
+  it('asks for a grab on a tap of GRAB, the same shape as a tap of TRICK', () => {
+    tap(engine, button(engine, 'grab'));
+    expect(engine.sample().grabPressed).toBe(true);
   });
 
   it('dims and refuses the sling when there is nothing to shoot with', () => {
@@ -728,6 +738,29 @@ describe('aiming: the left thumb moves the sling, the right thumb shoots', () =>
     const i = engine.sample();
     expect(i.fire).toBe(false);
     expect(i.aimModePressed).toBe(true);
+  });
+
+  it('leaves the mode on a long, steady hold too, not only a quick tap', () => {
+    /*
+     * Holding a line while deciding whether to let go is the ordinary shape
+     * of aiming, not a button press with a stopwatch on it — so the exit used
+     * to miss anybody who paused for more than a quarter of a second before
+     * lifting their thumb, which is nearly everybody who actually looked at
+     * something before deciding to stop.
+     */
+    engine.handle('down', at(HAND, 1, clock));
+    clock += 900; // well past TOUCH_TUNING.tapMs, thumb never moves
+    engine.handle('up', at(HAND, 1, clock));
+    expect(engine.sample().aimModePressed).toBe(true);
+  });
+
+  it('does not leave the mode on a release after an actual drag, long or short', () => {
+    engine.handle('down', at(HAND, 1, clock));
+    clock += 16;
+    engine.handle('move', at({ x: HAND.x + 60, y: HAND.y }, 1, clock));
+    clock += 16;
+    engine.handle('up', at({ x: HAND.x + 60, y: HAND.y }, 1, clock));
+    expect(engine.sample().aimModePressed).toBe(false);
   });
 
   it('never asks the character to move while a shot is being lined up', () => {

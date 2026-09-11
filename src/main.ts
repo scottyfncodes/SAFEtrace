@@ -350,6 +350,7 @@ class Game {
     bus.on('vision:unlocked', () => this.audio.motif(0.8));
     // Caught it: a sound, and nothing written on the screen about it.
     bus.on('player:trick', () => this.audio.land(0.6));
+    bus.on('player:grab', () => this.audio.land(0.6));
     bus.on('aim:entered', () => {
       // Start looking where the character already faces, so the transition
       // never spins the world.

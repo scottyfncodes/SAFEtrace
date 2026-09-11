@@ -79,17 +79,22 @@ export const TOUCH_TUNING = {
   /** Minimum gap between any two hit circles. */
   separation: 16,
   /**
-   * Where the two primaries and the secondary sit relative to the anchor
+   * Where the primaries and the secondaries sit relative to the anchor
    * button, which is the one in the corner under the resting thumb.
    *
    * TRICK is up *and* left rather than straight left: that is the direction the
    * thumb sweeps anyway, and the vertical component is what buys clearance from
    * the movement pad on a 320 px-wide phone. PLAN is straight up the column,
    * far enough that it is a deliberate extension rather than something a thumb
-   * brushes on its way back from TRICK.
+   * brushes on its way back from TRICK. GRAB carries on up the same column
+   * TRICK's x sits on, further than PLAN — going any further *left* than
+   * TRICK leaves less than the width of a fingertip before the aiming split
+   * down the middle of a 320 px phone, so the fourth circle has to find its
+   * clearance from the other three by going up, not sideways.
    */
   trickOffset: { x: -76, y: -84 },
   planOffset: { x: 0, y: -158 },
+  grabOffset: { x: -76, y: -220 },
   /**
    * The stick reaches full deflection this far from where it was planted.
    *
@@ -130,7 +135,7 @@ export const TOUCH_TUNING = {
   pullMin: 14,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'grab' | 'aim' | 'pull' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -146,7 +151,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick' | 'plan';
+  id: 'sling' | 'trick' | 'plan' | 'grab';
   pos: { x: number; y: number };
   /** What is drawn. */
   radius: number;
@@ -179,6 +184,7 @@ export class TouchEngine {
   private pendingTap: { x: number; y: number } | null = null;
   private pendingSkip = false;
   private pendingTrick = false;
+  private pendingGrab = false;
   private pendingAimMode = false;
   private pendingFire = false;
   /**
@@ -217,6 +223,7 @@ export class TouchEngine {
     this.tracks.clear();
     this.pendingTap = null;
     this.pendingTrick = false;
+    this.pendingGrab = false;
     this.pendingAimMode = false;
     this.pendingFire = false;
     this.aimDrag.x = 0;
@@ -224,12 +231,15 @@ export class TouchEngine {
   }
 
   /**
-   * Three controls, on the arc a right thumb sweeps.
+   * Four controls, on the arc a right thumb sweeps.
    *
-   * There were four once, then three, then two. POP went because the TRICK
-   * button pops on its own. The eye went — and stays gone — because VISION is
-   * a story unlock and must never grow a control: a button appearing in front
-   * of somebody who was mid-push is the thing that keeps being reported.
+   * There were four once, then three, then two, then four again — but not the
+   * same four. POP went because the TRICK button pops on its own. The eye
+   * went — and stays gone — because VISION is a story unlock and must never
+   * grow a control: a button appearing in front of somebody who was mid-push
+   * is the thing that keeps being reported. GRAB is new, and it is not that
+   * button either: it is here from the first frame, same as the other three,
+   * so there is nothing for a story beat to grow later.
    *
    * PLAN is not that button. It is here from the very first frame, before the
    * story has said anything, because the plan view is a *view* and every
@@ -249,6 +259,16 @@ export class TouchEngine {
    *   PLAN sits further up the same column, smaller and quieter. It is a
    *   deliberate extension of the thumb, not somewhere a thumb ends up by
    *   accident on its way back from TRICK.
+   *
+   *   GRAB sits above PLAN, directly over TRICK, at PLAN's own weight and
+   *   size. It is pressed once and then held through — a whole flight's
+   *   worth of air, not a flick — so a slightly smaller, slightly further
+   *   target costs it nothing the way it would TRICK. Straight up rather
+   *   than further out along TRICK's own diagonal: going any further left on
+   *   a 320 px phone leaves less than a fingertip's width before the split
+   *   down the middle of the aiming screen, so the fourth circle finds its
+   *   clearance from the other three by climbing the column, not by
+   *   widening it.
    */
   buttonLayout(): ControlButton[] {
     const t = this.tuning;
@@ -263,6 +283,7 @@ export class TouchEngine {
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
     const trickY = Math.max(ceiling + 40, anchor.y + t.trickOffset.y);
+    const grabY = Math.max(ceiling, anchor.y + t.grabOffset.y);
 
     return [
       {
@@ -277,6 +298,11 @@ export class TouchEngine {
       },
       {
         id: 'plan', pos: { x: anchor.x + t.planOffset.x, y: planY },
+        radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
+        pressed: false, enabled: true,
+      },
+      {
+        id: 'grab', pos: { x: anchor.x + t.grabOffset.x, y: grabY },
         radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
         pressed: false, enabled: true,
       },
@@ -414,10 +440,20 @@ export class TouchEngine {
 
     switch (track.role) {
       case 'aim':
-        // Pointing the sling is pointing the sling. A tap — no drag at all —
-        // is the way back out of the mode, and it is the only thing the left
-        // thumb can do besides aim. It can never fire.
-        if (!cancelled && isTap) this.pendingAimMode = true;
+        /*
+         * Lifted without having dragged it anywhere is the way back out of
+         * the mode, and it is the only thing the left thumb can do besides
+         * aim. It can never fire.
+         *
+         * This used to also require the lift to come quickly — the same
+         * `tapMs` window a button press does — which is the wrong model for
+         * a thumb that is genuinely just aiming. Holding a line steady while
+         * deciding whether to let go is the ordinary shape of aiming, not a
+         * slow tap, and a quarter of a second is nothing next to how long
+         * that decision can take. Whether the exit registers should depend on
+         * whether the thumb moved, never on how long it sat still first.
+         */
+        if (!cancelled && track.moved <= this.tuning.tapSlop) this.pendingAimMode = true;
         break;
       case 'pull': {
         if (cancelled) break;
@@ -435,6 +471,9 @@ export class TouchEngine {
         break;
       case 'trick':
         if (isTap) this.pendingTrick = true;
+        break;
+      case 'grab':
+        if (isTap) this.pendingGrab = true;
         break;
       case 'idle':
         if (isTap) { this.pendingTap = { x: s.x, y: s.y }; this.pendingSkip = true; }
@@ -534,6 +573,7 @@ export class TouchEngine {
 
     if (this.planHeld) i.planView = true;
     if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
+    if (this.pendingGrab) { i.grabPressed = true; this.pendingGrab = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
     if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
     return i;

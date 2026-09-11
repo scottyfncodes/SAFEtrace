@@ -29,11 +29,6 @@ import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
 
 /** Eye height of a teenager standing on a board. */
 export const EYE_Z = 1.62;
-/**
- * Narrower than it was, to buy back some of the rider's size after the camera
- * moved half again as far out. Dollying back and tightening the lens is how you
- * get more world in frame without the subject becoming a speck.
- */
 /*
  * A long lens, on purpose. This is most of the miniature.
  *
@@ -42,11 +37,21 @@ export const EYE_Z = 1.62;
  * the opposite — it flattens the depth between near and far until a street
  * reads as a set of objects arranged on a table, which is exactly the trick
  * every photograph of a model railway plays and exactly what a Micro Machines
- * track looks like. So the field of view keeps narrowing: 54 degrees, then 46,
- * now 34. It also happens to make the rider *larger* on the glass than a wider
- * lens would from the same place, which is what pays for the higher vantage.
+ * track looks like. It narrowed across three passes — 54 degrees, then 46,
+ * then 34 — each time to buy the rider's size back after the rig moved
+ * further out, which is a real trade-off and not a free one: a longer lens is
+ * also a narrower window onto whatever is beside you, and the next report was
+ * "skating feels more limiting than it does freeing" the very session after
+ * the 34-degree pass shipped. A rider has to see what's coming up alongside
+ * them to carve around it, weave through it, use it — that field of view is
+ * not scenery, it is the input the whole skill is built on, and a diorama
+ * that costs a player their peripheral vision has made the wrong trade. Back
+ * to 40, which is where it sat for every pass before the one that went too
+ * far. The rig still sits further out than it used to — see `ChaseCamera`
+ * below — so the rider still reads smaller against more of the town; that
+ * half of "smaller and further away" cost nothing to keep.
  */
-const VFOV = (34 * Math.PI) / 180;
+const VFOV = (40 * Math.PI) / 180;
 const NEAR = 0.25;
 /*
  * How far the world is drawn.
@@ -743,8 +748,13 @@ export class PerspectiveRenderer {
      * Feet up while the board is turning. This is the whole of the rider's
      * part in a trick: they pull their knees up, the deck goes round beneath
      * them, and they put their feet back down on it on the way out.
+     *
+     * A grab has no rotation to make room for, but it still isn't a straight-
+     * legged hang — the knees come up a little to bring the board within
+     * reach of the hand going down to meet it, and stay there for as long as
+     * the grab is held rather than tracing a phase.
      */
-    const tuck = tr && !tr.landed ? Math.sin(ph * Math.PI) * 0.28 : 0;
+    const tuck = (tr && !tr.landed ? Math.sin(ph * Math.PI) * 0.28 : 0) + (p.grab ? 0.14 : 0);
 
     /*
      * Nobody rides a skateboard with straight legs, and nobody's knees know
@@ -836,9 +846,19 @@ export class PerspectiveRenderer {
     for (const side of [1, -1]) {
       // The shoulder is on the torso, not floating beside it.
       const shoulder = at(bodyF, side * 0.15 + lean * 0.30);
+      /*
+       * A grab sends one hand to the deck instead of out for balance —
+       * `onBoard` is the same function the trick above turns the deck through,
+       * so the hand is placed in the board's own frame and travels with it.
+       * The other arm doesn't know anything happened.
+       */
+      const grabbing = p.grab && p.grab.spec.side === side ? p.grab.spec : null;
+      const grabPoint = grabbing ? onBoard(grabbing.f, grabbing.r, 0.10) : null;
       const swingF = running ? -swing(side) * 0.34 : reach * 0.16;
-      const hand = at(bodyF + swingF - side * lean * 0.10, side * spread + lean * 0.24);
-      const handZ = shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
+      const hand = grabPoint ?? at(bodyF + swingF - side * lean * 0.10, side * spread + lean * 0.24);
+      const handZ = grabPoint
+        ? grabPoint.z
+        : shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
       this.twoBone(cam, shoulder, shoulderZ, hand, handZ, ARM_UPPER, ARM_LOWER, elbowTo, 0.048, legCol);
       // A hand, so the arm ends in something.
       this.card(cam, hand, handZ, 0.05, 0.05, '#F2D3B8');

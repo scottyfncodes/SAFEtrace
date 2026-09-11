@@ -4,7 +4,7 @@ import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import type { Vec2 } from '../src/core/math';
 import type { Sim } from '../src/sim/sim';
-import { TRICKS } from '../src/sim/player';
+import { GRABS, TRICKS } from '../src/sim/player';
 
 /** Chest height on a person, which is what the sling is pointed at. */
 const PERSON_Z = 1.15;
@@ -478,5 +478,115 @@ describe('tricks are the board, not the rider', () => {
     const a = run();
     expect(new Set(a).size).toBeGreaterThan(2);
     expect(run()).toEqual(a);
+  });
+});
+
+describe('a grab is held, not spun', () => {
+  /*
+   * The opposite shape from a trick on purpose: a flip is over in under half
+   * a second, so which one it turns out to be is the discovery and rolling
+   * for it is the point. A grab is held for as long as the player can stay in
+   * the air, so which one it is is a choice the player is making, and a
+   * button that hands back whatever it already gave you is not a choice.
+   * Cycling, never rolling, is the whole difference.
+   */
+  const press = (sim: Sim): void => {
+    const it = emptyIntent();
+    it.grabPressed = true;
+    sim.step(TICK_DT, it, null);
+  };
+
+  it('names six grabs that exist, each with a real point on the deck', () => {
+    const by = new Map(GRABS.map((g) => [g.name, g]));
+    expect([...by.keys()].sort()).toEqual([
+      'INDY', 'MELON', 'MUTE', 'NOSEGRAB', 'STALEFISH', 'TAILGRAB',
+    ]);
+    // Every point named is actually on the deck, not off the end of it.
+    for (const g of GRABS) {
+      expect(Math.abs(g.f)).toBeLessThanOrEqual(1);
+      expect(Math.abs(g.r)).toBeLessThanOrEqual(0.2);
+    }
+    // Nose and tail are the two ends, and nothing else reaches that far out.
+    expect(by.get('NOSEGRAB')!.f).toBeGreaterThan(0.7);
+    expect(by.get('TAILGRAB')!.f).toBeLessThan(-0.7);
+  });
+
+  it('pops on its own, so one press is one motion', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    expect(sim.player.stance).toBe('ROLL');
+    press(sim);
+    expect(sim.player.stance).toBe('AIR');
+    expect(sim.player.grab).not.toBeNull();
+  });
+
+  it('advances through the list on every press, in the same order every time', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    const seen: string[] = [];
+    for (let i = 0; i < GRABS.length + 2; i++) {
+      press(sim);
+      seen.push(sim.player.grab!.spec.name);
+      step(sim, 2.0); // clear of the ground and back down before asking again
+    }
+    expect(seen.slice(0, GRABS.length)).toEqual(GRABS.map((g) => g.name));
+    // And it wraps rather than stopping at the end of the list.
+    expect(seen[GRABS.length]).toBe(GRABS[0].name);
+  });
+
+  it('advances the cycle even on a grab that gets bailed, not just a landed one', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    const first = sim.player.grab!.spec.name;
+    sim.player.grab = null;
+    sim.player.stance = 'BAIL';
+    sim.player.bailTimer = 0.01;
+    step(sim, 0.3);
+    press(sim);
+    expect(sim.player.grab!.spec.name).not.toBe(first);
+  });
+
+  it('holds it all the way down and credits it on a clean landing', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    const spec = sim.player.grab!.spec;
+    let seen: string | null = null;
+    sim.bus.on('player:grab', ({ name }) => { seen = name; });
+    step(sim, 2.0);
+    expect(sim.player.stance).toBe('ROLL');
+    expect(sim.player.grab).toBeNull();
+    expect(seen).toBe(spec.name);
+  });
+
+  it('does not stack: one board, one grab at a time', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    const first = sim.player.grab!.spec.name;
+    for (let i = 0; i < 6; i++) press(sim);
+    expect(sim.player.grab!.spec.name).toBe(first);
+  });
+
+  it('is one motion or the other: a grab in progress blocks a trick, and back', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    press(sim);
+    expect(sim.player.grab).not.toBeNull();
+    const it = emptyIntent();
+    it.trickPressed = true;
+    sim.step(TICK_DT, it, null);
+    expect(sim.player.trick).toBeNull();
+    expect(sim.player.grab).not.toBeNull();
+  });
+
+  it('takes a board to do: nothing happens while aiming', () => {
+    const sim = makeUnlockedSim();
+    place(sim, { x: 145, y: 62 }, { x: 6, y: 0 });
+    sim.enterAimMode();
+    press(sim);
+    expect(sim.player.grab).toBeNull();
+    expect(sim.player.stance).not.toBe('AIR');
   });
 });

@@ -37,6 +37,7 @@ before implementation and is the authority for what the game is trying to be.
 | 30 | [Telling People Apart](30-telling-people-apart.md) | The cop who was a neighbour, and the friend who was riding nothing |
 | 31 | [Vertical Slice Feel and the Playtest Gate](31-vertical-slice-feel-and-the-playtest-gate.md) | The afternoon that started thirty-two seconds late, and what only a person can answer |
 | 32 | [A Solo Start and the Slingshot Chord](32-solo-start-and-the-slingshot-chord.md) | Devon waits down the street, two ramps built into the road, and the mouse control nobody could have found |
+| 33 | [A Fourth Button and a Lens That Went Too Far](33-a-fourth-button-and-a-lens-that-went-too-far.md) | GRAB joins the touch layer, the left-thumb toggle stops timing your aim, and the previous pass's own lens change gets partly undone |
 
 ## The one-sentence pitch
 

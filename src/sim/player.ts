@@ -193,6 +193,45 @@ export const TRICKS: readonly TrickSpec[] = [
   { name: '360 SHOVE-IT', flip: 0, shove: -1, duration: 0.52 },
 ];
 
+/**
+ * Six grabs, and where each one actually holds the board.
+ *
+ * A flip trick is the deck moving under still feet; a grab is the opposite —
+ * the deck stays put and a hand goes down to it. So a grab has no rotation at
+ * all, just a point on the deck (`f` fore/aft, nose positive; `r` across it,
+ * toe-edge positive, matching `onBoard()` in the renderer exactly) and which
+ * arm reaches for it.
+ *
+ * The rig underneath only knows left and right, not a rider's front and back
+ * hand, so `side` picks an arm rather than claiming anatomical correctness
+ * skateboarding wouldn't recognise. The names and the points on the deck are
+ * the real ones: Indy and Stalefish are the back hand's edges, Mute and Melon
+ * the front hand's, Nosegrab and Tailgrab either hand, out at the tips.
+ */
+export interface GrabSpec {
+  name: string;
+  /** Which arm reaches for it — the rig's left/right, not a stance's. */
+  side: 1 | -1;
+  /** Fore/aft on the deck, -1 tail .. 1 nose. */
+  f: number;
+  /** Across the deck, toe-edge positive, matching the board's own half-width. */
+  r: number;
+}
+
+export const GRABS: readonly GrabSpec[] = [
+  { name: 'INDY', side: -1, f: -0.05, r: 0.20 },
+  { name: 'MUTE', side: 1, f: 0.10, r: 0.20 },
+  { name: 'MELON', side: 1, f: 0.10, r: -0.20 },
+  { name: 'STALEFISH', side: -1, f: -0.30, r: -0.20 },
+  { name: 'NOSEGRAB', side: 1, f: 0.85, r: 0 },
+  { name: 'TAILGRAB', side: -1, f: -0.85, r: 0 },
+];
+
+/** A grab in progress: no phase to track, just which one and that it is held. */
+export interface GrabState {
+  spec: GrabSpec;
+}
+
 /** A trick in progress, or the record of the one that just landed. */
 export interface TrickState {
   spec: TrickSpec;
@@ -251,6 +290,12 @@ export interface PlayerState {
   trick: TrickState | null;
   /** A trick asked for, waiting for a board to be under the feet. */
   trickRequest: TrickSpec | null;
+  /** The grab in progress, if any. Cleared on landing or a bail. */
+  grab: GrabState | null;
+  /** A grab asked for, waiting for a board to be under the feet. */
+  grabRequest: GrabSpec | null;
+  /** Which of `GRABS` the next press reaches for. Cycles, never repeats. */
+  grabIndex: number;
   /** Rendering hooks. */
   landedThisTick: boolean;
   bailedThisTick: boolean;
@@ -258,6 +303,8 @@ export interface PlayerState {
   poppedThisTick: boolean;
   /** The trick that came all the way round this tick, if one did. */
   trickedThisTick: TrickSpec | null;
+  /** The grab that was still held at the moment of landing, if one was. */
+  grabbedThisTick: GrabSpec | null;
 }
 
 export function makePlayer(spawn: Vec2): PlayerState {
@@ -288,11 +335,15 @@ export function makePlayer(spawn: Vec2): PlayerState {
     lastSurface: 'asphalt',
     trick: null,
     trickRequest: null,
+    grab: null,
+    grabRequest: null,
+    grabIndex: 0,
     landedThisTick: false,
     bailedThisTick: false,
     pushedThisTick: false,
     poppedThisTick: false,
     trickedThisTick: null,
+    grabbedThisTick: null,
   };
 }
 
@@ -305,11 +356,13 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   p.pushedThisTick = false;
   p.poppedThisTick = false;
   p.trickedThisTick = null;
+  p.grabbedThisTick = null;
 
   if (p.stance === 'BAIL') {
     p.bailTimer -= dt;
     // Whatever was asked for during a slam is not owed on the way up.
     p.trickRequest = null;
+    p.grabRequest = null;
     // A bail costs speed and time, not agency. Leaving the player with no
     // steering at all reads as the game having stopped responding.
     p.heading = wrapAngle(p.heading + steerOf(p, intent) * 1.6 * dt);
@@ -467,7 +520,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
    * Asked for while already airborne, it starts immediately — which is how a
    * kicker or a drop turns into a trick.
    */
-  if (p.trickRequest && p.onBoard && !p.aiming) {
+  if (p.trickRequest && !p.grab && p.onBoard && !p.aiming) {
     if (p.stance !== 'AIR') {
       p.vz = TUNE.ollieImpulse * 0.94;
       p.z = 0.001;
@@ -489,6 +542,26 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
       p.trickedThisTick = p.trick.spec;
     }
   }
+
+  // --- grabs ------------------------------------------------------------
+  /*
+   * The same one-button, one-motion rule as a trick — asked for on the
+   * ground, it pops first — but a grab has nothing to catch up to on the way
+   * down. It is just held, from the moment the hand reaches the deck to the
+   * moment the wheels do, and `integrate` is where it is either kept or lost.
+   */
+  if (p.grabRequest && !p.trick && p.onBoard && !p.aiming) {
+    if (p.stance !== 'AIR') {
+      p.vz = TUNE.ollieImpulse * 0.94;
+      p.z = 0.001;
+      p.stance = 'AIR';
+      p.ollieLoad = -1;
+      p.ollieBuffer = 0;
+      p.poppedThisTick = true;
+    }
+    if (!p.grab) p.grab = { spec: p.grabRequest };
+  }
+  p.grabRequest = null;
 
   // --- terrain features -------------------------------------------------
   const feature = world.featureAt(p.pos);
@@ -562,6 +635,7 @@ function updateFoot(p: PlayerState, intent: Intent, world: World, dt: number): v
   p.speed = len(p.vel);
   p.stance = 'FOOT';
   p.trickRequest = null;
+  p.grabRequest = null;
 }
 
 function applyFriction(p: PlayerState, a: number, dt: number): void {
@@ -595,10 +669,20 @@ function integrate(p: PlayerState, world: World, dt: number): void {
         bail(p);
       }
       p.trick = null;
+      // A grab has no rotation to finish — held all the way down is the whole
+      // trick, so touching wheels while still holding it is a catch, provided
+      // the landing itself doesn't turn out to be a crash (below).
+      if (p.grab) {
+        p.grabbedThisTick = p.grab.spec;
+        p.grab = null;
+      }
       // A landing badly out of line with travel is a bail.
       const travel = angleOf(p.vel);
       const off = Math.abs(wrapAngle(travel - p.heading));
       if (len(p.vel) > 4.5 && off > (TUNE.landingToleranceDeg * Math.PI) / 180) {
+        // A crash retracts the grab it just credited: holding on through a
+        // slam is not landing it.
+        p.grabbedThisTick = null;
         bail(p);
       }
     }
@@ -624,6 +708,7 @@ function integrate(p: PlayerState, world: World, dt: number): void {
 function bail(p: PlayerState): void {
   p.stance = 'BAIL';
   p.trick = null;
+  p.grab = null;
   p.bailTimer = TUNE.bailTime;
   p.bailedThisTick = true;
   p.vel.x *= 0.25;

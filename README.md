@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 364 tests: simulation, determinism, architecture, content, touch
+npm test         # 376 tests: simulation, determinism, architecture, content, touch
 npm run build
 ```
 
@@ -36,6 +36,7 @@ actually arrive.
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
 | `R` | trick — which trick is the board's business, not yours |
+| `G` | grab — cycles through six, same reasoning as `R` |
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
 | `F` | take out the slingshot, and stand still to use it |
@@ -49,10 +50,11 @@ on a phone, because you tapped the thing itself — and never because you skated
 past it. On a phone the slingshot is two thumbs: the left one drags the sling
 where you want it, the right one pulls the band back and lets go.
 
-A phone gets three buttons, in the bottom-right, from the first frame: `SLING`,
-`TRICK`, and `PLAN`. The plan view is a *view* and is always available on every
-device. SAFEtrace VISION is a story unlock, and what it changes is what the plan
-view contains — coverage, subjects, the forecast — not how you open it.
+A phone gets four buttons, in the bottom-right, from the first frame: `SLING`,
+`TRICK`, `GRAB`, and `PLAN`. The plan view is a *view* and is always available
+on every device. SAFEtrace VISION is a story unlock, and what it changes is
+what the plan view contains — coverage, subjects, the forecast — not how you
+open it.
 
 ## The idea, in one table
 
@@ -130,7 +132,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-364 tests, all headless, in about ten seconds.
+376 tests, all headless, in about ten seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
