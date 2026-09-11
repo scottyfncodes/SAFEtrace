@@ -124,9 +124,11 @@ export class InputManager {
   private down = new Set<string>();
   private pressed = new Set<string>();
   private released = new Set<string>();
-  private mouse = { x: 0, y: 0, left: false, right: false, leftPressed: false, active: false };
+  private mouse = { x: 0, y: 0, left: false, active: false };
   private planViewToggle = false;
   private aimToggle = false;
+  /** Whether the draw control was held last frame, so a release can be seen. */
+  private wasDrawing = false;
   readonly options: InputOptions = { holdToAim: true, holdForPlanView: true };
   private detach: Array<() => void> = [];
 
@@ -142,15 +144,13 @@ export class InputManager {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true;
     };
     const md = (e: MouseEvent) => {
-      if (e.button === 0) { this.mouse.left = true; this.mouse.leftPressed = true; }
-      if (e.button === 2) this.mouse.right = true;
+      if (e.button === 0) this.mouse.left = true;
     };
     const mu = (e: MouseEvent) => {
       if (e.button === 0) this.mouse.left = false;
-      if (e.button === 2) this.mouse.right = false;
     };
     const ctx = (e: Event) => e.preventDefault();
-    const blur = () => { this.down.clear(); this.mouse.left = false; this.mouse.right = false; };
+    const blur = () => { this.down.clear(); this.mouse.left = false; };
 
     const t = target as Window;
     t.addEventListener('keydown', kd as EventListener);
@@ -214,17 +214,31 @@ export class InputManager {
     i.aimModePressed = this.any(CODE.aimMode, this.pressed);
     i.skip = this.any(CODE.skip, this.pressed);
 
-    const aimRaw = this.mouse.right || (gp ? (gp.buttons[6]?.value ?? 0) > 0.4 : false);
+    /*
+     * A slingshot has one control: draw it back, let it go. This used to be
+     * two — hold right mouse to draw, then click left to fire while right
+     * was still held — a chord nobody would find without reading the source,
+     * that the README never described, and that touch never asked for at
+     * all: a thumb drags back and lifts, and lifting is the shot. Left mouse
+     * (or the trigger) now does the whole job by itself, the same way.
+     */
+    const drawRaw = this.mouse.left || (gp ? (gp.buttons[7]?.value ?? 0) > 0.4 : false);
+    const wasDrawing = this.wasDrawing;
+    const drawPressed = drawRaw && !wasDrawing;
+    this.wasDrawing = drawRaw;
+
     if (this.options.holdToAim) {
-      i.aim = aimRaw;
+      // Hold to draw; the release is the shot.
+      i.firePressed = wasDrawing && !drawRaw;
+      i.aim = drawRaw;
     } else {
-      if (aimRaw && !this.aimToggle) this.aimToggle = true;
-      else if (aimRaw && this.aimToggle) this.aimToggle = false;
+      // Click to draw, click again to let go — the toggle form of the same
+      // one-control gesture: the second click both fires and ends the aim.
+      i.firePressed = drawPressed && this.aimToggle;
+      if (drawPressed) this.aimToggle = !this.aimToggle;
       i.aim = this.aimToggle;
     }
-
-    i.fire = this.mouse.left || (gp ? (gp.buttons[7]?.value ?? 0) > 0.4 : false);
-    i.firePressed = this.mouse.leftPressed;
+    i.fire = i.aim;
 
     const planRaw = this.any(CODE.planView, this.down) || gpBtn(4);
     if (this.options.holdForPlanView) {
@@ -240,7 +254,6 @@ export class InputManager {
 
     this.pressed.clear();
     this.released.clear();
-    this.mouse.leftPressed = false;
     return i;
   }
 }

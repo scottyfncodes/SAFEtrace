@@ -50,6 +50,8 @@ export interface StoryState {
    * fire in a heap on the first frame of play.
    */
   startedAt: number;
+  /** The tick the player actually reached Devon. -1 until they do. */
+  metDevonAt: number;
   matchFiredAt: number;
   incidentId: string | null;
   devonReleasedAt: number;
@@ -63,6 +65,7 @@ export interface StoryState {
 
 export const initialStoryState = (): StoryState => ({
   startedAt: 0,
+  metDevonAt: -1,
   matchFiredAt: -1,
   incidentId: null,
   devonReleasedAt: -1,
@@ -91,18 +94,40 @@ export const RECORD_CHAIN = [
 
 export const BEATS: Beat[] = [
   {
-    id: 'welcome',
+    id: 'ambient-weather',
     label: 'Maple Court',
+    // The town's own small talk. It has nothing to do with Devon, and it
+    // does not wait on him — a phone pings on its own schedule.
     when: (c, s) => since(c, s) > 90,
     run: (c) => {
       c.sim.message('CARE', [CARE.weather], 5.0);
+    },
+  },
+  {
+    id: 'meet-devon',
+    label: 'Devon',
+    /*
+     * The session used to start with Devon already five and a half metres
+     * back, following. He waits at his own spot now, and this is the one
+     * beat that starts him moving — the player has to actually go find him,
+     * which is the only thing "took you long enough" is allowed to be a
+     * reaction to.
+     */
+    when: (c) => !c.sim.devonFollowing && !c.sim.devonStopped
+      && dist(c.sim.player.pos, c.sim.devonPos) < 6,
+    run: (c, s) => {
+      s.metDevonAt = c.sim.tick;
+      c.sim.meetDevon();
       c.hud.say([DIALOGUE.devonOpening[0]], 3.2);
     },
   },
   {
     id: 'devon-suggests-channel',
     label: 'The Channel',
-    when: (c, s) => since(c, s) > 60 * 12,
+    // A beat into the conversation, not a beat into the session — this used
+    // to be measured from control-start, which meant it could fire before
+    // the player had even met the person doing the talking.
+    when: (c, s) => s.metDevonAt > 0 && c.sim.tick >= s.metDevonAt + 60 * 10,
     run: (c) => {
       c.hud.say([DIALOGUE.devonOpening[1]], 4.0);
       c.sim.message('CARE', [CARE.friendSafe('Devon')], 5.0);

@@ -196,7 +196,13 @@ export function buildBellhaven(): WorldData {
   b.ledge(pt(398, 78), pt(398, 104));
   b.stairs(pt(356, 120), 24, 9, 90, 1.1);
   b.kicker(pt(356, 131), 14, 6, 90, 4.0);
-  b.bank(pt(300, 91), 9, 22, 0, 2.0, 3.2);
+  /*
+   * This used to sit at x=300, which reads as "against the library wall" but
+   * is also exactly where the connector road down to Commons Way actually
+   * runs — a skate bank built into a real traffic lane. Moved ten metres
+   * east, off the asphalt, still against the plaza's own paving.
+   */
+  b.bank(pt(310, 91), 9, 22, 0, 2.0, 3.2);
   b.prop('planter', pt(356, 91), 0, { scale: 2.0, tint: '#7FB2C4' });
   for (const [x, y] of [[314, 91], [330, 91], [382, 91], [398, 91]] as Array<[number, number]>) {
     b.prop('planter', pt(x, y), 0, { scale: 0.9 });
@@ -333,7 +339,14 @@ export function buildBellhaven(): WorldData {
   b.prop('sign', pt(349, 288), 0, { tint: 'SAFEtrace SCHOOL' });
   b.ledge(pt(280, 344), pt(324, 344));
   b.ledge(pt(376, 344), pt(420, 344));
-  b.stairs(pt(349, 342), 22, 7, 90, 0.9);
+  /*
+   * This used to run from the school building's edge straight across
+   * Ridgeline Loop and out the other side — a stair set built into the
+   * street the road graph itself calls a road. Turned to face along the
+   * entrance instead of across it, and pulled back to land in the strip
+   * between the building and the kerb, clear of the asphalt.
+   */
+  b.stairs(pt(349, 334), 22, 4, 0, 0.9);
   for (const x of [292, 298, 304, 310]) b.prop('mailbox', pt(x, 296), Math.PI / 2);
   b.trees([pt(262, 350), pt(262, 386), pt(470, 350), pt(470, 386), pt(440, 296)]);
   b.cover([pt(268, 336), pt(430, 336), pt(430, 344), pt(268, 344)], 'awning', 4);
@@ -539,7 +552,16 @@ export function buildBellhaven(): WorldData {
     bounds: { min: pt(0, 0), max: pt(560, 500) },
     spawns: {
       player: pt(158, 214),
-      devon: pt(166, 222),
+      /*
+       * Down the street, not at your elbow. Devon used to spawn eight metres
+       * away and follow from the first tick, so the session opened with a
+       * companion already attached rather than a kid alone on a board — and
+       * every fix to how he looked or moved was still a fix to a friend who
+       * was already there. He waits here instead, on the grass past the
+       * cul-de-sac, and stays put (`Sim.devonFollowing` starts `false`) until
+       * the player actually skates down and finds him.
+       */
+      devon: pt(150, 296),
       dronePads: [pt(120, 90), pt(392, 88), pt(440, 320)],
       patrolStarts: [pt(70, 150), pt(300, 280)],
     },

@@ -36,6 +36,7 @@ before implementation and is the authority for what the game is trying to be.
 | 29 | [Mobile UX and the Plan View](29-mobile-ux-and-plan-view.md) | Plan view as a control, VISION as content, and a thumb-first HUD |
 | 30 | [Telling People Apart](30-telling-people-apart.md) | The cop who was a neighbour, and the friend who was riding nothing |
 | 31 | [Vertical Slice Feel and the Playtest Gate](31-vertical-slice-feel-and-the-playtest-gate.md) | The afternoon that started thirty-two seconds late, and what only a person can answer |
+| 32 | [A Solo Start and the Slingshot Chord](32-solo-start-and-the-slingshot-chord.md) | Devon waits down the street, two ramps built into the road, and the mouse control nobody could have found |
 
 ## The one-sentence pitch
 

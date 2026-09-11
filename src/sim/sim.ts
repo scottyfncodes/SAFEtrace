@@ -88,7 +88,17 @@ export class Sim {
   devon: Subject;
   devonTrack: Track;
   devonPos: Vec2;
-  devonFollowing = true;
+  /**
+   * Whether Devon is currently keeping pace with the player.
+   *
+   * Starts `false`. The session used to begin with Devon already attached,
+   * five and a half metres back, which meant the game opened mid-companionship
+   * rather than with a kid alone on a board — the first thing that ever
+   * happened was somebody else. He waits at his own spot instead, and this
+   * only flips true once the player has actually skated over and found him
+   * (`meetDevon`), which is the only writer.
+   */
+  devonFollowing = false;
   devonStopped = false;
 
   sensors: Sensor[] = [];
@@ -1429,6 +1439,13 @@ export class Sim {
     if (this.visionUnlocked) return;
     this.visionUnlocked = true;
     this.bus.emit('vision:unlocked', {});
+  }
+
+  /** The player has skated over and found Devon. He starts keeping pace. */
+  meetDevon(): void {
+    if (this.devonFollowing) return;
+    this.devonFollowing = true;
+    this.bus.emit('devon:met', {});
   }
 
   // ---------------------------------------------------------------- incidents

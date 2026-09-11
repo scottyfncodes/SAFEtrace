@@ -46,7 +46,7 @@ export const EYE_Z = 1.62;
  * now 34. It also happens to make the rider *larger* on the glass than a wider
  * lens would from the same place, which is what pays for the higher vantage.
  */
-const VFOV = (40 * Math.PI) / 180;
+const VFOV = (34 * Math.PI) / 180;
 const NEAR = 0.25;
 /*
  * How far the world is drawn.
@@ -198,12 +198,14 @@ export class ChaseCamera {
      * The other half of the miniature: more town in the frame at once.
      *
      * A model reads as a model because you can see the whole of it. The rig
-     * carries further back and a little higher, and the long lens flattens
-     * what that distance would otherwise stretch — so the frame now holds
-     * something like a hundred and seventy metres of Bellhaven, front to
-     * back, instead of eighty. Streets become blocks, houses become things
-     * arranged along them, and the board is a small object crossing a town
-     * rather than a vehicle on a road.
+     * carries further back and a little higher again — a quarter more
+     * distance and height on top of the previous pass — and the long lens
+     * flattens what that distance would otherwise stretch, so the player
+     * reads smaller against a wider slice of Bellhaven rather than staying
+     * the same size in a frame that just happens to hold more ground.
+     * Streets become blocks, houses become things arranged along them, and
+     * the board is a small object crossing a town rather than a vehicle on a
+     * road.
      *
      * The angle is left where it was, at about two parts back to one part up.
      * Steeper was tried and it is worse: past thirty degrees the horizon
@@ -211,8 +213,8 @@ export class ChaseCamera {
      * building with it, and what is left is flat ground in two colours. A
      * miniature needs to be a thing you can see the far edge of.
      */
-    this.dist = damp(this.dist, lerp(23.5, 29.0, t), 0.24, dt);
-    this.height = damp(this.height, lerp(11.8, 14.0, t), 0.24, dt);
+    this.dist = damp(this.dist, lerp(29.0, 36.0, t), 0.24, dt);
+    this.height = damp(this.height, lerp(14.5, 17.5, t), 0.24, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
     this.pitch = damp(this.pitch, lerp(-0.42, -0.36, t), 0.3, dt);
 

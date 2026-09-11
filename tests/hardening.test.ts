@@ -89,17 +89,22 @@ describe('the story runs on simulation time', () => {
     for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
     director.begin();
     const started = sim.tick;
+    // Walk straight to Devon, so meeting him is not the thing under test here.
+    place(sim, sim.devonPos);
     for (let i = 0; i < 60 * 20; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
 
-    const welcome = at.get('welcome');
+    const weather = at.get('ambient-weather');
+    const met = at.get('meet-devon');
     const channel = at.get('devon-suggests-channel');
-    expect(welcome).toBeDefined();
+    expect(weather).toBeDefined();
+    expect(met).toBeDefined();
     expect(channel).toBeDefined();
-    // Each still lands where it was authored to, relative to first control.
-    expect(welcome! - started).toBeGreaterThan(60);
-    expect(welcome! - started).toBeLessThan(60 * 4);
+    // Each still lands where it was authored to, relative to first control —
+    // not thirty-two seconds early, buried under the advertisement.
+    expect(weather! - started).toBeGreaterThan(60);
+    expect(weather! - started).toBeLessThan(60 * 4);
     // And the two openers are a conversation, not one frame with two speakers.
-    expect(channel! - welcome!).toBeGreaterThan(60 * 8);
+    expect(channel! - met!).toBeGreaterThan(60 * 8);
   });
 
   it('does not schedule story work on any wall clock', () => {
@@ -113,6 +118,27 @@ describe('the story runs on simulation time', () => {
  * he is the one who most easily reads as the wrong thing. The previous pass
  * gave him a board; this is about what he does rather than how he is drawn.
  */
+describe('the game starts solo, and Devon has to be found', () => {
+  it('spawns Devon apart from the player, not following', () => {
+    const sim = makeSim();
+    expect(sim.devonFollowing).toBe(false);
+    // Not next door: a real distance, so reaching him is something that
+    // happens rather than something that was already true.
+    expect(dist(sim.devonPos, sim.player.pos)).toBeGreaterThan(40);
+  });
+
+  it('only starts him following once the player has actually skated over', () => {
+    const sim = makeSim();
+    const { director } = directorFor(sim);
+    for (let i = 0; i < 60 * 5; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
+    expect(sim.devonFollowing).toBe(false);
+
+    place(sim, sim.devonPos);
+    for (let i = 0; i < 30; i++) { sim.step(TICK_DT, emptyIntent(), null); director.update(); }
+    expect(sim.devonFollowing).toBe(true);
+  });
+});
+
 describe('the friend behind you reads as a friend', () => {
   it('does not close on a player who is not moving', () => {
     const sim = makeSim();
@@ -129,6 +155,11 @@ describe('the friend behind you reads as a friend', () => {
 
   it('still skates after a player who is actually going somewhere', () => {
     const sim = makeSim();
+    // meetDevon only ever fires in play once the player is within six metres
+    // of him — mirror that, rather than starting him following from clear
+    // across Maple Court, which is a rendezvous the real trigger cannot produce.
+    place(sim, sim.devonPos);
+    sim.meetDevon();
     const push = () => { const i = emptyIntent(); i.push = true; i.pushPressed = true; return i; };
     for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
 

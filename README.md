@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 358 tests: simulation, determinism, architecture, content, touch
+npm test         # 364 tests: simulation, determinism, architecture, content, touch
 npm run build
 ```
 
@@ -23,6 +23,10 @@ The slice contains the opening advertisement, a dense playable district, the
 skating and slingshot models, the full surveillance simulation, hacking, drones,
 the false-positive incident involving the player's best friend, the first crack
 in the veneer, SAFEtrace VISION, and the advertisement's reprise.
+
+The session starts solo. Devon is somewhere down the street, not already
+riding beside you — you skate to him, and he starts following once you
+actually arrive.
 
 ## Controls
 
@@ -126,7 +130,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-358 tests, all headless, in about ten seconds.
+364 tests, all headless, in about ten seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.

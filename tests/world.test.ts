@@ -1,4 +1,4 @@
-import { solveTwoBone } from '../src/core/math';
+import { pointInPoly, polyCentroid, solveTwoBone } from '../src/core/math';
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { validateWorld, World } from '../src/sim/world';
@@ -18,6 +18,30 @@ describe('Bellhaven content validation', () => {
     const warnings = validateWorld(data).filter((i) => i.severity === 'warning');
     expect(warnings.filter((w) => w.message.includes('inside building'))
       .map((w) => w.message)).toEqual([]);
+  });
+
+  /**
+   * A skate feature doesn't physically block anyone — `resolveCollision` only
+   * ever consults building footprints, never `features` — but that is exactly
+   * why this needed a check rather than a feel test. A ramp sitting inside a
+   * driving lane never crashes anything and never fails a physics assertion;
+   * it just reads as a ramp built into the street, because that is what it is.
+   * Found twice this way: a bank against the library wall that was flush with
+   * the connector road down to Commons Way, and a school stair set that ran
+   * clean across Ridgeline Loop and out the other side.
+   */
+  it('keeps every jumpable feature off the actual roadway', () => {
+    const asphalt = data.surfaces.filter((s) => s.kind === 'asphalt');
+    const jumpable = data.features.filter((f) =>
+      f.kind === 'kicker' || f.kind === 'bank' || f.kind === 'gap' || f.kind === 'drop');
+    const offenders: string[] = [];
+    for (const f of jumpable) {
+      const points = [...f.poly, polyCentroid(f.poly)];
+      if (points.some((p) => asphalt.some((s) => pointInPoly(s.poly, p)))) {
+        offenders.push(`${f.kind} ${f.id} at ${JSON.stringify(f.poly[0])}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('meets the density targets in the world design doc', () => {

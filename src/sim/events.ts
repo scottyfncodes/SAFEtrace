@@ -71,6 +71,7 @@ export interface SimEvents extends Record<string, unknown> {
   'drone:spotlight': { droneId: string; on: boolean };
   'patrol:contact': { patrolId: string };
   'vision:unlocked': Record<string, never>;
+  'devon:met': Record<string, never>;
   'veneer:crack': { seconds: number };
   'story:beat': { id: string; label: string };
   'track:updated': { track: Track };
