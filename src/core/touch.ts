@@ -535,11 +535,26 @@ export class TouchEngine {
          * the other hand had set, and letting go of it moved the aim back.
          * Aiming belongs to the left thumb, entirely, at all times.
          */
-      } else {
+      } else if (this.tracks.size > 0) {
         // Not holding the sling: the band is slack and nothing is loaded.
+        // This is only ever true of a real touch — some finger is down, on
+        // the aim side, and simply hasn't pulled anything yet.
         i.aim = true;
         i.drawAmount = 0;
       }
+      /*
+       * If neither branch above ran, no finger is on the glass at all right
+       * now — `i.drawAmount` stays at `emptyIntent()`'s `null`. That distinction
+       * used to be lost: this block ran off `this.aiming`, which mirrors
+       * `sim.aimMode` on every device whether or not that device has a touch
+       * screen, so a mouse player charging a shot the ordinary way — holding a
+       * button, `player.draw` climbing on its own clock — had that same
+       * `drawAmount: 0` written over their intent on every single frame by a
+       * touch layer with nothing actually touching it. `player.draw` could
+       * never leave zero, releasing never fired anything, and no version of
+       * "hold to draw, release to throw" on a mouse ever had a chance to work
+       * until this stopped being asserted with nobody's thumb behind it.
+       */
       if (this.pendingFire) {
         // The release frame still has to describe a loaded sling, because the
         // simulation only fires while the character is actually drawing.
