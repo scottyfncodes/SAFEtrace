@@ -491,11 +491,6 @@ export class TouchEngine {
     return undefined;
   }
 
-  private get aimTrack(): Track | undefined {
-    for (const t of this.tracks.values()) if (t.role === 'aim') return t;
-    return undefined;
-  }
-
   private get pullTrack(): Track | undefined {
     for (const t of this.tracks.values()) if (t.role === 'pull') return t;
     return undefined;
@@ -613,24 +608,6 @@ export class TouchEngine {
     this.aimDrag.x = 0;
     this.aimDrag.y = 0;
     return out;
-  }
-
-  /** Where the hand holding the sling is, for drawing it. Null when let go. */
-  get slingHand(): { x: number; y: number } | null {
-    const a = this.aimTrack;
-    return a ? { x: a.cur.x, y: a.cur.y } : null;
-  }
-
-  /** Where the sling is being held and pulled to, for drawing it. */
-  get slingGrip(): { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null {
-    const p = this.pullTrack;
-    if (!p) return null;
-    const d = Math.hypot(p.cur.x - p.start.x, p.cur.y - p.start.y);
-    return {
-      grab: { x: p.start.x, y: p.start.y },
-      thumb: { x: p.cur.x, y: p.cur.y },
-      draw: clamp01((d - this.tuning.pullMin) / (this.tuning.pullFull - this.tuning.pullMin)),
-    };
   }
 
   /** A world-space tap the caller should resolve against the network. */

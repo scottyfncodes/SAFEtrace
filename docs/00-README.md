@@ -39,6 +39,7 @@ before implementation and is the authority for what the game is trying to be.
 | 32 | [A Solo Start and the Slingshot Chord](32-solo-start-and-the-slingshot-chord.md) | Devon waits down the street, two ramps built into the road, and the mouse control nobody could have found |
 | 33 | [A Fourth Button and a Lens That Went Too Far](33-a-fourth-button-and-a-lens-that-went-too-far.md) | GRAB joins the touch layer, the left-thumb toggle stops timing your aim, and the previous pass's own lens change gets partly undone |
 | 34 | [The Slingshot That Was Never Actually Drawing](34-the-slingshot-that-was-never-actually-drawing.md) | An idle touch layer was overwriting the mouse's own charge every frame, found by finally driving both devices through a real browser instead of two engines in isolation |
+| 35 | [The Prop That Followed the Wrong Hand](35-the-prop-that-followed-the-wrong-hand.md) | The slingshot's fork and pouch were drawn at the raw position of two thumbs instead of the aim and draw values those thumbs already produced, and jumped and crossed exactly as reported |
 
 ## The one-sentence pitch
 

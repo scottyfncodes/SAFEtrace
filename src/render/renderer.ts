@@ -29,17 +29,6 @@ export class Renderer {
   /** Set each frame by the host so the controls can be drawn last. */
   controlVisual: ControlVisual | null = null;
   private readonly perspective = new PerspectiveRenderer();
-  /** Where the sling is being pulled, from the touch layer. Null when slack. */
-  slingGrip: { grab: { x: number; y: number }; thumb: { x: number; y: number }; draw: number } | null = null;
-  /**
-   * Where the hand holding the sling is: the left thumb, if it is down.
-   *
-   * The fork is drawn there, so the thing the player is dragging around the
-   * screen is literally under the finger dragging it. Null falls back to a
-   * resting position, which is what a slingshot held in one hand looks like
-   * when the other hand is not on it.
-   */
-  slingHand: { x: number; y: number } | null = null;
   readonly chase = new ChaseCamera();
   private aimFade = 0;
   /** Draw the cold-start pad hint. True until the player has actually moved. */
@@ -284,34 +273,51 @@ export class Renderer {
   }
 
   /**
-   * The slingshot, held in two hands, doing exactly what the two thumbs do.
+   * The slingshot, held in two hands, showing what the draw is doing.
    *
-   * This is the control scheme drawn as an object. The left hand holds the
-   * fork and the fork is drawn at the left thumb, so dragging the sling around
-   * the screen looks like dragging a slingshot around. The right hand has the
-   * pouch and the pouch is drawn at the right thumb, so pulling back stretches
-   * the band between the two of them. Nothing on screen is a metaphor for the
-   * input; it is the input.
+   * This used to be the control scheme drawn as an object, literally: the
+   * fork rendered at the raw screen position of the left thumb, the pouch at
+   * the raw screen position of the right, on the theory that a prop glued to
+   * each thumb's actual coordinate needs no translation — "nothing on screen
+   * is a metaphor for the input; it is the input." It reads well as a
+   * sentence and broke down against an actual two-thumb grip: a thumb resting
+   * anywhere in the *middle* of its own half — not an edge case, the ordinary
+   * comfortable spot — puts the two hands most of a phone's width apart, and
+   * the cords from two fork tips to one pouch that far to one side cross each
+   * other in a wide X across the centre of the screen. Worse, since the left
+   * thumb's whole job is dragging to swing the camera, every bit of aiming
+   * physically relocated the entire prop, arms included, which is what a
+   * report of "jumps unexpectedly" and "not fluid" describes exactly.
+   *
+   * The fork now rests at a single fixed point — `slingRest` — for the whole
+   * time a shot is being lined up, whatever the aim thumb is doing. That
+   * thumb's drag already reaches the camera through `takeAimDrag`, which
+   * reads only the *change* in position; the object never needed to track
+   * where it landed. The pouch moves along one fixed axis out from the fork,
+   * by an amount proportional to `draw` (0 at rest, 1 at a full pull) — the
+   * same clean mapping a joystick's cap uses, and one that costs nothing on
+   * a mouse either, where a bound cursor position was never available to draw
+   * from anyway.
    *
    * Drawn in screen space at the bottom of the view rather than as world
    * geometry: it is held against the eye, so it does not belong in the
    * projection, and this way it costs nothing and never clips into a wall.
    */
   private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
-    const grip = this.slingGrip;
-    const hand = this.slingHand;
     const base = this.h + 18;
-    // Where the fork is: under the left thumb, or resting where that thumb is
-    // invited to land when it is off the glass. It never jumps between the two,
-    // because the aim does not live in this number — the aim is a total of
-    // drags, and this is only where the object is drawn.
-    const fx = hand ? hand.x : this.slingRest.x;
-    const forkY = (hand ? hand.y : this.slingRest.y) - 54;
+    const fx = this.slingRest.x;
+    const forkY = this.slingRest.y - 54;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
     const skin = '#E8BE9B';
-    const pullX = grip ? grip.thumb.x : fx + 26;
-    const pullY = grip ? grip.thumb.y : forkY + prong * 0.4;
+    // Rest is close in, against the fork; full draw is a fixed reach back and
+    // down, toward where a right hand pulling to the cheek actually ends up —
+    // never further than the arm below can plausibly stretch.
+    const restPull = { x: fx + 26, y: forkY + prong * 0.4 };
+    const drawX = Math.min(120, this.w * 0.28);
+    const drawY = Math.min(150, this.h * 0.24);
+    const pullX = restPull.x + drawX * draw;
+    const pullY = restPull.y + drawY * draw;
 
     /*
      * A stick and a string, which is what this is.

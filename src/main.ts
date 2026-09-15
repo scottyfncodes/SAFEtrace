@@ -485,11 +485,8 @@ class Game {
   private render(dt: number): void {
     if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
     this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
-    this.renderer.slingGrip = this.sim.aimMode ? this.touch.slingGrip : null;
-    this.renderer.slingHand = this.sim.aimMode ? this.touch.slingHand : null;
-    // At rest the fork sits in the middle of the half of the glass that holds
-    // it, so the object and the control agree before anybody has touched
-    // anything: one hand here, one hand over there on the band.
+    // The fork sits here for the whole time a shot is being lined up, not
+    // wherever the aim thumb currently is — see drawSlingInHands for why.
     this.renderer.slingRest = this.touch.slingRestPoint();
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
