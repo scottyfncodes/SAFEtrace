@@ -194,7 +194,13 @@ class Game {
     saveSettings(this.settings);
   }
 
+  /** Set once the player has asked to forget this afternoon; nothing may save it again. */
+  private discarding = false;
+
   private newAfternoon(): void {
+    // The reload fires pagehide, which would otherwise write this afternoon
+    // straight back and offer it to "continue" on the very next screen.
+    this.discarding = true;
     clearAfternoon();
     window.location.reload();
   }
@@ -216,6 +222,7 @@ class Game {
   }
 
   private persist(): void {
+    if (this.discarding) return;
     if (this.phase !== 'play' && this.phase !== 'reprise') return;
     if (this.story.progress.length === 0) return;
     const sim = this.sim;
