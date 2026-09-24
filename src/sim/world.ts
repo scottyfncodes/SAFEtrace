@@ -460,7 +460,7 @@ export function validateWorld(data: WorldData): ValidationIssue[] {
  */
 export const STABLE_IDS = [
   'CM-207', 'JX-207', 'JX-N3', 'TX-1', 'TX-2',
-  'SVC-VISION', 'SVC-REVIEW', 'SVC-PREDICT', 'SVC-RECORD',
+  'SVC-VISION', 'SVC-REVIEW', 'SVC-PREDICT', 'SVC-RECORD', 'CM-D01',
 ];
 
 /**

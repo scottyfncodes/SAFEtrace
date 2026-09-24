@@ -24,7 +24,7 @@ import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/mat
 import { hashString } from '../core/rng';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
-import type { Building } from '../sim/worldTypes';
+import type { Building, Prop } from '../sim/worldTypes';
 import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
 
 /** Eye height of a teenager standing on a board. */
@@ -134,6 +134,19 @@ interface Face {
   fill: string;
   stroke?: string;
   wide?: number;
+  /**
+   * Words printed on the face: a shop sign, a poster, a sprayed wall. Drawn
+   * in the face's own plane, so a sign reads as a thing on a wall rather than
+   * a label floating over the town, and sorts behind whatever is in front of
+   * it like any other face.
+   */
+  text?: { str: string; colour: string; aspect: number; weight?: number };
+  /**
+   * Things on this face — windows, a door, a shop sign — painted straight
+   * after it. They share its place in the sort, so a window can never end up
+   * behind its own wall or in front of the house next door.
+   */
+  decals?: Array<{ pts: CP[]; fill: string; text?: Face['text'] }>;
 }
 type P3 = { x: number; y: number; z: number };
 
@@ -179,6 +192,36 @@ export class ChaseCamera {
   /** Negative is downward: the rig looks down at the rider from behind. */
   private pitch = -0.40;
   private look: Vec2 = { x: 0, y: 0 };
+  /**
+   * How far the rig is currently allowed to sit, after walls have had their
+   * say. Eased, so a building sliding between the eye and the rider pulls the
+   * camera in smoothly and lets it back out smoothly, instead of the snap the
+   * old per-frame probe produced every time a corner passed.
+   */
+  private reach = 1;
+  /**
+   * A scripted aerial shot, in the same terms the advertisement has always
+   * authored its beats in: a point on the ground and a zoom.
+   *
+   * The advertisement used to drive only the flat plan camera. The world has
+   * been drawn in third person since pass 24, so every "shot" of the tour —
+   * the Commons, the school, Relay 12 — was the same frame behind a kid
+   * standing on Maple Court. The advertisement is the front end; this puts
+   * the tour back.
+   */
+  cinematic: { pos: Vec2; zoom: number } | null = null;
+  private cineYaw = -2.2;
+  private cineTime = 0;
+  /** The last frame the rig showed, so leaving a shot is a move rather than a cut. */
+  private lastState: CamState | null = null;
+  private handoff: { from: CamState; t: number } | null = null;
+  /**
+   * Something the player has stopped to talk to or look at. The rig eases
+   * in and turns to hold both of them in frame, which is the whole of
+   * "investigation framing": you are looking at a thing, so is the camera.
+   */
+  focus: Vec2 | null = null;
+  private focusBlend = 0;
 
   reset(sim: Sim): void {
     this.yaw = sim.player.heading;
@@ -186,74 +229,143 @@ export class ChaseCamera {
   }
 
   update(sim: Sim, dt: number): void {
+    this.cineTime += dt;
+    if (this.cinematic) {
+      // A slow orbit: nothing in the advertisement is ever still.
+      this.cineYaw += dt * 0.045;
+      this.handoff = null;
+      return;
+    }
+    if (this.lastState && !this.handoff && this.wasCinematic) {
+      this.handoff = { from: this.lastState, t: 0 };
+    }
+    this.wasCinematic = false;
+    if (this.handoff) {
+      this.handoff.t += dt / 2.2;
+      if (this.handoff.t >= 1) this.handoff = null;
+    }
+
     const p = sim.player;
     const speed = p.speed;
     const cap = Math.max(1, sim.playerMaxSpeed);
     const t = clamp01(speed / cap);
 
+    this.focusBlend = damp(this.focusBlend, this.focus && speed < 2 ? 1 : 0, 0.35, dt);
+
     // Face the way the board is pointed. Travel direction would judder every
     // time the board washed out; the nose is what the rider is looking over.
-    const want = speed > 0.6 ? p.heading : this.yaw;
+    let want = speed > 0.6 ? p.heading : this.yaw;
+    if (this.focus && this.focusBlend > 0.05) {
+      // Look past the rider toward the thing, from a little off their shoulder.
+      const toward = Math.atan2(this.focus.y - p.pos.y, this.focus.x - p.pos.x);
+      want = toward + 0.35;
+    }
     const turn = wrapAngle(want - this.yaw);
     // Quicker to catch up on a hard turn, so the camera never falls behind the
     // player's own intention, but still eased.
-    this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2)));
+    this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2) * (this.focus ? 0.5 : 1)));
 
     /*
      * The other half of the miniature: more town in the frame at once.
      *
      * A model reads as a model because you can see the whole of it. The rig
-     * carries further back and a little higher again — a quarter more
-     * distance and height on top of the previous pass — and the long lens
+     * carries further back and a little higher again, and the long lens
      * flattens what that distance would otherwise stretch, so the player
-     * reads smaller against a wider slice of Bellhaven rather than staying
-     * the same size in a frame that just happens to hold more ground.
-     * Streets become blocks, houses become things arranged along them, and
-     * the board is a small object crossing a town rather than a vehicle on a
-     * road.
+     * reads smaller against a wider slice of Bellhaven.
      *
-     * The angle is left where it was, at about two parts back to one part up.
-     * Steeper was tried and it is worse: past thirty degrees the horizon
-     * leaves the frame, taking every drone in the sky and the top of every
-     * building with it, and what is left is flat ground in two colours. A
-     * miniature needs to be a thing you can see the far edge of.
+     * The angle is left at about two parts back to one part up. Steeper was
+     * tried and it is worse: past thirty degrees the horizon leaves the frame,
+     * taking every drone in the sky and the top of every building with it.
      */
-    this.dist = damp(this.dist, lerp(29.0, 36.0, t), 0.24, dt);
-    this.height = damp(this.height, lerp(14.5, 17.5, t), 0.24, dt);
+    const f = this.focusBlend;
+    this.dist = damp(this.dist, lerp(lerp(29.0, 36.0, t), 17.0, f), 0.24, dt);
+    this.height = damp(this.height, lerp(lerp(14.5, 17.5, t), 8.0, f), 0.24, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
-    this.pitch = damp(this.pitch, lerp(-0.42, -0.36, t), 0.3, dt);
+    this.pitch = damp(this.pitch, lerp(lerp(-0.42, -0.36, t), -0.36, f), 0.3, dt);
 
-    // The point the rig is looking at lags the rider under acceleration.
+    // The point the rig is looking at lags the rider under acceleration, and
+    // slides toward whatever they are talking to.
+    const target = this.focus
+      ? { x: lerp(p.pos.x, (p.pos.x + this.focus.x) / 2, f), y: lerp(p.pos.y, (p.pos.y + this.focus.y) / 2, f) }
+      : p.pos;
     this.look = {
-      x: damp(this.look.x, p.pos.x, 0.055, dt),
-      y: damp(this.look.y, p.pos.y, 0.055, dt),
+      x: damp(this.look.x, target.x, 0.055, dt),
+      y: damp(this.look.y, target.y, 0.055, dt),
     };
+
+    // Walls. The line from the rider back to the eye is sampled against the
+    // buildings tall enough to block it; the rig pulls in to the nearest clear
+    // point, quickly, and drifts back out slowly once the wall has passed.
+    const back = { x: -Math.cos(this.yaw), y: -Math.sin(this.yaw) };
+    let clear = 1;
+    for (let i = 1; i <= 8; i++) {
+      const k = i / 8;
+      const probe = { x: p.pos.x + back.x * this.dist * k, y: p.pos.y + back.y * this.dist * k };
+      const b = sim.world.buildingAt(probe);
+      // The sight line rises from the rider toward the eye; a wall lower than
+      // the line at that point does not block anything.
+      if (b && b.height > 1.2 + this.height * k) { clear = Math.max(0.28, k - 0.14); break; }
+    }
+    this.reach = clear < this.reach ? damp(this.reach, clear, 0.06, dt) : damp(this.reach, clear, 0.45, dt);
   }
 
+  private wasCinematic = false;
+
   /**
-   * Where the eye sits. Pulled in if a building is between it and the rider,
-   * so the camera never ends up inside a wall.
+   * Where the eye sits.
    */
   state(sim: Sim): CamState {
+    if (this.cinematic) {
+      this.wasCinematic = true;
+      const c = this.cinematic;
+      // The advertisement authored its shots as pixels-per-metre over a flat
+      // map. The same number reads naturally as a distance: tighter framing,
+      // closer rig.
+      const d = clamp(720 / Math.max(4, c.zoom), 40, 110);
+      const yaw = this.cineYaw + Math.sin(this.cineTime * 0.07) * 0.1;
+      const h = d * 0.62;
+      const s: CamState = {
+        pos: { x: c.pos.x - Math.cos(yaw) * d, y: c.pos.y - Math.sin(yaw) * d, z: h },
+        yaw,
+        pitch: -Math.atan2(h, d) * 0.92,
+      };
+      this.lastState = s;
+      // The rig itself is parked where the shot hands over, so the first
+      // frame of play is a continuous move rather than a cut.
+      this.yaw = sim.player.heading;
+      this.look = { ...sim.player.pos };
+      return s;
+    }
     const p = sim.player;
     const back = { x: -Math.cos(this.yaw), y: -Math.sin(this.yaw) };
-    let dist = this.dist;
-    for (let i = 1; i <= 5; i++) {
-      const probe = { x: p.pos.x + back.x * dist, y: p.pos.y + back.y * dist };
-      if (!sim.world.buildingAt(probe)) break;
-      dist = this.dist * (1 - i / 6);
-    }
-    return {
+    const dist = this.dist * this.reach;
+    const live: CamState = {
       pos: {
         x: this.look.x + back.x * dist,
         y: this.look.y + back.y * dist,
-        z: this.height + p.z * 0.6,
+        z: lerp(this.height * 0.55, this.height, this.reach) + p.z * 0.6,
       },
       yaw: this.yaw,
       pitch: this.pitch,
     };
+    if (!this.handoff) { this.lastState = live; return live; }
+    const k = easeHandoff(this.handoff.t);
+    const a = this.handoff.from;
+    const out: CamState = {
+      pos: {
+        x: lerp(a.pos.x, live.pos.x, k),
+        y: lerp(a.pos.y, live.pos.y, k),
+        z: lerp(a.pos.z, live.pos.z, k),
+      },
+      yaw: a.yaw + wrapAngle(live.yaw - a.yaw) * k,
+      pitch: lerp(a.pitch, live.pitch, k),
+    };
+    this.lastState = out;
+    return out;
   }
 }
+
+const easeHandoff = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export class PerspectiveRenderer {
   private faces: Face[] = [];
@@ -267,8 +379,10 @@ export class PerspectiveRenderer {
     this.drawSkyAndGround(ctx, cam);
     this.faces.length = 0;
     this.collectSurfaces(sim, cam);
+    this.collectShadows(sim, cam);
     this.collectBuildings(sim, cam);
     this.collectSensors(sim, cam);
+    this.collectSceneProps(sim, cam);
     this.collectActors(sim, cam);
     if (!firstPerson) this.collectRider(sim, cam);
 
@@ -290,8 +404,44 @@ export class PerspectiveRenderer {
       ctx.fillStyle = f.fill;
       ctx.fill();
       if (f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.wide ?? 1; ctx.stroke(); }
+      if (f.text && f.pts.length === 4) this.drawFaceText(ctx, cam, f.pts, f.text);
+      if (f.decals) {
+        for (const d of f.decals) {
+          if (d.pts.length < 3) continue;
+          ctx.beginPath();
+          const q0 = project(cam, d.pts[0]);
+          ctx.moveTo(q0.x, q0.y);
+          for (let i = 1; i < d.pts.length; i++) { const q = project(cam, d.pts[i]); ctx.lineTo(q.x, q.y); }
+          ctx.closePath();
+          ctx.fillStyle = d.fill;
+          ctx.fill();
+          if (d.text && d.pts.length === 4) this.drawFaceText(ctx, cam, d.pts, d.text);
+        }
+      }
     }
     if (!firstPerson) this.drawMiniatureHaze(ctx, cam);
+  }
+
+  private drawFaceText(ctx: CanvasRenderingContext2D, cam: Cam, pts: CP[], t: NonNullable<Face['text']>): void {
+    // Quads are authored bottom-left, bottom-right, top-right, top-left.
+    const bl = project(cam, pts[0]), br = project(cam, pts[1]), tl = project(cam, pts[3]);
+    const wpx = Math.hypot(br.x - bl.x, br.y - bl.y);
+    if (wpx < 14) return;
+    // Mirrored means we are looking at the back of it.
+    const cross = (br.x - bl.x) * (tl.y - bl.y) - (br.y - bl.y) * (tl.x - bl.x);
+    if (cross > 0) return;
+    const W = 100 * t.aspect, H = 100;
+    ctx.save();
+    ctx.transform((br.x - bl.x) / W, (br.y - bl.y) / W, (bl.x - tl.x) / H, (bl.y - tl.y) / H, tl.x, tl.y);
+    ctx.fillStyle = t.colour;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let size = 46;
+    ctx.font = `${t.weight ?? 700} ${size}px Inter, system-ui, sans-serif`;
+    const m = ctx.measureText(t.str).width;
+    if (m > W * 0.9) { size *= (W * 0.9) / m; ctx.font = `${t.weight ?? 700} ${size}px Inter, system-ui, sans-serif`; }
+    ctx.fillText(t.str, W / 2, H / 2 + 2);
+    ctx.restore();
   }
 
   /**
@@ -318,9 +468,11 @@ export class PerspectiveRenderer {
 
   private drawSkyAndGround(ctx: CanvasRenderingContext2D, cam: Cam): void {
     const horizon = cam.h / 2 + Math.tan(cam.pitch) * cam.f;
+    // Four in the afternoon: blue overhead, warming toward the horizon.
     const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
-    sky.addColorStop(0, '#BBD8EC');
-    sky.addColorStop(1, VENEER.void);
+    sky.addColorStop(0, '#A9CDE8');
+    sky.addColorStop(0.7, '#D9E6EE');
+    sky.addColorStop(1, '#F1E6D2');
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, cam.w, Math.max(0, horizon));
     ctx.fillStyle = VENEER.grass;
@@ -352,6 +504,104 @@ export class PerspectiveRenderer {
     this.faces.push({ pts: clipped, depth: sum / world.length, layer, order, fill, stroke, wide });
   }
 
+  /** A vertical panel in a wall's plane, facing along `rot`, optionally printed on. */
+  private panel(
+    cam: Cam, c: Vec2, rot: number, w: number, h: number, z: number, fill: string,
+    text?: Face['text'], out = 0.04,
+  ): void {
+    const nx = Math.cos(rot), ny = Math.sin(rot);
+    // Right-hand along the wall as seen by someone facing it.
+    const rx = ny, ry = -nx;
+    const cx = c.x + nx * out, cy = c.y + ny * out;
+    const before = this.faces.length;
+    this.push(cam, [
+      { x: cx - rx * w / 2, y: cy - ry * w / 2, z: z - h / 2 },
+      { x: cx + rx * w / 2, y: cy + ry * w / 2, z: z - h / 2 },
+      { x: cx + rx * w / 2, y: cy + ry * w / 2, z: z + h / 2 },
+      { x: cx - rx * w / 2, y: cy - ry * w / 2, z: z + h / 2 },
+    ], fill);
+    const f = this.faces[before];
+    if (f && text) {
+      // Pull it just in front of the wall it hangs on, for the sort.
+      f.depth -= 0.05;
+      if (f.pts.length === 4) f.text = text;
+    }
+  }
+
+  private box(cam: Cam, c: Vec2, rot: number, w: number, d: number, h: number, fill: string): void {
+    this.boxAt(cam, c, rot, w, d, 0, h, fill);
+  }
+
+  /** A box between two heights: a car's cabin, a bench seat, a mailbox on its post. */
+  private boxAt(cam: Cam, c: Vec2, rot: number, w: number, d: number, z0: number, z1: number, fill: string): void {
+    const fx = Math.cos(rot), fy = Math.sin(rot);
+    const rx = -fy, ry = fx;
+    const corner = (a: number, b: number): Vec2 => ({ x: c.x + fx * a * w / 2 + rx * b * d / 2, y: c.y + fy * a * w / 2 + ry * b * d / 2 });
+    const ring = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+    for (let i = 0; i < 4; i++) {
+      const a = ring[i], b = ring[(i + 1) % 4];
+      this.push(cam, [
+        { x: a.x, y: a.y, z: z0 }, { x: b.x, y: b.y, z: z0 }, { x: b.x, y: b.y, z: z1 }, { x: a.x, y: a.y, z: z1 },
+      ], shade(fill, i % 2 ? -0.12 : -0.04));
+    }
+    this.push(cam, ring.map((p) => ({ x: p.x, y: p.y, z: z1 })), shade(fill, 0.1));
+  }
+
+  private collectSceneProps(sim: Sim, cam: Cam): void {
+    for (const sp of sim.sceneProps) {
+      if (!sp.visible) continue;
+      if (Math.hypot(sp.pos.x - cam.pos.x, sp.pos.y - cam.pos.y) > 90) continue;
+      switch (sp.kind) {
+        case 'tape': {
+          const dx = Math.cos(sp.rot), dy = Math.sin(sp.rot);
+          const a = { x: sp.pos.x - dx * sp.w / 2, y: sp.pos.y - dy * sp.w / 2 };
+          const b = { x: sp.pos.x + dx * sp.w / 2, y: sp.pos.y + dy * sp.w / 2 };
+          for (const post of [a, b]) this.card(cam, post, 0.5, 0.04, 0.5, '#3B3F44');
+          for (const z of [sp.z, sp.z - 0.32]) {
+            this.push(cam, [
+              { x: a.x, y: a.y, z: z - 0.05 }, { x: b.x, y: b.y, z: z - 0.05 },
+              { x: b.x, y: b.y, z: z + 0.05 }, { x: a.x, y: a.y, z: z + 0.05 },
+            ], sp.tint);
+          }
+          break;
+        }
+        case 'parcel':
+          this.box(cam, sp.pos, sp.rot, 0.55, 0.42, 0.34, sp.tint);
+          break;
+        case 'screen':
+          this.panel(cam, sp.pos, sp.rot, sp.w + 0.1, sp.w * 0.75 + 0.1, sp.z, '#2A3138', undefined, 0.02);
+          this.panel(cam, sp.pos, sp.rot, sp.w, sp.w * 0.75, sp.z, sp.tint,
+            sp.text ? { str: sp.text, colour: '#C8412F', aspect: 1.33, weight: 800 } : undefined, 0.05);
+          break;
+        case 'poster':
+          this.panel(cam, sp.pos, sp.rot, sp.w, sp.w * 0.62, sp.z, sp.tint,
+            sp.text ? { str: sp.text, colour: sp.tint === '#FFFFFF' || sp.tint === '#F4EFE4' ? '#1F2A33' : '#FFFFFF', aspect: 1.6 } : undefined);
+          break;
+        case 'notice':
+          this.panel(cam, sp.pos, sp.rot, sp.w, sp.w * 0.7, sp.z, sp.tint,
+            sp.text ? { str: sp.text, colour: '#2C8C8C', aspect: 1.43 } : undefined);
+          break;
+        case 'graffiti':
+          this.panel(cam, sp.pos, sp.rot, sp.w, 0.9, sp.z, alpha(sp.tint, 0.18),
+            sp.text ? { str: sp.text, colour: sp.tint, aspect: sp.w / 0.9, weight: 800 } : undefined);
+          break;
+        case 'board': {
+          // A deck leaning against the step, nose up.
+          const nx = Math.cos(sp.rot), ny = Math.sin(sp.rot);
+          const rx = -ny, ry = nx;
+          const foot = { x: sp.pos.x - nx * 0.35, y: sp.pos.y - ny * 0.35 };
+          this.push(cam, [
+            { x: foot.x - rx * 0.1, y: foot.y - ry * 0.1, z: 0.02 },
+            { x: foot.x + rx * 0.1, y: foot.y + ry * 0.1, z: 0.02 },
+            { x: sp.pos.x + rx * 0.1, y: sp.pos.y + ry * 0.1, z: 0.78 },
+            { x: sp.pos.x - rx * 0.1, y: sp.pos.y - ry * 0.1, z: 0.78 },
+          ], shade(sp.tint, -0.35));
+          break;
+        }
+      }
+    }
+  }
+
   private collectSurfaces(sim: Sim, cam: Cam): void {
     for (const s of sim.world.data.surfaces) {
       let near = Infinity;
@@ -370,23 +620,108 @@ export class PerspectiveRenderer {
       let near = Infinity;
       for (const p of b.poly) near = Math.min(near, Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y));
       if (near > FAR) continue;
-      this.collectBuilding(b, cam);
+      this.collectBuilding(b, cam, sim, near);
     }
   }
 
-  private collectBuilding(b: Building, cam: Cam): void {
+  /** Each building's windows, door, sign and roof, worked out once. */
+  private dressing = new Map<string, Dressing>();
+
+  private dressFor(b: Building, sim: Sim): Dressing {
+    let d = this.dressing.get(b.id);
+    if (!d) { d = dress(b, sim); this.dressing.set(b.id, d); }
+    return d;
+  }
+
+  /*
+   * A building is a wall with things on it.
+   *
+   * Every building used to be an extruded footprint in two flat colours: a
+   * beige box with a lid. That reads as a map of a town rather than a town,
+   * and it throws away the cheapest storytelling there is — a shop you can
+   * read the name of, a door somebody lives behind, a roof that tells you a
+   * house from a warehouse at a hundred metres. None of it touches the
+   * footprint, the height the cameras see over, or anything else the
+   * simulation reads.
+   */
+  private collectBuilding(b: Building, cam: Cam, sim: Sim, near: number): void {
     const poly = b.poly;
+    const dr = this.dressFor(b, sim);
+    const detail = near < 110;
+    const eave = b.height;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       const a = poly[j], c = poly[i];
       const mx = (a.x + c.x) / 2, my = (a.y + c.y) / 2;
       const nx = -(c.y - a.y), ny = c.x - a.x;
       const facing = nx * (mx - cam.pos.x) + ny * (my - cam.pos.y);
+      // Walls in the sun are lit, walls away from it are not; the difference
+      // is the whole of the form.
+      const lit = dr.sunlit[j] ?? 0;
+      const before = this.faces.length;
       this.push(cam, [
         { x: a.x, y: a.y, z: 0 }, { x: c.x, y: c.y, z: 0 },
-        { x: c.x, y: c.y, z: b.height }, { x: a.x, y: a.y, z: b.height },
-      ], shade(b.wall, facing < 0 ? 0 : -0.14), alpha('#2E3944', 0.16));
+        { x: c.x, y: c.y, z: eave }, { x: a.x, y: a.y, z: eave },
+      ], shade(b.wall, (facing < 0 ? 0.02 : -0.12) + lit * 0.06 - 0.04), alpha('#2E3944', 0.16));
+      const face = this.faces[before];
+      const decals = detail ? dr.walls[j] : undefined;
+      if (face && decals && decals.length) {
+        face.decals = [];
+        for (const d of decals) {
+          const cp = clipNear(d.pts.map((p) => toCamera(cam, p.x, p.y, p.z)));
+          if (cp.length >= 3) face.decals.push({ pts: cp, fill: d.fill, text: d.text });
+        }
+      }
     }
-    this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: b.height })), b.roof, alpha('#2E3944', 0.14));
+    if (dr.ridge) {
+      const r = dr.ridge;
+      // Two slopes and two gable ends. The gables are wall-coloured, the
+      // slopes are the roof, and the slope facing the sun is the lighter one.
+      this.push(cam, [r.a0, r.a1, r.top1, r.top0], shade(b.roof, 0.04), alpha('#2E3944', 0.14));
+      this.push(cam, [r.b1, r.b0, r.top0, r.top1], shade(b.roof, -0.12), alpha('#2E3944', 0.14));
+      this.push(cam, [r.a0, r.b0, r.top0], shade(b.wall, -0.06), alpha('#2E3944', 0.12));
+      this.push(cam, [r.b1, r.a1, r.top1], shade(b.wall, -0.06), alpha('#2E3944', 0.12));
+    } else {
+      this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), b.roof, alpha('#2E3944', 0.14));
+    }
+  }
+
+  /**
+   * Shadows on the ground, from one sun at four in the afternoon.
+   *
+   * The cheapest depth cue there is, and the one the third-person view never
+   * had: every building sat on the grass like a sticker. A shadow is the
+   * footprint swept along the light, painted into the ground plane before
+   * anything stands on it.
+   */
+  private collectShadows(sim: Sim, cam: Cam): void {
+    const sun = sim.sun;
+    const fill = alpha('#34465C', 0.17);
+    for (const b of sim.world.data.buildings) {
+      if (b.height < 1.2) continue;
+      const c = b.poly[0];
+      if (Math.hypot(c.x - cam.pos.x, c.y - cam.pos.y) > 120) continue;
+      const k = b.height * 0.55;
+      const off = { x: sun.x * k, y: sun.y * k };
+      const poly = b.poly;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[j], d = poly[i];
+        this.push(cam, [
+          { x: a.x, y: a.y, z: 0 }, { x: d.x, y: d.y, z: 0 },
+          { x: d.x + off.x, y: d.y + off.y, z: 0 }, { x: a.x + off.x, y: a.y + off.y, z: 0 },
+        ], fill, undefined, undefined, Layer.Ground, 50);
+      }
+    }
+    for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, 90)) {
+      if (p.kind !== 'tree') continue;
+      const r = 2.1 * p.scale;
+      const cx = p.pos.x + sun.x * 3.2, cy = p.pos.y + sun.y * 3.2;
+      const pts: P3[] = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(a) * r * 1.2, y: cy + Math.sin(a) * r * 0.8, z: 0 });
+      }
+      this.push(cam, pts, fill, undefined, undefined, Layer.Ground, 50);
+    }
   }
 
   /**
@@ -510,12 +845,7 @@ export class PerspectiveRenderer {
   }
 
   private collectActors(sim: Sim, cam: Cam): void {
-    for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, FAR)) {
-      if (p.kind === 'tree') { this.card(cam, p.pos, 3.6, 2.0, 2.6, shade(VENEER.grass, -0.2)); continue; }
-      const tall = p.kind === 'pole' || p.kind === 'sign';
-      this.card(cam, p.pos, tall ? 1.8 : 0.5, tall ? 0.2 : 0.55, tall ? 1.8 : 0.5,
-        p.tint && p.tint.startsWith('#') ? p.tint : VENEER.gravel);
-    }
+    for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, FAR)) this.prop(cam, p, sim);
     /*
      * Who is who, at the size a person actually is on the glass.
      *
@@ -541,7 +871,27 @@ export class PerspectiveRenderer {
         : undefined;
       this.person(cam, p.pos, VENEER.uniform, { cap: VENEER.uniformDark, light });
     }
-    if (!sim.devonStopped) this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend);
+    for (const p of sim.people) {
+      if (!p.visible) continue;
+      if (p.uniform) {
+        this.person(cam, p.pos, VENEER.uniform, { cap: VENEER.uniformDark });
+      } else {
+        this.person(cam, p.pos, p.tint, { hood: p.hood ? shade(p.tint, -0.18) : undefined });
+      }
+    }
+    /*
+     * Devon rides when he is riding. Stopped — by the officer, or at his own
+     * front door — he is a boy standing up with his board beside him, which is
+     * a different picture and the right one: during the stop he used to vanish
+     * from the town entirely.
+     */
+    if (sim.devonVisible) {
+      if (sim.devonFollowing && !sim.devonStopped) this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend);
+      else {
+        this.person(cam, sim.devonPos, VENEER.friend);
+        this.card(cam, { x: sim.devonPos.x + 0.45, y: sim.devonPos.y + 0.2 }, 0.45, 0.1, 0.42, shade(VENEER.friend, -0.45));
+      }
+    }
     for (const d of sim.drones) {
       if (d.state === 'DESTABILISED') continue;
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
@@ -551,9 +901,103 @@ export class PerspectiveRenderer {
     for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055, b.shape);
   }
 
+  /** A round, lumpy billboard: a tree's crown. */
+  private blob(cam: Cam, p: Vec2, z: number, r: number, squash: number, fill: string, seed: number): void {
+    const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
+    if (d > FAR || d < 0.25) return;
+    const ux = -(p.y - cam.pos.y) / d, uy = (p.x - cam.pos.x) / d;
+    const pts: P3[] = [];
+    const N = 11;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const w = 1 + 0.09 * Math.sin(a * 3 + seed) + 0.06 * Math.sin(a * 5 - seed * 1.3);
+      pts.push({ x: p.x + ux * Math.cos(a) * r * w, y: p.y + uy * Math.cos(a) * r * w, z: z + Math.sin(a) * r * squash * w });
+    }
+    this.push(cam, pts, fill);
+  }
+
+  /**
+   * Street furniture, as the things it is.
+   *
+   * Every prop used to be one square card — a car, a bin and a hydrant were
+   * the same grey tile at three sizes. Each is now the smallest honest shape
+   * of itself: a car is a body and a cabin, a tree is a trunk and a crown, a
+   * sign is a post with words on it.
+   */
+  private prop(cam: Cam, p: Prop, sim: Sim): void {
+    const tint = p.tint && p.tint.startsWith('#') ? p.tint : undefined;
+    const dist = Math.hypot(p.pos.x - cam.pos.x, p.pos.y - cam.pos.y);
+    switch (p.kind) {
+      case 'tree': {
+        const s = p.scale;
+        const seed = (hashString(p.id) % 100) / 10;
+        this.card(cam, p.pos, 1.2 * s, 0.14 * s, 1.2 * s, '#6B5646');
+        this.blob(cam, p.pos, 3.5 * s, 2.25 * s, 0.95, VENEER.tree, seed);
+        this.blob(cam, { x: p.pos.x - 0.3, y: p.pos.y - 0.3 }, 3.9 * s, 1.35 * s, 0.9, VENEER.treeLight, seed + 2);
+        return;
+      }
+      case 'bush':
+        this.blob(cam, p.pos, 0.55 * p.scale, 0.8 * p.scale, 0.7, VENEER.tree, 1);
+        return;
+      case 'car': {
+        if (dist > 120) { this.card(cam, p.pos, 0.7, 1.4, 0.7, tint ?? '#8C96A0'); return; }
+        const col = tint ?? '#8C96A0';
+        this.box(cam, p.pos, p.rot, 4.2, 1.8, 0.85, col);
+        const fx = Math.cos(p.rot), fy = Math.sin(p.rot);
+        const cab = { x: p.pos.x - fx * 0.35, y: p.pos.y - fy * 0.35 };
+        this.boxAt(cam, cab, p.rot, 2.2, 1.6, 0.85, 1.4, '#3E4B57');
+        // A car whose alarm is going flashes its lights.
+        if (p.alarmUntil && p.alarmUntil > sim.tick && Math.floor(sim.tick / 20) % 2 === 0) {
+          this.card(cam, { x: p.pos.x + fx * 2.15, y: p.pos.y + fy * 2.15 }, 0.65, 0.5, 0.12, '#FFD166');
+        }
+        return;
+      }
+      case 'bin':
+        this.box(cam, p.pos, p.rot, 0.62, 0.62, p.knocked ? 0.45 : 1.05, '#4E6B58');
+        return;
+      case 'hydrant':
+        this.card(cam, p.pos, 0.38, 0.14, 0.38, '#C8513E');
+        return;
+      case 'bench':
+        this.boxAt(cam, p.pos, p.rot, 1.8, 0.5, 0.38, 0.48, '#8A6A4E');
+        return;
+      case 'mailbox':
+        this.card(cam, p.pos, 0.5, 0.05, 0.5, '#5B5F63');
+        this.boxAt(cam, p.pos, p.rot, 0.5, 0.3, 1.0, 1.3, '#2F4F6F');
+        return;
+      case 'planter':
+        this.box(cam, p.pos, 0, 1.1 * p.scale, 1.1 * p.scale, 0.55, tint ?? '#B8B2A6');
+        this.blob(cam, p.pos, 0.85, 0.55 * p.scale, 0.6, VENEER.treeLight, 3);
+        return;
+      case 'hoop':
+        this.card(cam, p.pos, 1.6, 0.07, 1.6, '#50575E');
+        this.card(cam, p.pos, 3.2, 0.6, 0.4, '#F2F0EA');
+        return;
+      case 'cone':
+        this.card(cam, p.pos, 0.3, 0.14, 0.3, '#E8773A');
+        return;
+      case 'sign': {
+        this.card(cam, p.pos, 1.3, 0.05, 1.3, '#50575E');
+        const label = p.tint && !p.tint.startsWith('#') ? p.tint : '';
+        for (const side of [1, -1]) {
+          this.panel(cam, p.pos, p.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2), 1.8, 0.7, 2.7, '#F4F2EC',
+            label ? { str: label, colour: '#2C8C8C', aspect: 2.57 } : undefined, 0.02);
+        }
+        return;
+      }
+      case 'ammoCache':
+        this.box(cam, p.pos, 0, 0.9, 0.6, 0.6, '#8D7B5E');
+        return;
+      default: {
+        const tall = p.kind === 'pole';
+        this.card(cam, p.pos, tall ? 1.8 : 0.5, tall ? 0.2 : 0.55, tall ? 1.8 : 0.5, tint ?? VENEER.gravel);
+      }
+    }
+  }
+
   private person(
     cam: Cam, p: Vec2, tint: string,
-    kit?: { cap?: string; light?: string },
+    kit?: { cap?: string; light?: string; hood?: string },
   ): void {
     this.card(cam, p, 0.45, 0.22, 0.45, shade(tint, -0.22));   // legs
     this.card(cam, p, 1.28, 0.28, 0.38, tint);                 // torso
@@ -562,6 +1006,8 @@ export class PerspectiveRenderer {
     // the eye reads the outline long before it reads the colour.
     if (kit?.cap) this.card(cam, p, 1.95, 0.21, 0.06, kit.cap);
     if (kit?.light) this.card(cam, p, 1.46, 0.11, 0.09, kit.light);
+    // Hood up: the head is a shape in the same cloth as the coat.
+    if (kit?.hood) this.card(cam, p, 1.78, 0.21, 0.21, kit.hood);
   }
 
   /**
@@ -906,4 +1352,162 @@ export class PerspectiveRenderer {
   }
 
   static clampPitch(p: number): number { return clamp(p, -0.55, 0.95); }
+}
+
+// ------------------------------------------------------------------- dressing
+
+interface Decal { pts: P3[]; fill: string; text?: Face['text'] }
+interface Dressing {
+  /** Per wall edge (indexed like the edge's first vertex), what hangs on it. */
+  walls: Decal[][];
+  /** Per wall edge, how squarely it faces the sun, 0..1. */
+  sunlit: number[];
+  ridge: { a0: P3; a1: P3; b0: P3; b1: P3; top0: P3; top1: P3 } | null;
+}
+
+const GLASS = '#51687A';
+const GLASS_LIT = '#6F8BA0';
+const DOOR = '#6E5443';
+
+/** Which words go on a building's sign, if any. */
+function signFor(b: Building): string | null {
+  if (!b.label) return null;
+  if (b.kind === 'shop' || b.kind === 'civic' || b.kind === 'school') {
+    return b.label.replace(/^NORTHGATE PARADE — /, '').replace(/^RIDGELINE — /, '');
+  }
+  if (b.kind === 'structure' && /DEPOT|PARKING/.test(b.label)) return b.label.replace(/ — DECK 2$/, '');
+  return null;
+}
+
+/**
+ * Work out a building's dressing from its footprint and the streets around it.
+ *
+ * The front is whichever wall looks at the nearest road. Houses get a door
+ * there and a pitched roof along their long side; shops get a glass front
+ * and their name above it; everything tall enough gets windows by the floor.
+ */
+function dress(b: Building, sim: Sim): Dressing {
+  const poly = b.poly;
+  const n = poly.length;
+  let cx = 0, cy = 0;
+  for (const p of poly) { cx += p.x; cy += p.y; }
+  cx /= n; cy /= n;
+
+  const edges = poly.map((_, i) => {
+    const a = poly[(i - 1 + n) % n], c = poly[i];
+    const len = Math.hypot(c.x - a.x, c.y - a.y) || 1;
+    let nx = (c.y - a.y) / len, ny = -(c.x - a.x) / len;
+    const mx = (a.x + c.x) / 2, my = (a.y + c.y) / 2;
+    if (nx * (mx - cx) + ny * (my - cy) < 0) { nx = -nx; ny = -ny; }
+    return { a, c, len, nx, ny, mx, my };
+  });
+  // Indexed by the edge's first vertex, to match collectBuilding's (j, i) walk.
+  const byStart = (k: number) => edges[(k + 1) % n];
+
+  const roads = sim.world.data.roadEdges;
+  const nodes = new Map(sim.world.data.roadNodes.map((r) => [r.id, r.pos]));
+  const roadDist = (x: number, y: number) => {
+    let best = Infinity;
+    for (const e of roads) {
+      const p = nodes.get(e.a), q = nodes.get(e.b);
+      if (!p || !q) continue;
+      best = Math.min(best, segDist(x, y, p, q));
+    }
+    return best;
+  };
+  let front = 0, frontD = Infinity;
+  for (let k = 0; k < n; k++) {
+    const e = byStart(k);
+    const d = roadDist(e.mx + e.nx * 4, e.my + e.ny * 4);
+    if (d < frontD) { frontD = d; front = k; }
+  }
+
+  const sun = sim.sun;
+  const walls: Decal[][] = [];
+  const sunlit: number[] = [];
+  const houseLike = b.kind === 'house';
+  const sign = signFor(b);
+  const floors = b.height >= 5 ? Math.max(1, Math.floor((b.height - 0.6) / 2.9)) : 0;
+
+  for (let k = 0; k < n; k++) {
+    const e = byStart(k);
+    sunlit.push(Math.max(0, -(e.nx * sun.x + e.ny * sun.y)));
+    const out: Decal[] = [];
+    const along = { x: (e.c.x - e.a.x) / e.len, y: (e.c.y - e.a.y) / e.len };
+    const at = (t: number, z: number, o = 0.035): P3 => ({
+      x: e.a.x + along.x * t + e.nx * o, y: e.a.y + along.y * t + e.ny * o, z,
+    });
+    // Seen from outside, does the edge run left to right? If not, quads are
+    // wound the other way, or every sign in town reads backwards.
+    const flip = along.x * e.ny - along.y * e.nx < 0;
+    const rect = (t0: number, t1: number, z0: number, z1: number, fill: string, text?: Face['text'], o = 0.035): Decal => {
+      const l = flip ? t1 : t0, r = flip ? t0 : t1;
+      return { pts: [at(l, z0, o), at(r, z0, o), at(r, z1, o), at(l, z1, o)], fill, text };
+    };
+    const isFront = k === front && frontD < 26;
+
+    if (b.kind === 'shop' && isFront) {
+      // A glass front, a door in it, and the name over the top.
+      out.push(rect(e.len * 0.08, e.len * 0.92, 0.35, 2.7, GLASS_LIT));
+      out.push(rect(e.len * 0.46, e.len * 0.54, 0.02, 2.4, '#3D4C58', undefined, 0.05));
+      if (sign) out.push(rect(e.len * 0.12, e.len * 0.88, 3.05, 4.05, '#F4F1EA',
+        { str: sign, colour: '#2B3640', aspect: (e.len * 0.76) / 1.0, weight: 700 }, 0.05));
+    } else if (floors > 0 && e.len > 3.2 && (b.kind !== 'structure' || isFront)) {
+      const count = Math.max(1, Math.floor((e.len - 1.6) / 3.3));
+      const step = e.len / count;
+      for (let f = 0; f < floors; f++) {
+        const z0 = 1.05 + f * 2.9;
+        if (z0 + 1.3 > b.height - 0.3) break;
+        for (let w = 0; w < count; w++) {
+          const t = step * (w + 0.5);
+          // Leave the doorway clear on a house front.
+          if (houseLike && isFront && f === 0 && Math.abs(t - e.len * 0.62) < 1.3) continue;
+          out.push(rect(t - 0.6, t + 0.6, z0, z0 + 1.25, (w + f + k) % 3 === 0 ? GLASS_LIT : GLASS));
+        }
+      }
+      if (houseLike && isFront) {
+        out.push(rect(e.len * 0.62 - 0.5, e.len * 0.62 + 0.5, 0.02, 2.15, DOOR));
+        // A number by the door, where the street has numbers.
+        const num = b.label?.match(/^(\d+) /)?.[1];
+        if (num) out.push(rect(e.len * 0.62 + 0.75, e.len * 0.62 + 1.35, 1.55, 2.0, '#F4F1EA',
+          { str: num, colour: '#2B3640', aspect: 1.33, weight: 800 }, 0.05));
+      }
+      if ((b.kind === 'civic' || b.kind === 'school') && isFront) {
+        out.push(rect(e.len * 0.44, e.len * 0.56, 0.02, 2.5, '#3D4C58', undefined, 0.05));
+        if (sign) out.push(rect(e.len * 0.18, e.len * 0.82, b.height - 1.45, b.height - 0.45, '#F4F1EA',
+          { str: sign, colour: '#2B3640', aspect: (e.len * 0.64) / 1.0 }, 0.05));
+      }
+    } else if (b.kind === 'garage' && isFront && e.len > 2.6) {
+      out.push(rect(e.len * 0.15, e.len * 0.85, 0.02, 2.3, shade(b.wall, -0.18)));
+    } else if (b.kind === 'structure' && isFront && sign) {
+      out.push(rect(e.len * 0.15, e.len * 0.85, b.height - 1.6, b.height - 0.5, '#F4F1EA',
+        { str: sign, colour: '#2B3640', aspect: (e.len * 0.7) / 1.1 }, 0.05));
+    }
+    walls.push(out);
+  }
+
+  // A pitched roof, along the long side, on anything that is a home.
+  let ridge: Dressing['ridge'] = null;
+  if (houseLike && n === 4) {
+    const e0 = edges[0], e1 = edges[1];
+    // Pick the pair of opposite corners that make the long side the ridge.
+    const long0 = e0.len >= e1.len;
+    const [p0, p1, p2, p3] = long0 ? [poly[3], poly[0], poly[1], poly[2]] : [poly[0], poly[1], poly[2], poly[3]];
+    const rise = Math.min(2.2, Math.min(e0.len, e1.len) * 0.3);
+    const h = b.height;
+    const mid = (u: Vec2, v: Vec2): P3 => ({ x: (u.x + v.x) / 2, y: (u.y + v.y) / 2, z: h + rise });
+    ridge = {
+      a0: { x: p0.x, y: p0.y, z: h }, a1: { x: p1.x, y: p1.y, z: h },
+      b1: { x: p2.x, y: p2.y, z: h }, b0: { x: p3.x, y: p3.y, z: h },
+      top0: mid(p0, p3), top1: mid(p1, p2),
+    };
+  }
+  return { walls, sunlit, ridge };
+}
+
+function segDist(x: number, y: number, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
+  return Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
 }

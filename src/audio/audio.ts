@@ -281,6 +281,131 @@ export class Audio {
   }
   peelOut(): void { if (this.uiGain) this.burst(this.uiGain, 3800, 200, 0.32, 0.045); }
 
+  // ------------------------------------------------------------- the player's
+
+  /*
+   * The player's own sounds. Everything SAFEtrace makes is a bell in A, and it
+   * never changes. The notebook is a pencil and a guitar-ish pluck in E
+   * minor: warmer, lower, a little out of step — a person, not a product.
+   */
+  /** Something written down. */
+  clue(): void {
+    if (!this.uiGain) return;
+    this.burst(this.uiGain, 5200, 2600, 0.07, 0.025);
+    this.env(this.uiGain, 329.63, 'triangle', 0.004, 0.5, 0.05);
+    this.env(this.uiGain, 493.88, 'sine', 0.004, 0.42, 0.028);
+  }
+
+  /** Two things that belong together. */
+  deduction(): void {
+    if (!this.ctx || !this.uiGain) return;
+    const notes = [329.63, 392.0, 493.88, 659.25];
+    notes.forEach((f, i) => {
+      const t = this.ctx!.currentTime + i * 0.085;
+      const o = this.ctx!.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const g = this.ctx!.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+      o.connect(g).connect(this.uiGain!);
+      o.start(t); o.stop(t + 1.5);
+    });
+  }
+
+  /** A line of somebody speaking. Barely there. */
+  talkBlip(): void { if (this.uiGain) this.env(this.uiGain, 196, 'sine', 0.003, 0.07, 0.03); }
+
+  // --------------------------------------------------------------- the places
+
+  private placeBeds = new Map<string, GainNode>();
+  private currentPlace = '';
+  private birdClock = 0;
+
+  /**
+   * Each part of town has its own air: birds over Maple Court and the greenway,
+   * a crowd's murmur on the Commons, the hum of plant at Relay 12, and in the
+   * Channel the concrete swallowing everything except a trickle of water.
+   * None of it is music and none of it reacts to risk — the town sounds the
+   * same whether or not it is looking at you, which is the point.
+   */
+  setPlace(place: string, dt: number): void {
+    if (!this.ctx || !this.worldGain) return;
+    if (this.placeBeds.size === 0) this.buildPlaceBeds();
+    if (place !== this.currentPlace) {
+      this.currentPlace = place;
+      const t = this.ctx.currentTime;
+      for (const [id, g] of this.placeBeds) {
+        const want = id === place ? (id === 'channel' ? 0.05 : id === 'relay' ? 0.05 : 0.035) : 0;
+        g.gain.setTargetAtTime(want, t, 1.2);
+      }
+    }
+    if (place === 'maple' || place === 'ridgeline' || place === 'northgate') {
+      this.birdClock -= dt;
+      if (this.birdClock <= 0) {
+        this.birdClock = 2.5 + Math.random() * 6;
+        this.chirp();
+      }
+    }
+  }
+
+  private buildPlaceBeds(): void {
+    const c = this.ctx!;
+    const bed = (id: string, build: (out: GainNode) => void) => {
+      const g = c.createGain();
+      g.gain.value = 0;
+      g.connect(this.worldGain!);
+      build(g);
+      this.placeBeds.set(id, g);
+    };
+    bed('commons', (out) => {
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuffer(3); src.loop = true;
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 520; f.Q.value = 0.9;
+      const lfo = c.createOscillator(); lfo.frequency.value = 0.23;
+      const lg = c.createGain(); lg.gain.value = 180;
+      lfo.connect(lg).connect(f.frequency);
+      src.connect(f).connect(out); src.start(); lfo.start();
+    });
+    bed('relay', (out) => {
+      for (const [fq, v] of [[50, 0.8], [100, 0.5], [150, 0.18]] as Array<[number, number]>) {
+        const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = fq;
+        const g = c.createGain(); g.gain.value = v;
+        o.connect(g).connect(out); o.start();
+      }
+    });
+    bed('channel', (out) => {
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuffer(3); src.loop = true;
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 2.2;
+      const lfo = c.createOscillator(); lfo.frequency.value = 0.7;
+      const lg = c.createGain(); lg.gain.value = 500;
+      lfo.connect(lg).connect(f.frequency);
+      src.connect(f).connect(out); src.start(); lfo.start();
+    });
+  }
+
+  private chirp(): void {
+    if (!this.ctx || !this.worldGain) return;
+    const c = this.ctx;
+    const base = 2600 + Math.random() * 1600;
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const t = c.currentTime + i * (0.09 + Math.random() * 0.05);
+      const o = c.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(base, t);
+      o.frequency.exponentialRampToValueAtTime(base * (1.2 + Math.random() * 0.3), t + 0.06);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.012, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      o.connect(g).connect(this.worldGain);
+      o.start(t); o.stop(t + 0.1);
+    }
+  }
+
   applySettings(): void {
     if (!this.ctx) return;
     if (this.master) this.master.gain.value = this.settings.masterVolume;

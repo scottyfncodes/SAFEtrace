@@ -44,7 +44,11 @@ export function authorNorthgate(b: TownBuilder): void {
     [45, 95, 180, ROOF_TERRACOTTA], [100, 95, 180, ROOF_SLATE], [180, 95, 180, ROOF_SAND],
   ];
   for (const [x, y, rot, roof] of houses) {
+    // The north side has numbers, because the story needs to be able to say
+    // "No. 14" and have a player find it by walking along and counting.
+    const number = y < 60 ? 10 + houses.filter(([hx, hy]) => hy < 60 && hx < x).length * 2 : 0;
     b.house({
+      label: number ? `${number} NORTHGATE LN` : undefined,
       at: pt(x, y), w: 10, d: 8, rot, roof, wall: WALL_CREAM,
       occupants: 2 + ((x + y) % 4),
       drivewayDir: y < 60 ? 90 : 270,

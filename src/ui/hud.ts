@@ -22,7 +22,8 @@ const KEY_PROMPTS = [
   '<span><kbd>S</kbd>slide</span>',
   '<span><kbd>F</kbd>sling</span>',
   '<span><kbd>Q</kbd>plan</span>',
-  '<span><kbd>E</kbd>interact</span>',
+  '<span><kbd>E</kbd>talk / look</span>',
+  '<span><kbd>N</kbd>notes</span>',
 ].join('');
 
 // Two lines, not three. The ollie, the sling and the plan view are all buttons
@@ -34,6 +35,7 @@ const TOUCH_PROMPTS = [
 import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
 import { INSPECT, PHONE, SYSTEM } from '../content/copy';
+import type { TalkView } from '../content/story';
 
 const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
 
@@ -50,6 +52,16 @@ export class Hud {
   /** The drawn score eases toward the real one, so it reads instead of flickering. */
   private shownScore = 96;
 
+  private talk: HTMLElement;
+  private toasts: HTMLElement;
+  private notesBadge: HTMLElement;
+  private buttons: HTMLElement;
+  private talkView: TalkView | null = null;
+  /** Set by the host: where a conversation's taps and answers go. */
+  talkHandlers: { advance(): void; choose(id: string): void } = { advance: () => {}, choose: () => {} };
+  /** Set by the host: the two buttons under the phone. */
+  onButton: (which: 'notes' | 'menu') => void = () => {};
+
   private queue: SafetraceMessage[] = [];
   private live = new Set<HTMLElement>();
   private promptFade = 0;
@@ -63,6 +75,7 @@ export class Hud {
     private onVerb: (verb: HackVerb, nodeId: string) => void = () => {},
   ) {
     root.innerHTML = `
+      <div id="corner">
       <div id="phone">
         <div class="wordmark">${WORDMARK}</div>
         <div class="score-row">
@@ -73,10 +86,21 @@ export class Hud {
         <div class="score-state" id="score-state">NOMINAL</div>
         <div class="phone-rows" id="phone-rows"></div>
       </div>
+      <div id="hud-buttons">
+        <button class="hud-button" data-act="notes" aria-label="Notes">
+          <span class="hb-label">Notes</span><span class="hb-key">${touch ? '' : 'N'}</span><span class="badge" id="notes-badge"></span>
+        </button>
+        <button class="hud-button" data-act="menu" aria-label="Pause">
+          <span class="hb-label">${touch ? 'II' : 'Menu'}</span><span class="hb-key">${touch ? '' : 'Esc'}</span>
+        </button>
+      </div>
+      </div>
       <div id="notifications"></div>
       <div id="inspect"></div>
       <div id="prompts"></div>
       <div id="dialogue"></div>
+      <div id="talk"></div>
+      <div id="toasts"></div>
       <div id="debug"></div>
     `;
     this.notifications = root.querySelector('#notifications')!;
@@ -89,6 +113,38 @@ export class Hud {
     this.scoreMeter = root.querySelector('#meter')!;
     this.phoneRows = root.querySelector('#phone-rows')!;
     this.scoreState = root.querySelector('#score-state')!;
+    this.talk = root.querySelector('#talk')!;
+    this.toasts = root.querySelector('#toasts')!;
+    this.notesBadge = root.querySelector('#notes-badge')!;
+    this.buttons = root.querySelector('#hud-buttons')!;
+
+    this.buttons.addEventListener('pointerup', (e) => {
+      const b = (e.target as HTMLElement).closest('.hud-button') as HTMLElement | null;
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      if (b.dataset.act === 'notes') this.onButton('notes');
+      else this.onButton('menu');
+    });
+    this.buttons.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    // A conversation: tap the card to hear the next line, tap an answer to say it.
+    this.talk.addEventListener('pointerup', (e) => {
+      const choice = (e.target as HTMLElement).closest('.choice') as HTMLElement | null;
+      e.preventDefault(); e.stopPropagation();
+      if (choice?.dataset.choice) { this.talkHandlers.choose(choice.dataset.choice); return; }
+      if (!this.talkView?.choices.length) this.talkHandlers.advance();
+    });
+    this.talk.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    sim.bus.on('case:clue', ({ id }) => {
+      const c = sim.casefile.clue(id);
+      // The first note ever says where the notes are; nobody needs telling twice.
+      if (c) this.toast('NOTED', sim.casefile.clues.size === 1 ? `${c.title} — ${touch ? 'tap Notes' : 'N'} to read` : c.title, false);
+    });
+    sim.bus.on('case:deduction', ({ id }) => {
+      const d = sim.casefile.deduction(id);
+      if (d) this.toast('CONNECTED', d.title, true);
+    });
 
     // Verb chips are the one place the HUD accepts input. Delegated, so the
     // panel can re-render freely underneath.
@@ -114,6 +170,39 @@ export class Hud {
     this.dialogue.textContent = lines.join('  ');
     this.dialogue.classList.add('show');
     this.dialogueTimer = seconds;
+  }
+
+  /**
+   * A conversation, or a thing being looked at. Speech, a name, and — on the
+   * last line — the answers the player can give. Numbered on a keyboard,
+   * tappable on a phone, and never more than three.
+   */
+  showTalk(view: TalkView | null): void {
+    this.talkView = view;
+    this.root.classList.toggle('talking', !!view);
+    if (!view) { this.talk.classList.remove('show'); return; }
+    const key = this.touch ? 'tap' : 'E';
+    const who = view.who
+      ? `<div class="who">${escapeHtml(view.who)}</div>`
+      : `<div class="who look">You look closer</div>`;
+    const choices = view.choices.length
+      ? `<div class="choices">${view.choices.map((c, i) =>
+        `<button class="choice" data-choice="${escapeHtml(c.id)}">${this.touch ? '' : `<kbd>${i + 1}</kbd>`}${escapeHtml(c.label)}</button>`).join('')}</div>`
+      : `<div class="next">${view.more ? `${key} ▸` : `${key} — done`}</div>`;
+    this.talk.innerHTML = `${who}<div class="said${view.kind === 'place' ? ' narration' : ''}">${escapeHtml(view.text)}</div>${choices}`;
+    this.talk.classList.add('show');
+  }
+
+  get talkChoices(): string[] { return this.talkView?.choices.map((c) => c.id) ?? []; }
+
+  /** Something went in the notes. Small, top-centre, and gone. */
+  private toast(kind: string, title: string, strong: boolean): void {
+    const el = document.createElement('div');
+    el.className = `toast${strong ? ' strong' : ''}`;
+    el.innerHTML = `<span class="tk">${escapeHtml(kind)}</span><span class="tt">${escapeHtml(title)}</span>`;
+    this.toasts.appendChild(el);
+    while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
+    window.setTimeout(() => { el.classList.add('leaving'); window.setTimeout(() => el.remove(), 400); }, strong ? 4200 : 3000);
   }
 
   clearSay(): void {
@@ -147,6 +236,16 @@ export class Hud {
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
     this.inspect.classList.toggle('hidden', this.sim.aimMode);
     this.dialogue.classList.toggle('hidden', this.sim.aimMode);
+    this.talk.classList.toggle('hidden', this.sim.aimMode);
+
+    // The notes button says how much is new, and whether there is something in
+    // there worth sitting down with — never what it is.
+    const cf = this.sim.casefile;
+    const unseen = cf.unseen;
+    const open = cf.openConnections();
+    const badge = unseen > 0 ? String(unseen) : open > 0 ? '•' : '';
+    if (this.notesBadge.textContent !== badge) this.notesBadge.textContent = badge;
+    this.buttons.classList.toggle('has-notes', cf.clues.size > 0);
 
     this.debug.classList.toggle('show', this.settings.showDebug);
     if (this.settings.showDebug) this.updateDebug();

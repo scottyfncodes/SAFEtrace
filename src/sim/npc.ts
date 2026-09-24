@@ -26,6 +26,10 @@ export interface Npc {
   lookAt: Vec2 | null;
   /** Ticks left of walking away from it, fast, once the staring is over. */
   fleeing: number;
+  /** Ticks left of a look — a pause and a turned head, nothing more. */
+  glancing?: number;
+  /** Ticks before they will look again. People do not stare on a loop. */
+  glanceCooldown?: number;
 }
 
 const NAMES = [
@@ -72,7 +76,29 @@ export function startle(n: Npc, at: Vec2, ticks: number): void {
   n.waitTicks = 0;
 }
 
+/**
+ * A look. Somebody passing a boy whose face was on their phone an hour ago
+ * slows, turns their head, and carries on. It is the smallest thing a town can
+ * do to a person, and it happens every time.
+ */
+export function glance(n: Npc, at: Vec2, ticks: number): void {
+  if (n.startled > 0 || n.fleeing > 0) return;
+  n.glancing = ticks;
+  n.glanceCooldown = ticks + 60 * 20;
+  n.lookAt = { x: at.x, y: at.y };
+}
+
 export function updateNpc(n: Npc, dt: number, world: World, rng: Rng): void {
+  if ((n.glanceCooldown ?? 0) > 0) n.glanceCooldown = (n.glanceCooldown ?? 0) - 1;
+  if ((n.glancing ?? 0) > 0 && n.startled === 0) {
+    n.glancing = (n.glancing ?? 0) - 1;
+    if (n.lookAt) {
+      const want = Math.atan2(n.lookAt.y - n.pos.y, n.lookAt.x - n.pos.x);
+      n.heading = angleToward(n.heading, want, 4.0 * dt);
+    }
+    if (n.glancing === 0 && n.fleeing === 0) n.lookAt = null;
+    return;
+  }
   if (n.startled > 0) {
     // Rooted to the spot, turned toward it. This is the beat where the player
     // finds out that nothing happened to them and everything happened to you.

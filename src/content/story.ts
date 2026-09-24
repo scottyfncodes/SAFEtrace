@@ -11,13 +11,25 @@ import type { Hud } from '../ui/hud';
 import type { Audio } from '../audio/audio';
 import type { Renderer } from '../render/renderer';
 import { CARE, DIALOGUE, SYSTEM } from './copy';
+import {
+  MISLEADING, PLACES, RECORD_CLUES, caseStrength, resolveEnding,
+  type CaseStanding, type EndingId, type ReportTarget,
+} from './case';
+import {
+  PEOPLE_NAMES, chooseOption, openConversation,
+  type Conversation, type Line, type TalkContext, type TalkEffect,
+} from './talk';
+import { DEVON_HOME } from './cast';
+import { BARKS, BARK_GAP_SECONDS, BARK_LINE_SECONDS, BARK_MAX_SPEED, BARK_RANGE, type Bark, type BarkPhase } from './barks';
+import { sendTo } from '../sim/people';
 
 export interface StoryContext {
   sim: Sim;
   hud: Hud;
   audio: Audio;
   renderer: Renderer;
-  playReprise(): void;
+  /** Play the advertisement again, and then say how the afternoon ended. */
+  playReprise(ending?: EndingId): void;
   /** Device-appropriate phrasing, so beats never name a key or a gesture. */
   hint: { vision: string; inspect: string };
   /**
@@ -61,6 +73,23 @@ export interface StoryState {
   chainRead: number;
   visionUnlockedAt: number;
   repriseShown: boolean;
+  /** Tick Devon went home after the stop. -1 until he does. */
+  devonHomeAt: number;
+  /**
+   * What the player did at the stop. `null` until they have made the call —
+   * talking to the officer, or letting the stop run its course.
+   */
+  intervened: boolean | null;
+  /** Who the player took the case to. The one decision the ending reads. */
+  report: ReportTarget | null;
+  ending: EndingId | null;
+  /** How many times the player has spoken to each person. */
+  talked: Record<string, number>;
+  toldCarvalho: boolean;
+  /** Places the player has stopped to look at. */
+  looked: string[];
+  /** When the advertisement comes back, once there is an ending to come back to. */
+  finaleAt: number;
 }
 
 export const initialStoryState = (): StoryState => ({
@@ -74,7 +103,18 @@ export const initialStoryState = (): StoryState => ({
   chainRead: 0,
   visionUnlockedAt: -1,
   repriseShown: false,
+  devonHomeAt: -1,
+  intervened: null,
+  report: null,
+  ending: null,
+  talked: {},
+  toldCarvalho: false,
+  looked: [],
+  finaleAt: -1,
 });
+
+/** Where the officer comes from to stop Devon: up the apron, from the street. */
+const OFFICER_FROM = { x: 196, y: 392 };
 
 /** Ticks of *play*, which is not the same as ticks of simulation. */
 const since = (c: StoryContext, s: StoryState): number => c.sim.tick - s.startedAt;
@@ -122,6 +162,14 @@ export const BEATS: Beat[] = [
     },
   },
   {
+    id: 'devon-texts',
+    label: 'Devon — where are you',
+    // A friend who is waiting texts you. It says where he is the way a friend
+    // would, by landmarks, and it says it once.
+    when: (c, s) => s.metDevonAt < 0 && since(c, s) > 60 * 24,
+    run: (c) => c.hud.say([DIALOGUE.devonWhere], 5.5),
+  },
+  {
     id: 'devon-suggests-channel',
     label: 'The Channel',
     // A beat into the conversation, not a beat into the session — this used
@@ -142,11 +190,28 @@ export const BEATS: Beat[] = [
     },
   },
 
+  {
+    id: 'devon-nudge',
+    label: 'Devon — you coming?',
+    // A friend who suggested something and was ignored says so, once.
+    when: (c, s) => s.metDevonAt > 0 && s.matchFiredAt < 0
+      && c.sim.tick >= s.metDevonAt + 60 * 70 && dist(c.sim.player.pos, CHANNEL_ENTRY) > 60,
+    run: (c) => c.hud.say([DIALOGUE.devonNudge], 4.2),
+  },
+
   // ------------------------------------------------------------------ the hook
   {
     id: 'incident',
     label: 'Incident reported — Northgate',
-    when: (c, s) => s.matchFiredAt < 0 && dist(c.sim.player.pos, CHANNEL_ENTRY) < 40 && since(c, s) > 60 * 25,
+    /*
+     * With Devon, or not at all. This used to need only the player at the
+     * Channel, so a player who skated straight there without ever finding him
+     * got "Devon: I'm right here" from a boy eighty metres away on a lawn.
+     */
+    when: (c, s) => s.matchFiredAt < 0 && c.sim.devonFollowing
+      && dist(c.sim.player.pos, CHANNEL_ENTRY) < 40
+      && dist(c.sim.devonPos, c.sim.player.pos) < 30
+      && since(c, s) > 60 * 25,
     run: (c, s) => {
       // Four kilometres away, on the far side of town, while the player is
       // standing in a drainage channel with their best friend.
@@ -179,6 +244,21 @@ export const BEATS: Beat[] = [
       c.after(2.6, () => c.hud.say([DIALOGUE.devonAfterMatch[0]], 3.0));
       c.after(6, () => c.hud.say([DIALOGUE.devonAfterMatch[1]], 3.4));
       c.after(9.8, () => c.hud.say([DIALOGUE.devonAfterMatch[2]], 3.6));
+      // The first two things in the notes are the only two the player is sure of.
+      c.after(4, () => { c.sim.learnClue('c-match'); c.sim.learnClue('c-with-me'); });
+      c.sim.devonMarked = true;
+
+      // Northgate, meanwhile. None of this is announced; it is simply there
+      // for anybody who goes and looks.
+      for (const id of ['p-panel', 'p-tape', 'p-parcel']) c.sim.showPlace(id, true);
+      for (const id of ['carvalho', 'brennan', 'courier']) {
+        const p = c.sim.person(id);
+        if (p) p.visible = true;
+      }
+      c.after(22, () => {
+        c.sim.showPlace('p-alert', true);
+        c.sim.message('CARE', [CARE.communityAlert], 5.5, 'normal', 'context');
+      });
     },
   },
   {
@@ -222,6 +302,13 @@ export const BEATS: Beat[] = [
     run: (c, s) => {
       c.sim.devonStopped = true;
       c.sim.devonFollowing = false;
+      // Somebody actually comes. A stop is a person standing next to you.
+      const officer = c.sim.person('officer');
+      if (officer) {
+        officer.pos = { x: c.sim.devonPos.x + (OFFICER_FROM.x - CHANNEL_ENTRY.x) * 0.5, y: c.sim.devonPos.y - 16 };
+        officer.visible = true;
+        sendTo(officer, { x: c.sim.devonPos.x + 1.3, y: c.sim.devonPos.y - 1.1 });
+      }
       // Not arrested. Just stopped, very politely, while the system checks.
       c.sim.message('CARE', [CARE.stopped], 6.0);
       c.hud.say([DIALOGUE.devonStopped[0]], 3.6);
@@ -308,18 +395,60 @@ export const BEATS: Beat[] = [
       c.sim.message('SYSTEM', [SYSTEM.recordImmutable, SYSTEM.retention], 8.0, 'strong');
       c.after(5, () => c.hud.say([DIALOGUE.playerThought[1]], 4.5));
       c.after(11, () => c.hud.say([DIALOGUE.playerThought[3]], 5.0));
+      c.after(18, () => c.hud.say([DIALOGUE.playerThought[4]], 5.0));
     },
+  },
+  {
+    id: 'mara-texts',
+    label: 'Mara',
+    // One person in the town has an opinion about what to do next, and she
+    // says it the way people do: a text, once, and then she leaves you to it.
+    when: (c, s) => s.devonReleasedAt > 0 && c.sim.tick >= s.devonReleasedAt + 60 * 8
+      && !(s.talked.mara > 0),
+    run: (c) => c.hud.say([DIALOGUE.maraText], 5.5),
   },
   {
     id: 'reprise',
     label: 'The advertisement, unchanged',
-    when: (c, s) => s.visionUnlockedAt > 0 && c.sim.tick > s.visionUnlockedAt + 60 * 22 && !s.repriseShown,
+    /*
+     * The advertisement returns when the player has decided what to do with
+     * what they know — not when they have finished reading. Understanding the
+     * machine is the middle of the story; what you do about it is the end.
+     */
+    when: (c, s) => s.ending !== null && s.finaleAt > 0 && c.sim.tick >= s.finaleAt && !s.repriseShown,
     run: (c, s) => {
       s.repriseShown = true;
-      c.playReprise();
+      c.playReprise(s.ending ?? undefined);
     },
   },
 ];
+
+/** What is on screen while the player is attending to someone or something. */
+export interface TalkView {
+  id: string;
+  kind: 'person' | 'place';
+  /** Who is speaking now; empty for a place, which is only looked at. */
+  who: string;
+  text: string;
+  /** Choices, once the last line is showing. */
+  choices: Array<{ id: string; label: string }>;
+  /** More lines to come after this one. */
+  more: boolean;
+}
+
+interface OpenTalk {
+  id: string;
+  kind: 'person' | 'place';
+  lines: Line[];
+  index: number;
+  learn: string[];
+  choices: Array<{ id: string; label: string }>;
+}
+
+export interface StorySnapshot {
+  state: StoryState;
+  fired: string[];
+}
 
 export class StoryDirector {
   private fired = new Set<string>();
@@ -327,6 +456,9 @@ export class StoryDirector {
   private queue: Array<{ dueTick: number; fn: () => void }> = [];
   readonly state = initialStoryState();
   readonly ctx: StoryContext;
+  private talk: OpenTalk | null = null;
+  private heard = new Set<string>();
+  private nextBarkTick = 60 * 20;
 
   constructor(ctx: Omit<StoryContext, 'after'>) {
     this.ctx = {
@@ -335,6 +467,10 @@ export class StoryDirector {
         this.queue.push({ dueTick: this.ctx.sim.tick + Math.round(seconds * 60), fn });
       },
     };
+    const bus = ctx.sim.bus;
+    bus.on('talk:open', ({ kind, id }) => this.open(kind, id));
+    bus.on('talk:advance', () => this.advance());
+    bus.on('talk:closed', () => this.closeView());
   }
 
   /**
@@ -346,20 +482,30 @@ export class StoryDirector {
   }
 
   update(): void {
+    const sim = this.ctx.sim;
     // How much of the chain has been read. A record counts once the player has
     // held that node, not merely once an edge has named it.
-    const read = this.ctx.sim.readNodes;
+    const read = sim.readNodes;
     let n = 0;
     for (const id of RECORD_CHAIN) if (read.has(id)) n++;
     this.state.chainRead = n;
 
+    // A record, read once the afternoon has given the player a reason to care
+    // what it says, goes in the notes.
+    if (this.state.matchFiredAt > 0 && sim.tick >= this.state.matchFiredAt) {
+      for (const [node, clue] of Object.entries(RECORD_CLUES)) {
+        if (read.has(node) && !sim.casefile.has(clue)) sim.learnClue(clue);
+      }
+    }
+
     // Due work first, so a beat scheduled for this tick lands before anything
     // it might gate.
     if (this.queue.length) {
-      const now = this.ctx.sim.tick;
+      const now = sim.tick;
       const due = this.queue.filter((q) => q.dueTick <= now);
       if (due.length) {
         this.queue = this.queue.filter((q) => q.dueTick > now);
+        due.sort((a, b) => a.dueTick - b.dueTick);
         for (const q of due) q.fn();
       }
     }
@@ -369,14 +515,309 @@ export class StoryDirector {
       if (!beat.when(this.ctx, this.state)) continue;
       this.fired.add(beat.id);
       beat.run(this.ctx, this.state);
-      this.ctx.sim.bus.emitNow('story:beat', { id: beat.id, label: beat.label });
+      sim.bus.emitNow('story:beat', { id: beat.id, label: beat.label });
     }
 
+    this.updateBarks();
+
     // Devon is released, eventually, and nothing is removed from the record.
-    if (this.state.devonReleasedAt > 0 && this.ctx.sim.tick === this.state.devonReleasedAt) {
-      this.ctx.sim.devonStopped = false;
-      this.ctx.sim.message('CARE', ['Devon is on their way home. Everything looks normal.'], 6.0);
+    if (this.state.devonReleasedAt > 0 && sim.tick === this.state.devonReleasedAt) this.release();
+    // ...and he goes home, which takes a while.
+    if (this.state.devonReleasedAt > 0 && this.state.devonHomeAt < 0
+      && sim.tick >= this.state.devonReleasedAt + 60 * 18) this.sendDevonHome();
+  }
+
+  /** Which part of the afternoon the town is talking about. */
+  get barkPhase(): BarkPhase {
+    const s = this.state;
+    if (s.report) return 'reported';
+    if (s.devonReleasedAt > 0 && this.ctx.sim.tick >= s.devonReleasedAt) return 'released';
+    if (s.matchFiredAt > 0 && this.ctx.sim.tick >= s.matchFiredAt) return 'matched';
+    return 'before';
+  }
+
+  /**
+   * The town, overheard. One snatch of conversation at a time, from whoever
+   * is nearest, about whatever the town is currently talking about — and only
+   * to a player going slowly enough to hear it.
+   */
+  private updateBarks(): void {
+    const sim = this.ctx.sim;
+    if (sim.tick < this.nextBarkTick || sim.engagedWith || sim.aimMode) return;
+    if (sim.player.speed > BARK_MAX_SPEED) return;
+    const phase = this.barkPhase;
+    const here = sim.player.pos;
+    const district = sim.world.districtAt(here)?.id ?? '';
+    // The nearest ambient resident in earshot, and whoever is walking with them.
+    let first = -1, firstD = BARK_RANGE;
+    for (let i = 0; i < sim.npcs.length; i++) {
+      const d = dist(sim.npcs[i].pos, here);
+      if (d < firstD && sim.npcs[i].startled === 0 && sim.npcs[i].fleeing === 0) { first = i; firstD = d; }
     }
+    const fits = (b: Bark) => !this.heard.has(b.id) && b.phase === phase
+      && (!b.after || b.after === this.state.report)
+      && (!b.district || b.district === district);
+    let bark: Bark | undefined = BARKS.find((b) => fits(b) && b.at && dist(b.at, here) < BARK_RANGE * 1.6);
+    if (!bark && first >= 0) bark = BARKS.find((b) => fits(b) && !b.at);
+    if (!bark) return;
+    this.heard.add(bark.id);
+    this.nextBarkTick = sim.tick + Math.round(60 * (BARK_GAP_SECONDS + bark.lines.length * BARK_LINE_SECONDS));
+
+    const a = first >= 0 ? sim.npcs[first] : null;
+    let b = a;
+    if (a) {
+      for (const n of sim.npcs) if (n !== a && dist(n.pos, a.pos) < 7) { b = n; break; }
+    }
+    const fixed = bark.at;
+    bark.lines.forEach((line, i) => {
+      const speaker = fixed ? null : (i % 2 === 0 ? a : b);
+      this.ctx.after(i * BARK_LINE_SECONDS, () => {
+        this.ctx.renderer.speak?.(speaker ? () => speaker.pos : () => fixed!, line, BARK_LINE_SECONDS - 0.2, !!fixed);
+      });
+    });
+    sim.bus.emitNow('story:overheard', { id: bark.id });
+  }
+
+  private release(): void {
+    const sim = this.ctx.sim;
+    sim.devonStopped = false;
+    sim.devonFollowing = false;
+    // Whatever the player did not do at the stop, they did not do.
+    if (this.state.intervened === null) this.state.intervened = false;
+    if (sim.engagedWith?.id === 'officer' || sim.engagedWith?.id === 'devon') sim.disengage();
+    const officer = sim.person('officer');
+    if (officer) sendTo(officer, OFFICER_FROM);
+    this.ctx.after(10, () => { if (officer) officer.visible = false; });
+    sim.devonVisible = false;
+    sim.message('CARE', [CARE.devonHome], 6.0);
+    // Somebody from SAFEtrace is out talking to residents this evening.
+    const priya = sim.person('priya');
+    if (priya) priya.visible = true;
+  }
+
+  private sendDevonHome(): void {
+    const sim = this.ctx.sim;
+    this.state.devonHomeAt = sim.tick;
+    sim.devonPos = { ...DEVON_HOME };
+    sim.devon.pos = { ...DEVON_HOME };
+    sim.devonVisible = true;
+    sim.showPlace('p-devon-board', true);
+  }
+
+  // ------------------------------------------------------------ attention
+
+  /** What the player's own situation looks like to the people they talk to. */
+  standing(): CaseStanding {
+    const sim = this.ctx.sim;
+    return {
+      keyFindings: sim.casefile.keyFindings,
+      onRecord: sim.playerSubject.priorContacts > 0,
+      misled: sim.casefile.believesMisinformation(MISLEADING),
+    };
+  }
+
+  talkContext(id: string): TalkContext {
+    const sim = this.ctx.sim;
+    const s = this.state;
+    const standing = this.standing();
+    return {
+      matched: s.matchFiredAt > 0 && sim.tick >= s.matchFiredAt,
+      devonStopped: sim.devonStopped,
+      devonReleased: s.devonReleasedAt > 0 && sim.tick >= s.devonReleasedAt,
+      intervened: s.intervened,
+      has: (c) => sim.casefile.has(c),
+      deductions: sim.casefile.deductions.size,
+      openConnections: sim.casefile.openConnections(),
+      strength: caseStrength(standing),
+      onRecord: standing.onRecord,
+      misled: standing.misled,
+      report: s.report,
+      times: s.talked[id] ?? 0,
+      toldCarvalho: s.toldCarvalho,
+    };
+  }
+
+  private open(kind: 'person' | 'place', id: string): void {
+    if (kind === 'place') {
+      const text = this.placeText(id);
+      this.talk = { id, kind, lines: [{ who: '', text: text.text }], index: 0, learn: text.clue ? [text.clue] : [], choices: [] };
+      if (!this.state.looked.includes(id)) this.state.looked.push(id);
+    } else {
+      const convo = openConversation(id, this.talkContext(id));
+      if (convo.lines.length === 0) { this.ctx.sim.disengage(); return; }
+      this.state.talked[id] = (this.state.talked[id] ?? 0) + 1;
+      this.talk = this.fromConversation(id, convo);
+    }
+    this.show();
+  }
+
+  private placeText(id: string): { text: string; clue?: string } {
+    return PLACES[id] ?? { text: '' };
+  }
+
+  private fromConversation(id: string, c: Conversation): OpenTalk {
+    return { id, kind: 'person', lines: c.lines, index: 0, learn: c.learn ?? [], choices: c.choices ?? [] };
+  }
+
+  /** Next line; or, at the end of a conversation with nothing to decide, goodbye. */
+  advance(): void {
+    const t = this.talk;
+    if (!t) { this.ctx.sim.disengage(); return; }
+    if (t.index < t.lines.length - 1) { t.index++; this.show(); return; }
+    if (t.choices.length) return;
+    this.ctx.sim.disengage();
+  }
+
+  /** Answer. Choices are only offered on the last line. */
+  choose(choiceId: string): void {
+    const t = this.talk;
+    if (!t || t.kind !== 'person' || t.index < t.lines.length - 1) return;
+    if (!t.choices.some((c) => c.id === choiceId)) return;
+    const { conversation, effect } = chooseOption(t.id, choiceId, this.talkContext(t.id));
+    this.apply(effect);
+    if (conversation.lines.length === 0) { this.ctx.sim.disengage(); return; }
+    this.talk = this.fromConversation(t.id, conversation);
+    this.show();
+  }
+
+  get talking(): TalkView | null { return this.view(); }
+
+  private view(): TalkView | null {
+    const t = this.talk;
+    if (!t) return null;
+    const line = t.lines[t.index];
+    const last = t.index >= t.lines.length - 1;
+    return {
+      id: t.id, kind: t.kind,
+      who: t.kind === 'place' ? '' : (line.who || PEOPLE_NAMES[t.id] || ''),
+      text: line.text,
+      choices: last ? t.choices : [],
+      more: !last,
+    };
+  }
+
+  private show(): void {
+    const t = this.talk;
+    if (!t) return;
+    // What was said goes in the notes once it has all been said.
+    if (t.index >= t.lines.length - 1) {
+      for (const id of t.learn) this.ctx.sim.learnClue(id);
+      t.learn = [];
+    }
+    this.ctx.hud.showTalk?.(this.view());
+  }
+
+  private closeView(): void {
+    const t = this.talk;
+    if (t) for (const id of t.learn) this.ctx.sim.learnClue(id);
+    this.talk = null;
+    this.ctx.hud.showTalk?.(null);
+  }
+
+  private apply(effect: TalkEffect): void {
+    const sim = this.ctx.sim;
+    switch (effect.kind) {
+      case 'intervene': {
+        if (this.state.intervened !== null) return;
+        this.state.intervened = true;
+        // You are a party present now, and SAFEtrace writes that down too.
+        sim.playerSubject.priorContacts += 1;
+        sim.message('SYSTEM', [SYSTEM.partyPresent], 4.2, 'normal', 'important');
+        this.ctx.after(6, () => {
+          this.ctx.hud.say([DIALOGUE.devonAtStop], 5.0);
+          sim.learnClue('c-apron');
+        });
+        return;
+      }
+      case 'stand-back':
+        if (this.state.intervened === null) this.state.intervened = false;
+        return;
+      case 'told-carvalho':
+        this.state.toldCarvalho = true;
+        return;
+      case 'report':
+        this.report(effect.to);
+        return;
+      case 'none':
+        return;
+    }
+  }
+
+  /**
+   * The decision. Once it is made it is made: the town takes it from here.
+   */
+  report(to: ReportTarget): void {
+    if (this.state.report) return;
+    const sim = this.ctx.sim;
+    this.state.report = to;
+    this.state.ending = resolveEnding(to, this.standing());
+    const ending = this.state.ending;
+    sim.bus.emitNow('story:beat', { id: `report-${to}`, label: `Reported: ${to}` });
+    this.ctx.after(5, () => {
+      if (to === 'mara') {
+        sim.showPlace('p-window', false);
+        sim.showPlace('p-window-case', true);
+      }
+      sim.message('SYSTEM', [SYSTEM.ending[ending]], 6.0, 'strong', 'critical');
+    });
+    this.state.finaleAt = sim.tick + 60 * 13;
+  }
+
+  // ------------------------------------------------------------ persistence
+
+  snapshot(): StorySnapshot {
+    return { state: JSON.parse(JSON.stringify(this.state)) as StoryState, fired: [...this.fired] };
+  }
+
+  /**
+   * Put the afternoon back where it was. Beats that already fired are not
+   * replayed — their consequences are restored as world state instead, so a
+   * player who comes back finds Northgate taped off rather than hearing the
+   * match twice.
+   */
+  restore(snap: StorySnapshot): void {
+    const sim = this.ctx.sim;
+    // A fresh world starts at tick zero, which leaves no "before now" for the
+    // things that already happened to have happened in. Give it an hour.
+    if (sim.tick < 60 * 60) sim.tick = 60 * 60;
+    const tick = sim.tick;
+    const rebase = (t: number) => (t < 0 ? t : tick - 1);
+    Object.assign(this.state, initialStoryState(), snap.state);
+    // Absolute ticks from the old session mean nothing in this one; anything
+    // that had happened simply happened "before now".
+    const st = this.state;
+    st.startedAt = tick - 60 * 60;
+    st.metDevonAt = rebase(st.metDevonAt);
+    st.matchFiredAt = rebase(st.matchFiredAt);
+    st.visionUnlockedAt = rebase(st.visionUnlockedAt);
+    st.devonHomeAt = rebase(st.devonHomeAt);
+    if (st.devonReleasedAt > 0) st.devonReleasedAt = tick - 1;
+    // An ending already seen is not seen again on the way back in; one that was
+    // decided but not yet shown still plays.
+    st.repriseShown = !!snap.state.repriseShown;
+    st.finaleAt = st.ending && !st.repriseShown ? tick + 60 * 4 : -1;
+    this.fired = new Set(snap.fired);
+    this.queue = [];
+
+    const f = (id: string) => this.fired.has(id);
+    if (f('meet-devon')) sim.devonFollowing = true;
+    if (f('the-match')) {
+      sim.devonMarked = true;
+      for (const id of ['p-panel', 'p-tape', 'p-parcel', 'p-alert']) sim.showPlace(id, true);
+      for (const id of ['carvalho', 'brennan', 'courier']) { const p = sim.person(id); if (p) p.visible = true; }
+    }
+    if (f('devon-stopped')) {
+      sim.unlockVision();
+      if (st.devonReleasedAt > 0) {
+        sim.devonStopped = false;
+        sim.devonFollowing = false;
+        const priya = sim.person('priya');
+        if (priya) priya.visible = true;
+        this.sendDevonHome();
+        this.fired.add('mara-texts');
+      }
+    }
+    if (st.report === 'mara') { sim.showPlace('p-window', false); sim.showPlace('p-window-case', true); }
   }
 
   get progress(): string[] { return [...this.fired]; }

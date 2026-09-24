@@ -7,17 +7,36 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="SAFETRACE" />
+    <meta name="application-name" content="SAFETRACE" />
     <meta name="color-scheme" content="dark" />
     <title>SAFETRACE™</title>
-    <meta name="description" content="A kid on a skateboard in a town that is already watching." />
+    <meta name="description" content="A kid on a skateboard, a town that is already watching, and a match that is 98.7% sure and wrong." />
     <meta name="theme-color" content="#0B1016" />
+    <meta property="og:title" content="SAFETRACE™" />
+    <meta property="og:description" content="A kid on a skateboard, a town that is already watching, and a match that is 98.7% sure and wrong." />
+    <meta property="og:image" content="./icons/icon-512.png" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      /* Before a single script has run: the right colour, and a quiet word. */
+      html, body { margin: 0; height: 100%; background: #0B1016; }
+      #boot {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        color: rgba(231, 237, 242, 0.5); font: 300 12px/1 Inter, system-ui, sans-serif;
+        letter-spacing: 0.3em; text-transform: uppercase; transition: opacity 400ms ease;
+      }
+    </style>
   </head>
   <body>
+    <div id="boot">Bellhaven</div>
     <canvas id="game"></canvas>
     <div id="ui"></div>
+    <noscript><p style="color:#E7EDF2;font-family:sans-serif;padding:24px">SAFETRACE needs JavaScript to run.</p></noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -9,6 +9,7 @@
 import { TownBuilder, pt } from './builder';
 import { authorNorthgate } from './northgate';
 import { authorRelay12, TX2_RECORDS } from './relay12';
+import { authorCast } from './cast';
 import type { WorldData } from '../sim/worldTypes';
 
 const ROOF_TERRACOTTA = '#C4714E';
@@ -53,6 +54,9 @@ export function buildBellhaven(): WorldData {
     'GALLERY: RIDGELINE SECONDARY — ENROLLED MINORS (812)',
     'CONSENT BASIS: PARENT / GUARDIAN, SAFEtrace SCHOOL T&C 4.2',
     'MATCH THRESHOLD: 97.0%',
+    'FRAME 04:41:07 — FACE PARTIALLY OCCLUDED (HOOD), 34 DEG OFF AXIS',
+    'RAW FACIAL SIMILARITY, ARAYA D.: 61.2%',
+    'SCORE WEIGHTED BY SVC-PREDICT ASSOCIATION',
     'THRESHOLD LAST REVISED: LOWERED FROM 99.0% — SEE REVIEW 11-04',
     'MATCH 04:41:07 — ARAYA, DEVON M. — 98.7%',
   ]);
@@ -69,6 +73,7 @@ export function buildBellhaven(): WorldData {
     'INPUTS: LOCATION HISTORY, ASSOCIATES, TIME OF DAY, INCIDENT TYPE',
     'ARAYA, DEVON M. — NORTHGATE ASSOCIATION 0.97',
     'BASIS: 41 PRIOR VISITS. NEAREST RELATIVE RESIDES NORTHGATE LN.',
+    'ASSOCIATION APPLIED TO SVC-VISION SIMILARITY: 61.2% -> 98.7%',
     'ASSOCIATION IS NOT AN ACCUSATION.',
   ]);
   b.service('SVC-RECORD', 'SAFEtrace RECORD — SUBJECT HISTORY', pt(384, 74), [
@@ -447,7 +452,23 @@ export function buildBellhaven(): WorldData {
 
   // One camera. It watches the apron, because that is where a planner assumed
   // people would enter. Nobody specified the Channel itself.
-  b.camera({ pos: pt(196, 406), facing: 90, kind: 'facility', fov: 58, range: 26, height: 4.0, bias: 0.72, label: 'DRAINAGE ACCESS — SOUTH MAPLE' });
+  /*
+   * CM-D01 is Devon's alibi, and nobody ever asks it. It watched the two of
+   * them go down the apron seventy-five seconds before CM-207 put him across
+   * town, and both records sit in the same system, never compared.
+   */
+  b.camera({
+    id: 'CM-D01', pos: pt(196, 406), facing: 90, kind: 'facility', fov: 58, range: 26, height: 4.0, bias: 0.72,
+    label: 'DRAINAGE ACCESS — SOUTH MAPLE',
+    records: [
+      'FEED: NOMINAL',
+      'PURPOSE AT INSTALL: FLOOD ACCESS MONITORING',
+      'PURPOSE NOW: SVC-VISION, SVC-PREDICT',
+      '04:39:52 — 2 SUBJECTS ENTER CHANNEL: 4417; ARAYA, DEVON M. (ID 94%)',
+      '04:52:10 — CONTACT RECORDED: ARAYA, DEVON M.',
+      'CROSS-REFERENCE WITH OPEN INCIDENTS: NOT CONFIGURED',
+    ],
+  });
   b.junction(pt(330, 426), 'DRAINAGE JUNCTION', 'JX-CH', [
     'SEGMENT RELAY — S-CH UTILITY / DRAINAGE',
     'INSTALLED 2027: FLOOD TELEMETRY, 4 DEPTH GAUGES',
@@ -547,6 +568,9 @@ export function buildBellhaven(): WorldData {
     [pt(70, 150), pt(220, 150), pt(380, 150), pt(220, 150)],
     [pt(300, 280), pt(455, 280), pt(460, 195), pt(380, 150), pt(300, 150)],
   ];
+
+  // The people with names, and the places worth a second look.
+  authorCast(b);
 
   return b.build({
     bounds: { min: pt(0, 0), max: pt(560, 500) },

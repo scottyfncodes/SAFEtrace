@@ -64,6 +64,71 @@ export interface Prop {
   alarmUntil?: number;
 }
 
+/**
+ * Somebody with a name.
+ *
+ * The ambient residents are Subjects — brackets and numbers to the machine,
+ * and scenery to the player. These are the other kind: people the player can
+ * walk up to. They are not tracked subjects, because what matters about them
+ * is what they say, not where the forecast thinks they are going.
+ */
+export interface PersonData {
+  id: string;
+  name: string;
+  /** What the town would call them, in a word or two. */
+  role: string;
+  pos: Vec2;
+  heading: number;
+  tint: string;
+  district: string;
+  /** Whether they are out and about. The story moves people on and off stage. */
+  visible: boolean;
+  /** A loop they walk while nobody is talking to them. */
+  route?: Vec2[];
+  /** Hood up. Read at a distance, it is the whole of the silhouette. */
+  hood?: boolean;
+  /** In uniform, with a cap: read as police before anything else is read. */
+  uniform?: boolean;
+  /** Runtime: the route leg they are on, and how long they are pausing. */
+  routeIndex?: number;
+  waitTicks?: number;
+}
+
+/** A spot worth a second look. Found by being there and being curious. */
+export interface PlaceData {
+  id: string;
+  pos: Vec2;
+  /** The word the prompt uses when you are close: "Parcel", "Poster". */
+  label: string;
+  /** How close you have to be, in metres. */
+  reach: number;
+  district: string;
+  /** Whether there is anything here to look at yet. */
+  visible: boolean;
+  /** The scene prop this is the place of, if it has one. */
+  sceneProp?: string;
+}
+
+export type ScenePropKind =
+  | 'tape' | 'parcel' | 'poster' | 'notice' | 'graffiti' | 'screen' | 'board';
+
+/** An object the story can place in the world and remove from it. */
+export interface ScenePropData {
+  id: string;
+  kind: ScenePropKind;
+  pos: Vec2;
+  rot: number;
+  /** Width along its facing, where that matters: a strip of tape, a poster. */
+  w: number;
+  /** Height above the ground, for things mounted on walls. */
+  z: number;
+  /** Colour of the thing, or the few words printed on it. */
+  tint: string;
+  text?: string;
+  district: string;
+  visible: boolean;
+}
+
 export type FeatureKind = 'bank' | 'kicker' | 'drop' | 'gap' | 'curb' | 'rail' | 'pool';
 
 export interface SkateFeature {
@@ -111,6 +176,12 @@ export interface WorldData {
   sensors: SensorData[];
   network: NetworkData;
   spawns: { player: Vec2; devon: Vec2; dronePads: Vec2[]; patrolStarts: Vec2[] };
+  /** Named people: residents with a name, a place to be, and something to say. */
+  people: PersonData[];
+  /** Things worth stopping to look at. Never marked; only noticed. */
+  places: PlaceData[];
+  /** Objects the afternoon puts into the town and takes back out again. */
+  sceneProps: ScenePropData[];
   npcRoutes: Vec2[][];
   droneRoutes: Vec2[][];
   patrolRoutes: Vec2[][];

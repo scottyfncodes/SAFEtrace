@@ -10,7 +10,7 @@ import { type Vec2, DEG, norm, perp, rectPoly, sub } from '../core/math';
 import type {
   Building, BuildingKind, Cover, District, NetworkNodeData, NetworkNodeKind,
   NetworkSegmentData, NodeRecords, Prop, PropKind, RecordContext, RoadEdge, RoadNode,
-  SensorData, SensorKind,
+  SensorData, SensorKind, PersonData, PlaceData, ScenePropData, ScenePropKind,
   SkateFeature, SurfaceKind, SurfacePatch, WorldData, FeatureKind,
 } from '../sim/worldTypes';
 
@@ -29,6 +29,9 @@ export class TownBuilder {
   private nodes: NetworkNodeData[] = [];
   private segments: NetworkSegmentData[] = [];
   private districts: District[] = [];
+  private people: PersonData[] = [];
+  private places: PlaceData[] = [];
+  private sceneProps: ScenePropData[] = [];
 
   private counters = new Map<string, number>();
   private currentDistrict = 'bellhaven';
@@ -399,6 +402,42 @@ export class TownBuilder {
     return this;
   }
 
+  /** Somebody with a name, standing somewhere, facing a way (degrees). */
+  person(id: string, name: string, role: string, pos: Vec2, facing: number, tint: string, opts: {
+    visible?: boolean; route?: Vec2[]; hood?: boolean; uniform?: boolean;
+  } = {}): PersonData {
+    const p: PersonData = {
+      id, name, role, pos: { ...pos }, heading: facing * DEG, tint, district: this.currentDistrict,
+      visible: opts.visible ?? true, route: opts.route, hood: opts.hood, uniform: opts.uniform,
+      routeIndex: 1, waitTicks: 0,
+    };
+    this.people.push(p);
+    return p;
+  }
+
+  /** A spot worth a second look. */
+  place(id: string, pos: Vec2, label: string, opts: { reach?: number; visible?: boolean; sceneProp?: string } = {}): PlaceData {
+    const p: PlaceData = {
+      id, pos: { ...pos }, label, reach: opts.reach ?? 3.2, district: this.currentDistrict,
+      visible: opts.visible ?? true, sceneProp: opts.sceneProp,
+    };
+    this.places.push(p);
+    return p;
+  }
+
+  /** An object the afternoon can put in the town. Rotation in degrees. */
+  sceneProp(id: string, kind: ScenePropKind, pos: Vec2, opts: {
+    rot?: number; w?: number; z?: number; tint?: string; text?: string; visible?: boolean;
+  } = {}): ScenePropData {
+    const p: ScenePropData = {
+      id, kind, pos: { ...pos }, rot: (opts.rot ?? 0) * DEG, w: opts.w ?? 1, z: opts.z ?? 0,
+      tint: opts.tint ?? '#F2EFE7', text: opts.text, district: this.currentDistrict,
+      visible: opts.visible ?? true,
+    };
+    this.sceneProps.push(p);
+    return p;
+  }
+
   ammoCache(pos: Vec2, label: string): this {
     this.prop('ammoCache', pos, 0, { tint: label });
     return this;
@@ -425,6 +464,9 @@ export class TownBuilder {
       sensors: this.sensors,
       network: { nodes: this.nodes, segments: this.segments },
       spawns: opts.spawns,
+      people: this.people,
+      places: this.places,
+      sceneProps: this.sceneProps,
       npcRoutes: opts.npcRoutes,
       droneRoutes: opts.droneRoutes,
       patrolRoutes: opts.patrolRoutes,

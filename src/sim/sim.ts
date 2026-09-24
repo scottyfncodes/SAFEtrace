@@ -21,7 +21,7 @@ import {
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
-import { type Npc, makeNpcs, startle, updateNpc } from './npc';
+import { type Npc, glance, makeNpcs, startle, updateNpc } from './npc';
 import { makeSensor, observe, updateSensor, type Sensor } from './surveillance/sensors';
 import { fuse, makeTrack } from './surveillance/fusion';
 import { classify, resetBehaviourMemory } from './surveillance/behavior';
@@ -36,6 +36,31 @@ import type { MessagePriority } from './events';
 import type { RecordContext } from './worldTypes';
 import { PURSUABLE_EVIDENCE, levelFor } from './surveillance/types';
 import { SYSTEM, CARE, SHOT } from '../content/copy';
+import { CASE } from '../content/case';
+import { Casefile, type ConnectResult } from './casefile';
+import { updatePerson } from './people';
+import type { PersonData, PlaceData, ScenePropData } from './worldTypes';
+
+/**
+ * Something the player can stop and attend to that is not part of the
+ * network: a person with a name, or a place worth a second look.
+ */
+export interface Interest {
+  kind: 'person' | 'place';
+  id: string;
+  pos: Vec2;
+  /** What the prompt says: a name, or what the thing is. */
+  label: string;
+}
+
+/** How close you must be to talk to somebody. */
+export const TALK_RANGE = 3.8;
+/** Devon rides a few metres off your shoulder, so he answers from further away. */
+const DEVON_TALK_RANGE = 6.4;
+/** Walk this far from a conversation and it is over. */
+const TALK_BREAK = 7.5;
+/** Faster than this and you are skating past things, not stopping at them. */
+const NOTICE_SPEED = 4.5;
 
 /** How far the player can reach into the network without walking to it. */
 export const SELECT_RANGE = 16;
@@ -100,6 +125,27 @@ export class Sim {
    */
   devonFollowing = false;
   devonStopped = false;
+  /**
+   * Whether Devon is anywhere the player can see him. He goes home after the
+   * stop, and for a while he is simply not in the town.
+   */
+  devonVisible = true;
+  /**
+   * After the match, Devon is a person of interest, and everybody's phone
+   * says so. Residents who pass him look — briefly, and then away.
+   */
+  devonMarked = false;
+
+  /** The named people of Bellhaven, authored as content, moved by the story. */
+  people: PersonData[];
+  places: PlaceData[];
+  sceneProps: ScenePropData[];
+  /** The player's own notes. The other ledger. */
+  readonly casefile = new Casefile(CASE);
+  /** Whatever the player could stop and attend to right now. */
+  interest: Interest | null = null;
+  /** Who, or what, the player is currently attending to. */
+  engagedWith: Interest | null = null;
 
   sensors: Sensor[] = [];
   sensorById = new Map<string, Sensor>();
@@ -221,6 +267,10 @@ export class Sim {
     };
     this.devonTrack = makeTrack(this.devon);
 
+    this.people = worldData.people ?? [];
+    this.places = worldData.places ?? [];
+    this.sceneProps = worldData.sceneProps ?? [];
+
     this.npcs = makeNpcs(worldData.npcRoutes, this.rng.fork(11));
     for (const n of this.npcs) {
       const s: Subject = {
@@ -331,7 +381,13 @@ export class Sim {
       s.vel = { x: (n.pos.x - s.pos.x) / dt, y: (n.pos.y - s.pos.y) / dt };
       s.speed = Math.hypot(s.vel.x, s.vel.y);
       s.pos = { ...n.pos };
+      // A marked boy is something people look at.
+      if (this.devonMarked && this.devonVisible && n.startled === 0 && n.fleeing === 0
+        && dist(n.pos, this.devonPos) < 7 && (n.glanceCooldown ?? 0) === 0) {
+        glance(n, this.devonPos, 60 * 1.6);
+      }
     }
+    this.updatePeople(dt);
 
     // 5. Sensors -> observations.
     for (const s of this.sensors) updateSensor(s, this.tick, this.time);
@@ -403,7 +459,108 @@ export class Sim {
     if (p.bailedThisTick) this.bus.emit('player:bail', { pos: p.pos });
   }
 
+  private updatePeople(dt: number): void {
+    const talking = this.engagedWith?.kind === 'person' ? this.engagedWith.id : null;
+    for (const p of this.people) {
+      updatePerson(p, dt, this.world, talking === p.id ? this.player.pos : null);
+    }
+  }
+
+  person(id: string): PersonData | undefined { return this.people.find((p) => p.id === id); }
+  placeById(id: string): PlaceData | undefined { return this.places.find((p) => p.id === id); }
+  sceneProp(id: string): ScenePropData | undefined { return this.sceneProps.find((p) => p.id === id); }
+
+  /** Put a place and the thing it is the place of into the town, or take them out. */
+  showPlace(id: string, visible: boolean): void {
+    const pl = this.placeById(id);
+    if (pl) {
+      pl.visible = visible;
+      if (pl.sceneProp) { const sp = this.sceneProp(pl.sceneProp); if (sp) sp.visible = visible; }
+    }
+  }
+
+  /** Write something in the notes. */
+  learnClue(id: string): boolean {
+    if (!this.casefile.learn(id, this.tick)) return false;
+    this.bus.emitNow('case:clue', { id });
+    return true;
+  }
+
+  /** Put two things from the notes side by side. */
+  connectClues(a: string, b: string): ConnectResult {
+    const r = this.casefile.connect(a, b, this.tick);
+    if (r.kind === 'new') this.bus.emitNow('case:deduction', { id: r.deduction.id, key: !!r.deduction.key });
+    return r;
+  }
+
+  /**
+   * What the player could stop and attend to, from where they are.
+   *
+   * Speed matters: at skating pace you pass things; stood or rolling slowly
+   * you notice them. Nothing here is ever marked from a distance — the prompt
+   * appears when you are already standing there, the same rule the network
+   * nodes follow.
+   */
+  private updateInterest(): void {
+    if (this.engagedWith) {
+      const e = this.engagedWith;
+      const at = e.kind === 'person'
+        ? (e.id === 'devon' ? this.devonPos : this.person(e.id)?.pos ?? e.pos)
+        : e.pos;
+      const gone = e.kind === 'person' && (e.id === 'devon' ? !this.devonVisible : !this.person(e.id)?.visible);
+      if (gone || dist(at, this.player.pos) > TALK_BREAK) this.disengage();
+    }
+    this.interest = null;
+    if (this.aimMode || this.player.speed > NOTICE_SPEED) return;
+    const here = this.player.pos;
+    let best: Interest | null = null;
+    let bestD = Infinity;
+    const consider = (i: Interest, reach: number) => {
+      const d = dist(i.pos, here);
+      if (d <= reach && d < bestD) { best = i; bestD = d; }
+    };
+    for (const p of this.people) {
+      if (!p.visible) continue;
+      consider({ kind: 'person', id: p.id, pos: p.pos, label: p.name }, TALK_RANGE);
+    }
+    if (this.devonVisible && this.devonFollowing !== undefined) {
+      consider({ kind: 'person', id: 'devon', pos: this.devonPos, label: 'Devon' },
+        this.devonFollowing || this.devonStopped ? DEVON_TALK_RANGE : TALK_RANGE);
+    }
+    for (const pl of this.places) {
+      if (!pl.visible) continue;
+      consider({ kind: 'place', id: pl.id, pos: pl.pos, label: pl.label }, pl.reach);
+    }
+    this.interest = best;
+    // One prompt at a time: whichever is nearer wins, so what is labelled is
+    // exactly what the button will do.
+    if (best && this.interactCandidate
+      && dist(this.interactCandidate.pos, here) > bestD) this.interactCandidate = null;
+    if (this.interactCandidate) this.interest = null;
+  }
+
+  /** Stop and attend to whatever is in reach. */
+  engageInterest(): boolean {
+    const i = this.interest;
+    if (!i) return false;
+    this.engagedWith = { ...i, pos: { ...i.pos } };
+    this.bus.emitNow('talk:open', { kind: i.kind, id: i.id });
+    return true;
+  }
+
+  disengage(): void {
+    if (!this.engagedWith) return;
+    const id = this.engagedWith.id;
+    this.engagedWith = null;
+    this.bus.emitNow('talk:closed', { id });
+  }
+
   private updateDevon(dt: number): void {
+    if (!this.devonVisible) {
+      this.devon.vel = { x: 0, y: 0 };
+      this.devon.speed = 0;
+      return;
+    }
     if (this.devonStopped || !this.devonFollowing) {
       this.devon.vel = { x: 0, y: 0 };
       this.devon.speed = 0;
@@ -617,7 +774,11 @@ export class Sim {
       if (dist(p.pos, this.player.pos) > 70) continue;
       out.push({ id: p.id, pos: p.pos, z: 1.15, radius: 0.5, kind: 'person' });
     }
-    if (!this.devonStopped && dist(this.devonPos, this.player.pos) < 70) {
+    for (const p of this.people) {
+      if (!p.visible || dist(p.pos, this.player.pos) > 70) continue;
+      out.push({ id: p.id, pos: p.pos, z: 1.15, radius: 0.5, kind: 'person' });
+    }
+    if (this.devonVisible && dist(this.devonPos, this.player.pos) < 70) {
       out.push({ id: 'DEVON', pos: this.devonPos, z: 1.15, radius: 0.5, kind: 'person' });
     }
 
@@ -1347,8 +1508,11 @@ export class Sim {
      * puts the screen away, so the control that opens it is the control that
      * closes it and there is never a panel the player cannot get rid of.
      */
+    this.updateInterest();
     if (intent.interactPressed) {
-      if (this.focusNode) this.dismissFocus();
+      if (this.engagedWith) this.bus.emitNow('talk:advance', {});
+      else if (this.focusNode) this.dismissFocus();
+      else if (this.interest) this.engageInterest();
       else this.interactWithNearest();
     }
     if (!this.hack) return;

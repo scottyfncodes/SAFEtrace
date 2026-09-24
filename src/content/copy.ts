@@ -102,6 +102,16 @@ export const SYSTEM = {
     ? `${n} WITNESS${n === 1 ? '' : 'ES'} IN RANGE. STATEMENTS REQUESTED.`
     : 'NO WITNESS STATEMENTS. FOOTAGE UNDER REVIEW.',
   incidentPerson: 'PUBLIC ORDER — PROJECTILE, PERSON',
+  /** The player spoke up at the stop, and is now part of the record of it. */
+  partyPresent: 'PARTY PRESENT LOGGED — SUBJECT 4417 — INC-4100',
+  /** The one line the system has about how the afternoon ended. */
+  ending: {
+    review: 'INC-4100 RECLASSIFIED — MISATTRIBUTION UNDER REVIEW',
+    noted: 'FEEDBACK RECEIVED — REFERENCE CX-20417',
+    window: 'UNVERIFIED CLAIMS CIRCULATING — COMMUNITY GUIDANCE ISSUED',
+    rumour: 'MISINFORMATION ADVISORY — NORTHGATE',
+    dropped: 'INC-4100 — NO FURTHER ACTION',
+  } as Record<'review' | 'noted' | 'window' | 'rumour' | 'dropped', string>,
 };
 
 /** The consumer register. Same company. The game never comments on the gap. */
@@ -113,6 +123,8 @@ export const CARE = {
   reminder: 'Two neighbours reported feeling safer this week.',
   score: (n: number) => `Community Safety Score: ${Math.round(100 - n)}`,
   stopped: 'This will only take a moment. Thank you for your patience.',
+  communityAlert: 'Northgate community alert: a person of interest has been identified near you. Stay aware.',
+  devonHome: 'Devon is on their way home. Everything looks normal.',
 };
 
 /** The opening advertisement. Rendered by the game's own renderer, in Bellhaven. */
@@ -183,7 +195,12 @@ export const DIALOGUE = {
     "It wasn't lying. It was just sure.",
     "Everything in here worked exactly the way it was meant to.",
     "Somebody's mum asked for this. And they were right.",
+    "Somebody has to see all of this at once. The question is who.",
   ],
+  devonWhere: "Devon (text): where are you. i'm on the grass at the bottom of maple court, by the close.",
+  devonNudge: "Devon: you coming or what? channel's south. past the greenway, down the apron.",
+  devonAtStop: "Devon: you didn't have to— ...the camera on the apron. the light came on when we went down. it saw us. remember that.",
+  maraText: 'Mara (text): heard about Devon. come by the shop if you want to know how it works. — M',
   sableLane: [
     "Devon: the lane behind the terraces. nobody's ever put a light back there.",
     "Devon: it thinks you're still on the road.",

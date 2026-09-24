@@ -76,5 +76,15 @@ export interface SimEvents extends Record<string, unknown> {
   'devon:met': Record<string, never>;
   'veneer:crack': { seconds: number };
   'story:beat': { id: string; label: string };
+  /** A snatch of the town's own conversation, overheard. */
+  'story:overheard': { id: string };
+  /** The player has stopped to talk to somebody, or to look at something. */
+  'talk:open': { kind: 'person' | 'place'; id: string };
+  /** The interact button, pressed while already attending to something. */
+  'talk:advance': Record<string, never>;
+  'talk:closed': { id: string };
+  /** Something new in the player's own notes. */
+  'case:clue': { id: string };
+  'case:deduction': { id: string; key: boolean };
   'track:updated': { track: Track };
 }

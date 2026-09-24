@@ -24,6 +24,14 @@ import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
 import { HINTS } from './content/copy';
 import { dist, damp } from './core/math';
+import { Notebook } from './ui/notebook';
+import { Menu } from './ui/menu';
+import { EndingCard } from './ui/ending';
+import {
+  clearAfternoon, loadAfternoon, loadEndingsSeen, recordEndingSeen, saveAfternoon, type SavedAfternoon,
+} from './core/save';
+import type { EndingId } from './content/case';
+import type { StorySnapshot } from './content/story';
 
 /** How close the player must be to reach into a node, in metres. */
 const NODE_REACH = 16;
@@ -51,6 +59,12 @@ class Game {
   private phase: Phase = 'prefs';
   private intent: Intent = emptyIntent();
   private verbKeys = new Map<string, number>();
+  private notebook: Notebook;
+  private menu: Menu;
+  private ending: EndingCard;
+  /** Nothing in Bellhaven happens while the player is reading a menu. */
+  private get paused(): boolean { return this.notebook.open || this.menu.open || this.ending.open; }
+  private saveDue = 0;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const worldData = buildBellhaven();
@@ -79,8 +93,29 @@ class Game {
       hud: this.hud,
       audio: this.audio,
       renderer: this.renderer,
-      playReprise: () => this.playReprise(),
+      playReprise: (ending) => this.playReprise(ending),
       hint: this.touchPrimary ? HINTS.touch : HINTS.keyboard,
+    });
+
+    this.hud.talkHandlers = {
+      advance: () => this.story.advance(),
+      choose: (id) => this.story.choose(id),
+    };
+    this.hud.onButton = (which) => {
+      if (this.phase !== 'play') return;
+      if (which === 'notes') this.openNotebook(); else this.openMenu();
+    };
+    this.notebook = new Notebook(document.body, this.sim, this.touchPrimary, () => this.resumeFromOverlay(),
+      (made) => { if (!made) this.audio.hackTick(); });
+    this.menu = new Menu(document.body, this.settings, this.touchPrimary, {
+      resume: () => this.resumeFromOverlay(),
+      notes: () => this.openNotebook(),
+      newAfternoon: () => this.newAfternoon(),
+      applySettings: () => this.applySettings(),
+    }, loadEndingsSeen);
+    this.ending = new EndingCard(document.body, this.sim, {
+      keepSkating: () => this.resumeFromOverlay(),
+      newAfternoon: () => this.newAfternoon(),
     });
 
     // Touch is another adapter, not a different game. Keyboard and mouse stay
@@ -123,7 +158,109 @@ class Game {
       };
     }
 
+    this.bindPersistence();
+    document.getElementById('boot')?.remove();
     this.showPrefs();
+  }
+
+  // ------------------------------------------------------------- overlays
+
+  private openNotebook(): void {
+    if (this.menu.open) this.menu.hide(false);
+    this.clearHeldInput();
+    this.notebook.show();
+    this.audio.hackTick();
+  }
+
+  private openMenu(): void {
+    if (this.notebook.open) this.notebook.hide();
+    this.clearHeldInput();
+    this.menu.show();
+  }
+
+  private resumeFromOverlay(): void {
+    this.touch.reset();
+  }
+
+  /** Anything held when a menu opened is let go of; nothing fires on the way back. */
+  private clearHeldInput(): void {
+    this.touch.reset();
+    this.sim.exitAimMode();
+  }
+
+  private applySettings(): void {
+    document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
+    this.audio.applySettings();
+    saveSettings(this.settings);
+  }
+
+  private newAfternoon(): void {
+    clearAfternoon();
+    window.location.reload();
+  }
+
+  // ---------------------------------------------------------- persistence
+
+  /**
+   * The afternoon is written down whenever something in it changes — a beat,
+   * a note, a decision — and at most every few seconds. Never during the
+   * advertisement, which is not the afternoon yet.
+   */
+  private bindPersistence(): void {
+    const mark = () => { if (this.phase === 'play') this.saveDue = Math.max(this.saveDue, 1); };
+    this.sim.bus.on('story:beat', mark);
+    this.sim.bus.on('case:clue', mark);
+    this.sim.bus.on('case:deduction', mark);
+    this.sim.bus.on('talk:closed', mark);
+    window.addEventListener('pagehide', () => this.persist());
+  }
+
+  private persist(): void {
+    if (this.phase !== 'play' && this.phase !== 'reprise') return;
+    if (this.story.progress.length === 0) return;
+    const sim = this.sim;
+    const revealed: string[] = [];
+    for (const n of sim.network.nodes.values()) if (n.discovered) revealed.push(n.id);
+    const s: SavedAfternoon = {
+      v: 1,
+      savedAt: Date.now(),
+      story: this.story.snapshot(),
+      casefile: sim.casefile.snapshot(),
+      player: { x: sim.player.pos.x, y: sim.player.pos.y, heading: sim.player.heading },
+      readNodes: [...sim.readNodes],
+      discoveredNodes: [...sim.discoveredNodes],
+      revealed,
+      priorContacts: sim.playerSubject.priorContacts,
+      label: this.progressLabel(),
+    };
+    saveAfternoon(s);
+  }
+
+  private progressLabel(): string {
+    const st = this.story.state;
+    if (st.report) return 'After the decision';
+    if (st.devonReleasedAt > 0) return `Investigating · ${this.sim.casefile.clues.size} notes`;
+    if (st.matchFiredAt > 0) return 'After the match';
+    if (st.metDevonAt > 0) return 'With Devon';
+    return 'Maple Court';
+  }
+
+  private restore(save: SavedAfternoon): void {
+    const sim = this.sim;
+    sim.player.pos = { x: save.player.x, y: save.player.y };
+    sim.player.heading = save.player.heading;
+    sim.player.vel = { x: 0, y: 0 };
+    sim.player.speed = 0;
+    for (const id of save.readNodes) sim.readNodes.add(id);
+    for (const id of save.discoveredNodes) sim.discoveredNodes.add(id);
+    for (const id of save.revealed) { const n = sim.network.get(id); if (n) n.discovered = true; }
+    sim.playerSubject.priorContacts = save.priorContacts;
+    sim.casefile.restore(save.casefile);
+    this.story.restore(save.story as StorySnapshot);
+    if (sim.devonFollowing && sim.devonVisible) {
+      sim.devonPos = { x: sim.player.pos.x - Math.cos(sim.player.heading) * 5.5, y: sim.player.pos.y - Math.sin(sim.player.heading) * 5.5 };
+    }
+    this.renderer.chase.reset(sim);
   }
 
   /**
@@ -191,6 +328,7 @@ class Game {
    * these options are for.
    */
   private showPrefs(): void {
+    const saved = loadAfternoon();
     const el = document.createElement('div');
     el.id = 'prefs';
     el.innerHTML = `
@@ -200,11 +338,20 @@ class Game {
         <label><input type="checkbox" id="pref-motion"> Reduce motion and flashing</label>
         <label><input type="checkbox" id="pref-colour"> Colour-blind safe palette</label>
         <label><input type="checkbox" id="pref-text"> Larger text</label>
-        <div class="go" id="pref-go">Continue</div>
+        ${saved
+          ? `<div class="go" id="pref-continue">Continue the afternoon<small>${saved.label}</small></div>
+             <div class="go quiet" id="pref-go">Start a new afternoon</div>`
+          : '<div class="go" id="pref-go">Continue</div>'}
       </div>`;
     document.body.appendChild(el);
+    (el.querySelector('#pref-motion') as HTMLInputElement).checked = this.settings.reduceMotion;
+    (el.querySelector('#pref-colour') as HTMLInputElement).checked = this.settings.colourSafeMachine;
+    (el.querySelector('#pref-text') as HTMLInputElement).checked = this.settings.textScale > 1;
 
-    const go = () => {
+    let gone = false;
+    const go = (resume: boolean) => {
+      if (gone) return;
+      gone = true;
       this.settings.reduceMotion = (el.querySelector('#pref-motion') as HTMLInputElement).checked;
       this.settings.transitionIntensity = this.settings.reduceMotion ? 0.25 : 1;
       this.settings.colourSafeMachine = (el.querySelector('#pref-colour') as HTMLInputElement).checked;
@@ -214,14 +361,21 @@ class Game {
       el.classList.add('hidden');
       window.setTimeout(() => el.remove(), 520);
       this.audio.start();
-      this.startAd();
+      if (resume && saved) {
+        this.restore(saved);
+        this.startPlay();
+      } else {
+        if (saved) clearAfternoon();
+        this.startAd();
+      }
     };
 
-    el.querySelector('#pref-go')!.addEventListener('click', go);
+    el.querySelector('#pref-go')!.addEventListener('click', () => go(false));
+    el.querySelector('#pref-continue')?.addEventListener('click', () => go(true));
     window.addEventListener('keydown', function once(e) {
       if (e.code === 'Enter' || e.code === 'Space') {
         window.removeEventListener('keydown', once);
-        go();
+        go(!!saved);
       }
     });
   }
@@ -261,15 +415,28 @@ class Game {
     });
   }
 
-  private playReprise(): void {
+  /** Straight into the afternoon, for a player coming back to one. */
+  private startPlay(): void {
+    this.phase = 'play';
+    this.hud.setVisible(true);
+    this.renderer.cam.scripted = null;
+    this.loop.start();
+  }
+
+  private playReprise(ending?: EndingId): void {
     this.phase = 'reprise';
     this.clearTransientState();
+    this.sim.disengage();
     this.hud.setVisible(false);
     this.ad.play({
       reprise: true,
       onDone: () => {
         this.phase = 'play';
         this.hud.setVisible(true);
+        if (ending) {
+          this.persist();
+          this.ending.show(ending, recordEndingSeen(ending));
+        }
       },
     });
   }
@@ -284,6 +451,24 @@ class Game {
     window.addEventListener('keydown', (e) => {
       if (this.phase === 'ad' || this.phase === 'reprise') {
         if (e.code === 'Escape') this.ad.skip();
+        return;
+      }
+      if (this.phase !== 'play') return;
+      if (this.ending.open) return;
+      if (this.notebook.key(e.code) || this.menu.key(e.code)) { e.preventDefault(); return; }
+      if (e.code === 'Escape' || e.code === 'KeyP') {
+        if (this.sim.aimMode) { this.sim.exitAimMode(); return; }
+        if (this.sim.engagedWith) { this.sim.disengage(); return; }
+        if (this.sim.focusNode) { this.sim.dismissFocus(); return; }
+        this.openMenu();
+        return;
+      }
+      if (e.code === 'KeyN' || e.code === 'Tab') { e.preventDefault(); this.openNotebook(); return; }
+      // In a conversation, the digits answer.
+      if (this.sim.engagedWith) {
+        const choices = this.hud.talkChoices;
+        const i = this.verbKeys.get(e.code);
+        if (i !== undefined && choices[i]) { this.story.choose(choices[i]); e.preventDefault(); }
         return;
       }
       if (e.code === 'F3') {
@@ -348,6 +533,10 @@ class Game {
     bus.on('drone:destabilised', () => { this.audio.impactMetal(); this.renderer.kick(0.3); });
     bus.on('veneer:crack', () => { this.audio.peelIn(); this.renderer.kick(0.25); });
     bus.on('vision:unlocked', () => this.audio.motif(0.8));
+    bus.on('case:clue', () => this.audio.clue());
+    bus.on('case:deduction', () => this.audio.deduction());
+    bus.on('talk:open', () => this.audio.talkBlip());
+    bus.on('talk:advance', () => this.audio.talkBlip());
     // Caught it: a sound, and nothing written on the screen about it.
     bus.on('player:trick', () => this.audio.land(0.6));
     bus.on('player:grab', () => this.audio.land(0.6));
@@ -374,6 +563,15 @@ class Game {
   // --------------------------------------------------------------------- tick
 
   private fixed(dt: number): void {
+    if (this.paused) {
+      // Drain input so nothing held across the pause fires on the way back.
+      this.input.sample(); this.touch.sample(); this.touch.takeTap();
+      return;
+    }
+    if (this.saveDue > 0) {
+      this.saveDue -= dt;
+      if (this.saveDue <= 0) { this.saveDue = 0; this.persist(); }
+    }
     this.intent = mergeIntent(this.input.sample(), this.touch.sample());
     const tap = this.touch.takeTap();
 
@@ -470,6 +668,10 @@ class Game {
    * is a place, so reaching into it is a matter of putting a finger on it.
    */
   private resolveTap(screen: { x: number; y: number }): void {
+    // A tap while talking is the next line; a tap with somebody or something
+    // in reach is stopping to attend to it. The same rule as the E key.
+    if (this.sim.engagedWith) { if (!this.hud.talkChoices.length) this.story.advance(); return; }
+    if (this.sim.interest) { this.sim.engageInterest(); this.audio.hackTick(); return; }
     const world = this.renderer.screenToWorld(screen);
     const node = this.sim.network.nearest(world, 90 / Math.max(1, this.renderer.cam.zoom) + 3);
     if (node && dist(node.pos, this.sim.player.pos) <= NODE_REACH) {
@@ -491,6 +693,11 @@ class Game {
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;
+    // Whoever the player is talking to is in the shot with them.
+    const e = this.sim.engagedWith;
+    this.renderer.chase.focus = e
+      ? (e.kind === 'person' ? (e.id === 'devon' ? this.sim.devonPos : this.sim.person(e.id)?.pos ?? e.pos) : e.pos)
+      : null;
     this.renderer.render(dt);
     this.hud.update(dt);
 
@@ -501,7 +708,10 @@ class Game {
       p.stance !== 'AIR' && p.onBoard,
       this.sim.planViewBlend, p.flow,
     );
-    this.audio.duck(this.sim.planViewBlend);
+    this.audio.duck(this.paused ? 0.75 : this.sim.planViewBlend);
+    const d = this.sim.world.districtAt(p.pos)?.id ?? '';
+    const inChannel = this.sim.world.surfaceAt(p.pos) === 'smoothConcrete' && d === 'channel' && p.pos.y > 395;
+    this.audio.setPlace(inChannel ? 'channel' : d, dt);
   }
 }
 

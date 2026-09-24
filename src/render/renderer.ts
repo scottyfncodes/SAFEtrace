@@ -108,6 +108,56 @@ export class Renderer {
     return this.mask;
   }
 
+  /**
+   * A line of the town's own conversation, hung over whoever said it. Small,
+   * in a person's typeface, and gone in a few seconds. A public-address
+   * speaker gets the brand's teal instead, because it is the brand talking.
+   */
+  speak(anchor: () => Vec2, text: string, seconds: number, broadcast = false): void {
+    this.speech.push({ anchor, text, t: 0, life: seconds, broadcast });
+    if (this.speech.length > 3) this.speech.shift();
+  }
+
+  private speech: Array<{ anchor: () => Vec2; text: string; t: number; life: number; broadcast: boolean }> = [];
+
+  private drawSpeech(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
+    if (this.speech.length === 0) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '500 12.5px Inter, system-ui, sans-serif';
+    const keep: typeof this.speech = [];
+    for (const s of this.speech) {
+      s.t += dt;
+      if (s.t >= s.life) continue;
+      keep.push(s);
+      const pos = s.anchor();
+      const at = this.perspective.screenOf(eye, pos, s.broadcast ? 4.4 : 2.35, this.w, this.h);
+      if (!at || at.x < -80 || at.x > this.w + 80 || at.y < 0 || at.y > this.h) continue;
+      const a = Math.min(1, s.t / 0.25, (s.life - s.t) / 0.4);
+      const words = wrapWords(ctx, s.text, Math.min(260, this.w * 0.6));
+      const lh = 16;
+      const wid = Math.max(...words.map((w) => ctx.measureText(w).width)) + 20;
+      const hgt = words.length * lh + 12;
+      const x = Math.max(wid / 2 + 8, Math.min(this.w - wid / 2 - 8, at.x));
+      const y = at.y - hgt / 2 - 12;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = s.broadcast ? 'rgba(18, 52, 56, 0.9)' : 'rgba(247, 245, 240, 0.94)';
+      roundRect(ctx, x - wid / 2, y - hgt / 2, wid, hgt, 8);
+      ctx.fill();
+      // The tail, down to the speaker.
+      ctx.beginPath();
+      ctx.moveTo(Math.max(x - wid / 2 + 10, Math.min(x + wid / 2 - 10, at.x)) - 6, y + hgt / 2);
+      ctx.lineTo(at.x, y + hgt / 2 + 9);
+      ctx.lineTo(Math.max(x - wid / 2 + 10, Math.min(x + wid / 2 - 10, at.x)) + 6, y + hgt / 2);
+      ctx.fill();
+      ctx.fillStyle = s.broadcast ? '#BFF5EA' : '#26313B';
+      words.forEach((w, i) => ctx.fillText(w, x, y - hgt / 2 + 6 + lh / 2 + i * lh));
+    }
+    ctx.restore();
+    this.speech = keep;
+  }
+
   ripple(pos: Vec2, life = 0.9): void { this.ripples.push({ pos, t: 0, life }); }
   kick(a: number): void { this.cam.kick(a * this.settings.cameraShake); }
 
@@ -137,11 +187,13 @@ export class Renderer {
      * forecast and evidence become readable. Holding PLAN crosses from one to
      * the other, which is what the peel has always been for.
      */
+    this.chase.cinematic = this.cam.scripted;
     this.chase.update(sim, dt);
     if (sim.planViewBlend < 0.999) {
       const eye = this.chase.state(sim);
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawSkateHud(ctx);
+      this.drawSpeech(ctx, eye, dt);
       this.drawInteractPrompt(ctx, eye, dt);
     }
     if (sim.planViewBlend <= 0.001) {
@@ -534,49 +586,68 @@ export class Renderer {
    * permanent label on the world — the town does not wear name tags.
    */
   private drawInteractPrompt(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
-    const node = this.sim.interactCandidate;
-    // A different node restarts the fade, so the label never appears to
+    const sim = this.sim;
+    /*
+     * One thing in reach, whichever kind it is: a node on a wall, a person, a
+     * thing on a step. People and places use the same quiet grammar as nodes
+     * — nothing until you are standing there, and then a ring and a word.
+     */
+    let target: { id: string; pos: Vec2; z: number; title: string; verb: string; mono: boolean } | null = null;
+    const node = sim.interactCandidate;
+    if (node && !sim.engagedWith) {
+      target = { id: node.id, pos: node.pos, z: NODE_LABEL_Z, title: node.id, verb: this.interactVerb, mono: true };
+    } else if (sim.interest && !sim.engagedWith) {
+      const i = sim.interest;
+      const sp = i.kind === 'place' ? sim.placeById(i.id)?.sceneProp : undefined;
+      const z = i.kind === 'person' ? 2.25 : Math.max(0.9, (sp ? sim.sceneProp(sp)?.z ?? 0.4 : 0.4) + 0.7);
+      target = {
+        id: i.id, pos: i.pos, z, title: i.label,
+        verb: `${this.interactVerb} · ${i.kind === 'person' ? 'TALK' : 'LOOK'}`, mono: false,
+      };
+    }
+    // A different target restarts the fade, so the label never appears to
     // teleport from one object to the next.
-    if (node && node.id !== this.promptId) { this.promptId = node.id; this.promptFade = 0; }
-    if (!node) this.promptId = null;
-    this.promptFade = clamp01(this.promptFade + (node ? 4.5 : -6) * dt);
-    if (this.promptFade < 0.01 || !node) return;
+    if (target && target.id !== this.promptId) { this.promptId = target.id; this.promptFade = 0; }
+    if (!target) this.promptId = null;
+    this.promptFade = clamp01(this.promptFade + (target ? 4.5 : -6) * dt);
+    if (this.promptFade < 0.01 || !target) return;
 
-    const at = this.perspective.screenOf(eye, node.pos, NODE_LABEL_Z, this.w, this.h);
+    const at = this.perspective.screenOf(eye, target.pos, target.z, this.w, this.h);
     if (!at) return;
     const a = smoothstep(this.promptFade);
 
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const accent = target.mono ? VENEER.accent : '#F2C86B';
 
     // The object itself, ringed.
-    ctx.strokeStyle = alpha(VENEER.accent, 0.55 * a);
+    ctx.strokeStyle = alpha(accent, 0.55 * a);
     ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(at.x, at.y, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(at.x, at.y, target.mono ? 13 : 10, 0, Math.PI * 2); ctx.stroke();
 
-    const label = node.id;
-    ctx.font = '700 12px ui-monospace, Menlo, monospace';
-    const wid = Math.max(58, ctx.measureText(label).width + 18);
+    const label = target.title;
+    ctx.font = target.mono ? '700 12px ui-monospace, Menlo, monospace' : '600 12.5px Inter, system-ui, sans-serif';
+    const wid = Math.max(64, ctx.measureText(label).width + 22);
     const boxY = at.y - 42;
     ctx.fillStyle = alpha('#121A22', 0.82 * a);
     roundRect(ctx, at.x - wid / 2, boxY - 15, wid, 30, 4);
     ctx.fill();
-    ctx.strokeStyle = alpha(VENEER.accent, 0.5 * a);
+    ctx.strokeStyle = alpha(accent, 0.5 * a);
     ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
     ctx.fillText(label, at.x, boxY - 5);
     ctx.font = '600 9px ui-monospace, Menlo, monospace';
-    ctx.fillStyle = alpha(VENEER.accent, 0.95 * a);
-    ctx.fillText(this.interactVerb, at.x, boxY + 8);
+    ctx.fillStyle = alpha(accent, 0.95 * a);
+    ctx.fillText(target.verb, at.x, boxY + 8);
 
     // A short leader down to the thing, so the label belongs to it.
-    ctx.strokeStyle = alpha(VENEER.accent, 0.4 * a);
+    ctx.strokeStyle = alpha(accent, 0.4 * a);
     ctx.beginPath();
     ctx.moveTo(at.x, boxY + 15);
-    ctx.lineTo(at.x, at.y - 14);
+    ctx.lineTo(at.x, at.y - 12);
     ctx.stroke();
     ctx.restore();
   }
@@ -773,8 +844,14 @@ export class Renderer {
       this.drawPerson(ctx, n.pos, n.heading, n.tint, 0, machine);
     }
 
-    if (!sim.devonStopped || true) {
-      this.drawPerson(ctx, sim.devonPos, 0, VENEER.friend, 0, machine, true);
+    // People with names are on the plan too — the plan is where you find them.
+    for (const p of sim.people) {
+      if (!p.visible) continue;
+      this.drawPerson(ctx, p.pos, p.heading, p.uniform ? VENEER.uniform : p.tint, 0, machine);
+    }
+
+    if (sim.devonVisible) {
+      this.drawPerson(ctx, sim.devonPos, 0, VENEER.friend, 0, machine, sim.devonFollowing && !sim.devonStopped);
     }
 
     // Drones, drawn last of the ambient actors so they read as above everything.
@@ -1068,4 +1145,16 @@ export class Renderer {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, this.h);
   }
+}
+
+/** Break a line into lines no wider than `max`, at spaces. */
+function wrapWords(ctx: CanvasRenderingContext2D, text: string, max: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > max && line) { out.push(line); line = word; } else line = next;
+  }
+  if (line) out.push(line);
+  return out;
 }

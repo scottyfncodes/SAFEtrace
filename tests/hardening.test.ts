@@ -25,6 +25,18 @@ function directorFor(sim: Sim) {
   return { director, said };
 }
 
+/**
+ * The incident only happens with Devon there — he is who it happens to. These
+ * runs used to drop the player into the Channel alone, which is the exact
+ * situation that produced "Devon: I'm right here" from a boy eighty metres
+ * away. They bring him along now, the way a player has to.
+ */
+function arriveWithDevon(sim: Sim): void {
+  sim.meetDevon();
+  place(sim, { x: 196, y: 428 });
+  sim.devonPos = { x: 191, y: 426 };
+}
+
 describe('the story runs on simulation time', () => {
   it('schedules on ticks, so a beat cannot drift away from the world', () => {
     const sim = makeSim();
@@ -58,7 +70,7 @@ describe('the story runs on simulation time', () => {
       const { director } = directorFor(sim);
       const beats: string[] = [];
       sim.bus.on('story:beat', (b) => beats.push(b.id));
-      place(sim, { x: 196, y: 428 });
+      arriveWithDevon(sim);
       for (let i = 0; i < 60 * 70; i++) {
         sim.step(TICK_DT, emptyIntent(), null);
         director.update();
@@ -282,7 +294,7 @@ describe('the town is already watched, and stays exactly as watched', () => {
     const { director } = directorFor(sim);
     const before = { sensors: sim.sensors.length, drones: sim.drones.length, patrols: sim.patrols.length };
 
-    place(sim, { x: 196, y: 428 });
+    arriveWithDevon(sim);
     for (let i = 0; i < 60 * 80; i++) {
       const intent = emptyIntent();
       intent.steer = Math.sin(i / 40);

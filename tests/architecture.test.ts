@@ -110,10 +110,13 @@ describe('architecture', () => {
     for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selector = m[1].trim().replace(/\s+/g, ' ');
       if (!/pointer-events:\s*auto/.test(m[2])) continue;
-      // The advertisement and the preferences card are full-screen modals that
-      // deliberately take every touch while they are up; verb chips are the
-      // panel's own controls. Nothing else may.
-      if (/^#ad\b|^#prefs\b|\.go\b|\.verb\b/.test(selector)) continue;
+      // The advertisement, the preferences card, the notebook, the pause menu
+      // and the ending are full-screen modals that deliberately take every
+      // touch while they are up; verb chips, answer chips and the two
+      // buttons under the phone are controls. Nothing else may — and the
+      // buttons and the conversation card are placed clear of the thumbs by
+      // the geometry test below.
+      if (/^#ad\b|^#prefs\b|^#notebook\b|^#menu\b|^#ending\b|\.go\b|\.verb\b|\.choice\b|\.hud-button\b|^#talk\.show\b/.test(selector)) continue;
       offenders.push(selector);
     }
     expect(offenders).toEqual([]);
@@ -128,6 +131,19 @@ describe('architecture', () => {
       expect({ v, set: main.includes(v), used: css.includes(`var(${v})`) })
         .toEqual({ v, set: true, used: true });
     }
+  });
+
+  it('keeps the player\'s own buttons and the conversation card clear of the thumbs', () => {
+    const base = read('src/ui/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const mobile = read('src/ui/mobile.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    // The buttons live in the top-left column with the phone, never on their own.
+    expect(read('src/ui/hud.ts')).toMatch(/<div id="corner">[\s\S]*id="phone"[\s\S]*id="hud-buttons"/);
+    expect(/#corner\s*\{[^}]*top:\s*24px;[^}]*left:\s*24px;/.test(base)).toBe(true);
+    expect(/#hud-buttons\s*\{[^}]*position:\s*absolute/.test(base + mobile)).toBe(false);
+    // On a phone the conversation card sits above the control cluster, the
+    // same construction the inspect panel uses.
+    const talk = mobile.match(/#talk\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(talk).toContain('var(--control-top)');
   });
 
   it('gives the pursuit exactly one way to start', () => {

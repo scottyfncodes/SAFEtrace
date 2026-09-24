@@ -28,6 +28,14 @@ export class Advertisement {
   private beat = 0;
   private t = 0;
   private running = false;
+  /**
+   * Seconds since this showing began. The key that dismissed the preferences
+   * card is Enter, and Enter is also a skip key — so the same press that
+   * started the advertisement used to end it on the next frame, and nobody
+   * who used a keyboard ever saw it. A skip only counts once the first shot
+   * has had a moment to land.
+   */
+  private shown = 0;
   private done = false;
   private reprise = false;
   private script: AdBeat[] = AD_SCRIPT;
@@ -52,6 +60,7 @@ export class Advertisement {
     this.t = 0;
     this.running = true;
     this.done = false;
+    this.shown = 0;
     this.el.classList.remove('hidden');
     this.renderer.cam.scripted = {
       pos: { x: this.script[0].look.x, y: this.script[0].look.y },
@@ -64,11 +73,12 @@ export class Advertisement {
 
   get active(): boolean { return this.running; }
 
-  skip(): void { if (this.running) this.finish(); }
+  skip(): void { if (this.running && this.shown > 0.8) this.finish(); }
 
   update(dt: number): void {
     if (!this.running) return;
     this.t += dt;
+    this.shown += dt;
     const beat = this.script[this.beat];
     if (!beat) { this.finish(); return; }
 
