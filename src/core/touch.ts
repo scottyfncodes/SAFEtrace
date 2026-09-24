@@ -94,7 +94,16 @@ export const TOUCH_TUNING = {
    */
   trickOffset: { x: -76, y: -84 },
   planOffset: { x: 0, y: -158 },
-  grabOffset: { x: -76, y: -220 },
+  /**
+   * Holding TRICK this long is a grab instead of a flip.
+   *
+   * There was a fourth button for it, and it was the one button in the
+   * cluster whose job was already a variant of another's: pop, and do
+   * something with the board. A tap flips it; a hold grabs it and keeps
+   * hold for as long as the thumb does — which is exactly the shape of the
+   * thing, and one less circle on the glass.
+   */
+  grabHoldMs: 200,
   /**
    * The stick reaches full deflection this far from where it was planted.
    *
@@ -131,11 +140,12 @@ export const TOUCH_TUNING = {
   /** Fraction of the width given to the thumb that holds the sling. */
   aimPadWidth: 0.5,
   /** Pull this far back from the grab for a full draw. */
-  pullFull: 118,
-  pullMin: 14,
+  pullFull: 112,
+  /** Below this the band has only been touched, not pulled. Small, so a short pull still counts. */
+  pullMin: 10,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'grab' | 'aim' | 'pull' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'putAway' | 'look' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -148,10 +158,17 @@ interface Track {
   anchor: { x: number; y: number };
   cur: { x: number; y: number; t: number };
   moved: number;
+  /** A TRICK held long enough has already become a grab. */
+  grabbed?: boolean;
+  /**
+   * Frames this finger has been down. A thumb held perfectly still sends no
+   * events at all, so time spent holding has to be counted here too.
+   */
+  frames?: number;
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick' | 'plan' | 'grab';
+  id: 'sling' | 'trick' | 'plan';
   pos: { x: number; y: number };
   /** What is drawn. */
   radius: number;
@@ -195,6 +212,8 @@ export class TouchEngine {
    * turns into one smooth sweep instead of a jump.
    */
   private aimDrag = { x: 0, y: 0 };
+  /** Pixels dragged on empty glass since last read: camera orbit, or map pan. */
+  private lookDrag = { x: 0, y: 0 };
   /** The draw at the moment of release, so the shot frame still has it. */
   private firedDraw = 0;
   private aiming = false;
@@ -215,6 +234,8 @@ export class TouchEngine {
     // the aim under the new one.
     this.aimDrag.x = 0;
     this.aimDrag.y = 0;
+    this.lookDrag.x = 0;
+    this.lookDrag.y = 0;
   }
 
   setSlingAvailable(on: boolean): void { this.canSling = on; }
@@ -231,7 +252,7 @@ export class TouchEngine {
   }
 
   /**
-   * Four controls, on the arc a right thumb sweeps.
+   * Three controls, on the arc a right thumb sweeps.
    *
    * There were four once, then three, then two, then four again — but not the
    * same four. POP went because the TRICK button pops on its own. The eye
@@ -260,15 +281,8 @@ export class TouchEngine {
    *   deliberate extension of the thumb, not somewhere a thumb ends up by
    *   accident on its way back from TRICK.
    *
-   *   GRAB sits above PLAN, directly over TRICK, at PLAN's own weight and
-   *   size. It is pressed once and then held through — a whole flight's
-   *   worth of air, not a flick — so a slightly smaller, slightly further
-   *   target costs it nothing the way it would TRICK. Straight up rather
-   *   than further out along TRICK's own diagonal: going any further left on
-   *   a 320 px phone leaves less than a fingertip's width before the split
-   *   down the middle of the aiming screen, so the fourth circle finds its
-   *   clearance from the other three by climbing the column, not by
-   *   widening it.
+   *   There is no GRAB. It was a fourth circle for a variant of TRICK, and
+   *   it is now what holding TRICK does.
    */
   buttonLayout(): ControlButton[] {
     const t = this.tuning;
@@ -283,7 +297,6 @@ export class TouchEngine {
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
     const trickY = Math.max(ceiling + 40, anchor.y + t.trickOffset.y);
-    const grabY = Math.max(ceiling, anchor.y + t.grabOffset.y);
 
     return [
       {
@@ -299,12 +312,7 @@ export class TouchEngine {
       {
         id: 'plan', pos: { x: anchor.x + t.planOffset.x, y: planY },
         radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
-        pressed: false, enabled: true,
-      },
-      {
-        id: 'grab', pos: { x: anchor.x + t.grabOffset.x, y: grabY },
-        radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
-        pressed: false, enabled: true,
+        pressed: this.planOn, enabled: true,
       },
     ];
   }
@@ -359,6 +367,15 @@ export class TouchEngine {
        * promote or re-target the other, because roles are per-pointer and
        * neither reads anything but its own movement.
        */
+      /*
+       * The one exception is the SLING button itself, which stays where it
+       * was and puts the sling away when tapped — the same control in, the
+       * same control out, instead of a gesture nobody could find. A thumb
+       * that lands on it and pulls is pulling, because that corner is where a
+       * right thumb rests.
+       */
+      const sling = this.buttonLayout()[0];
+      if (Math.hypot(x - sling.pos.x, y - sling.pos.y) <= sling.hit * 0.8) return 'putAway';
       return x < this.viewport.w * this.tuning.aimPadWidth ? 'aim' : 'pull';
     }
     /*
@@ -409,7 +426,26 @@ export class TouchEngine {
     track.cur = { x: s.x, y: s.y, t: s.t };
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
+    if (track.role === 'putAway' && track.moved > this.tuning.tapSlop
+      && ![...this.tracks.values()].some((t) => t.role === 'pull')) {
+      track.role = 'pull';
+    }
     if (track.role === 'pull') return;   // read from its position on sample()
+
+    // A finger on empty glass that moves is looking, not tapping: it turns
+    // the camera round the rider, or drags the map in the plan.
+    if (track.role === 'idle' && track.moved > this.tuning.tapSlop
+      && ![...this.tracks.values()].some((t) => t.role === 'look')) {
+      track.role = 'look';
+      this.lookDrag.x += s.x - track.start.x;
+      this.lookDrag.y += s.y - track.start.y;
+      return;
+    }
+    if (track.role === 'look') {
+      this.lookDrag.x += s.x - prev.x;
+      this.lookDrag.y += s.y - prev.y;
+      return;
+    }
 
     if (track.role === 'aim') {
       // Only the change. Where the thumb happens to be on the glass means
@@ -435,7 +471,7 @@ export class TouchEngine {
 
   private onRelease(track: Track, s: PointerSample, cancelled: boolean): void {
     this.tracks.delete(track.id);
-    const held = s.t - track.start.t;
+    const held = Math.max(s.t - track.start.t, (track.frames ?? 0) * (1000 / 60));
     const isTap = !cancelled && held <= this.tuning.tapMs && track.moved <= this.tuning.tapSlop;
 
     switch (track.role) {
@@ -469,11 +505,16 @@ export class TouchEngine {
       case 'sling':
         if (isTap) this.pendingAimMode = true;
         break;
-      case 'trick':
-        if (isTap) this.pendingTrick = true;
+      case 'putAway':
+        if (isTap || (!cancelled && track.moved <= this.tuning.tapSlop)) this.pendingAimMode = true;
         break;
-      case 'grab':
-        if (isTap) this.pendingGrab = true;
+      case 'trick':
+        if (isTap && !track.grabbed) this.pendingTrick = true;
+        break;
+      case 'plan':
+        // PLAN is a toggle on a phone: holding one thumb down to keep a map
+        // open left one thumb to do everything else with.
+        if (isTap) this.planOn = !this.planOn;
         break;
       case 'idle':
         if (isTap) { this.pendingTap = { x: s.x, y: s.y }; this.pendingSkip = true; }
@@ -502,10 +543,11 @@ export class TouchEngine {
    * Not a toggle, because the two devices must not learn different habits, and
    * not a gesture, because a control nobody can see is worse than no control.
    */
-  private get planHeld(): boolean {
-    for (const t of this.tracks.values()) if (t.role === 'plan') return true;
-    return false;
-  }
+  private get planHeld(): boolean { return this.planOn; }
+  /** Whether PLAN has been tapped open. */
+  private planOn = false;
+  /** The host closes the plan when something else takes over (a menu, a scene). */
+  setPlanOpen(on: boolean): void { this.planOn = on; }
 
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
   sample(): Intent {
@@ -581,7 +623,16 @@ export class TouchEngine {
       }
     }
 
-    if (this.planHeld) i.planView = true;
+    // A TRICK held past the threshold is a grab, asked for once.
+    for (const tr of this.tracks.values()) {
+      tr.frames = (tr.frames ?? 0) + 1;
+      const heldMs = Math.max(tr.cur.t - tr.start.t, tr.frames * (1000 / 60));
+      if (tr.role === 'trick' && !tr.grabbed && heldMs >= t.grabHoldMs && tr.moved <= t.tapSlop * 2) {
+        tr.grabbed = true;
+        this.pendingGrab = true;
+      }
+    }
+    if (this.planOn) i.planView = true;
     if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
     if (this.pendingGrab) { i.grabPressed = true; this.pendingGrab = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
@@ -608,6 +659,19 @@ export class TouchEngine {
     this.aimDrag.x = 0;
     this.aimDrag.y = 0;
     return out;
+  }
+
+  /** Screen pixels dragged on empty glass since last asked. Consumed. */
+  takeLookDrag(): { x: number; y: number } {
+    const out = { x: this.lookDrag.x, y: this.lookDrag.y };
+    this.lookDrag.x = 0; this.lookDrag.y = 0;
+    return out;
+  }
+
+  /** True while a finger is dragging on empty glass. */
+  get looking(): boolean {
+    for (const t of this.tracks.values()) if (t.role === 'look') return true;
+    return false;
   }
 
   /** A world-space tap the caller should resolve against the network. */
@@ -655,7 +719,7 @@ export class TouchEngine {
         thumb: stick ? { x: stick.cur.x, y: stick.cur.y } : { x: 0, y: 0 },
         vector,
       },
-      buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) })),
+      buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) })),
       aiming: this.aiming,
     };
   }

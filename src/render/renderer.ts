@@ -10,13 +10,21 @@ import { type Rect, type Vec2, clamp01, easeInOutCubic, smoothstep } from '../co
 import type { ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import type { Sim } from '../sim/sim';
-import { predictArc } from '../sim/slingshot';
+import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY } from '../sim/slingshot';
 import { ViewCamera } from './camera';
+import { PLAN, SLING_HINT } from '../content/copy';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
+
+interface Particle {
+  kind: 'dust' | 'chip' | 'leaf' | 'spark' | 'bird';
+  x: number; y: number; z: number;
+  vx: number; vy: number; vz: number;
+  life: number; max: number; size: number; phase: number;
+}
 
 /** Where a node's label hangs: roughly the height its housing sits at. */
 const NODE_LABEL_Z = 3.0;
@@ -163,18 +171,431 @@ export class Renderer {
 
 
 
-  screenToWorld(p: Vec2): Vec2 { return this.cam.toWorld(p, this.w, this.h); }
+  /**
+   * Where on the ground a point on the glass is.
+   *
+   * This used to be the flat plan camera's answer whatever was on screen, and
+   * the world has been drawn in third person since pass 24 — so a mouse
+   * pointing at a bin while skating was aiming at wherever that pixel would
+   * have been on a map nobody was looking at. In the plan it is the map's
+   * answer; everywhere else it is the ground under the pointer.
+   */
+  screenToWorld(p: Vec2): Vec2 {
+    if (this.sim.planViewBlend < 0.5 && this.lastEye) {
+      const g = this.perspective.groundAt(this.lastEye, p.x, p.y, this.w, this.h);
+      if (g) return g;
+    }
+    return this.cam.toWorld(p, this.w, this.h);
+  }
+  private lastEye: CamState | null = null;
+  private planWasOpen = false;
+
+  // ------------------------------------------------------------ the plan
+
+  /** Where the player has marked on the plan, if anywhere. Set by the host. */
+  waypoint: Vec2 | null = null;
+  /** People the player has actually spoken to, by id. Set by the host. */
+  metPeople: ReadonlySet<string> = new Set();
+  /** Places the player has stopped and looked at, by id. Set by the host. */
+  seenPlaces: ReadonlySet<string> = new Set();
+  /** Set by the host once SAFEtrace's number for the player has been found. */
+  scoreLine: string | null = null;
+
+  /**
+   * What the plan is for, drawn on the plan.
+   *
+   * A map with a dot on it answers "where am I" and nothing else, and a
+   * human could not say why they would open it. It now answers the
+   * investigator's question — where is the thing I am looking for, and how do
+   * I get there — with the places a person would name: the districts, the
+   * buildings with names, the people you have met and the things you have
+   * looked at, and a pin you put down yourself and then follow.
+   */
+  private drawPlanOverlay(ctx: CanvasRenderingContext2D, blend: number): void {
+    const a = smoothstep(clamp01((blend - 0.35) / 0.65));
+    if (a < 0.01) return;
+    const sim = this.sim;
+    const cam = this.cam;
+    const at = (p: Vec2) => cam.toScreen(p, this.w, this.h);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Districts, large and quiet: the words people give directions in.
+    ctx.font = '700 13px ui-monospace, Menlo, monospace';
+    for (const d of sim.world.data.districts) {
+      const c = at(d.centre);
+      if (c.x < -100 || c.x > this.w + 100 || c.y < -40 || c.y > this.h + 40) continue;
+      ctx.fillStyle = alpha(MACHINE.structureBright, 0.42 * a);
+      ctx.fillText(d.name.toUpperCase().split('').join(' '), c.x, c.y);
+    }
+
+    // Buildings with names.
+    ctx.font = '600 10px ui-monospace, Menlo, monospace';
+    for (const b of sim.world.data.buildings) {
+      // Places with names people use: shops, the school, the civic buildings.
+      if (!b.label || (b.kind !== 'shop' && b.kind !== 'civic' && b.kind !== 'school')) continue;
+      let cx = 0, cy = 0;
+      for (const p of b.poly) { cx += p.x; cy += p.y; }
+      const c = at({ x: cx / b.poly.length, y: cy / b.poly.length });
+      if (c.x < -60 || c.x > this.w + 60 || c.y < -20 || c.y > this.h + 20) continue;
+      const text = b.label.replace(/^NORTHGATE PARADE — /, '').replace(/^RIDGELINE — /, '');
+      ctx.fillStyle = alpha('#0B1117', 0.6 * a);
+      const wd = ctx.measureText(text).width + 8;
+      ctx.fillRect(c.x - wd / 2, c.y - 7, wd, 14);
+      ctx.fillStyle = alpha('#DDE6E4', 0.85 * a);
+      ctx.fillText(text, c.x, c.y);
+    }
+
+    // People you know, where they are now; things you have looked at.
+    const pin = (p: Vec2, label: string, col: string) => {
+      const c = at(p);
+      if (c.x < -40 || c.x > this.w + 40 || c.y < -40 || c.y > this.h + 40) return;
+      ctx.fillStyle = alpha(col, 0.95 * a);
+      ctx.beginPath(); ctx.arc(c.x, c.y, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = alpha('#0B1117', 0.8 * a);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.font = '600 11px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = alpha('#0B1117', 0.7 * a);
+      const wd = ctx.measureText(label).width + 8;
+      ctx.fillRect(c.x + 7, c.y - 8, wd, 16);
+      ctx.fillStyle = alpha(col, a);
+      ctx.fillText(label, c.x + 11, c.y);
+      ctx.textAlign = 'center';
+    };
+    for (const p of sim.people) if (p.visible && this.metPeople.has(p.id)) pin(p.pos, p.name, '#F2C86B');
+    if (sim.devonVisible && sim.devonFollowing !== undefined && this.metPeople.has('devon')) pin(sim.devonPos, 'Devon', VENEER.friend);
+    for (const pl of sim.places) if (pl.visible && this.seenPlaces.has(pl.id)) pin(pl.pos, pl.label, '#BFD7D2');
+
+    // The pin you put down.
+    if (this.waypoint) {
+      const c = at(this.waypoint);
+      const d = Math.round(Math.hypot(this.waypoint.x - sim.player.pos.x, this.waypoint.y - sim.player.pos.y));
+      const me = at(sim.player.pos);
+      ctx.strokeStyle = alpha(VENEER.player, 0.5 * a);
+      ctx.setLineDash([3, 6]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.setLineDash([]);
+      this.drawPinGlyph(ctx, c.x, c.y, a);
+      ctx.font = '700 11px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = alpha('#F6F4EE', a);
+      ctx.fillText(`${d} m`, c.x, c.y + 14);
+    }
+
+    // What this view is for, and how to use it — until it has been used.
+    const lines: string[] = [];
+    if (!this.waypoint) lines.push(this.touchHints ? PLAN.markTouch : PLAN.markMouse);
+    lines.push(this.touchHints ? PLAN.moveTouch : PLAN.moveMouse);
+    if (this.scoreLine) lines.unshift(this.scoreLine);
+    ctx.font = '600 11px ui-monospace, Menlo, monospace';
+    // Below the notes and toasts row, so nothing the town says covers it.
+    const top = this.safe.top + (this.touchHints ? 132 : 78);
+    lines.forEach((l, i) => {
+      const wd = ctx.measureText(l).width + 20;
+      ctx.fillStyle = alpha('#0B1117', 0.72 * a);
+      roundRect(ctx, this.w / 2 - wd / 2, top + i * 22 - 9, wd, 19, 9);
+      ctx.fill();
+      ctx.fillStyle = alpha(i === 0 && this.scoreLine ? '#F2C86B' : MACHINE.structureBright, 0.95 * a);
+      ctx.fillText(l, this.w / 2, top + i * 22 + 0.5);
+    });
+    ctx.restore();
+  }
+
+  /** A map pin: the one mark on the plan that is the player's own. */
+  private drawPinGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, a: number): void {
+    ctx.fillStyle = alpha(VENEER.player, a);
+    ctx.strokeStyle = alpha('#0B1117', 0.8 * a);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.bezierCurveTo(x - 9, y - 12, x - 8, y - 24, x, y - 24);
+    ctx.bezierCurveTo(x + 8, y - 24, x + 9, y - 12, x, y);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = alpha('#F6F4EE', a);
+    ctx.beginPath(); ctx.arc(x, y - 16, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /**
+   * The pin, out in the world.
+   *
+   * A thin column of light standing on the spot, so it can be seen over roofs
+   * from streets away, and — when it is behind you or off to the side — a
+   * small arrow at the edge of the glass pointing round to it. Arriving puts
+   * it away. Nothing else in the third-person view is a marker; this one is
+   * there because the player put it there.
+   */
+  private drawBeacon(ctx: CanvasRenderingContext2D, eye: CamState, a: number): void {
+    const wp = this.waypoint;
+    if (!wp || a < 0.02) return;
+    const sim = this.sim;
+    const d = Math.hypot(wp.x - sim.player.pos.x, wp.y - sim.player.pos.y);
+    const foot = this.perspective.project3(eye, wp.x, wp.y, 0, this.w, this.h);
+    const head = this.perspective.project3(eye, wp.x, wp.y, 14, this.w, this.h);
+    ctx.save();
+    const onScreen = foot && head && head.x > 20 && head.x < this.w - 20 && foot.y > 0 && head.y < this.h;
+    if (onScreen && foot && head) {
+      const g = ctx.createLinearGradient(foot.x, foot.y, head.x, head.y);
+      g.addColorStop(0, alpha(VENEER.player, 0.75 * a));
+      g.addColorStop(1, alpha(VENEER.player, 0));
+      ctx.strokeStyle = g;
+      ctx.lineWidth = Math.max(2, Math.min(7, 0.35 * foot.s));
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(foot.x, foot.y); ctx.lineTo(head.x, head.y); ctx.stroke();
+      ctx.font = '700 11px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = alpha('#0B1117', 0.6 * a);
+      const label = `${Math.round(d)} m`;
+      const wd = ctx.measureText(label).width + 10;
+      const ly = Math.max(this.safe.top + 14, Math.min(this.h - 20, (foot.y + head.y) / 2));
+      roundRect(ctx, head.x - wd / 2, ly - 8, wd, 16, 8); ctx.fill();
+      ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
+      ctx.fillText(label, head.x, ly + 0.5);
+    } else {
+      // Round the edge: the direction relative to the way the camera faces.
+      const rel = Math.atan2(wp.y - eye.pos.y, wp.x - eye.pos.x) - eye.yaw;
+      const sx = Math.sin(rel), sy = -Math.cos(rel);
+      // An ellipse well inside the glass, clear of the thumbs' corners and
+      // of whatever the HUD has along the bottom edge.
+      const rx = this.w / 2 - 44, ry = this.h / 2 - 110;
+      const k = 1 / Math.max(Math.abs(sx) / rx, Math.abs(sy) / ry);
+      const x = this.w / 2 + sx * k, y = this.h / 2 - 20 + sy * k;
+      ctx.font = '700 11px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = alpha('#0B1117', 0.55 * a);
+      const label = `${Math.round(d)} m`;
+      const wd = ctx.measureText(label).width + 10;
+      roundRect(ctx, x - sx * 26 - wd / 2, y - sy * 26 - 8, wd, 16, 8); ctx.fill();
+      ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
+      ctx.fillText(label, x - sx * 26, y - sy * 26 + 4);
+      ctx.translate(x, y);
+      ctx.rotate(Math.atan2(sy, sx));
+      ctx.fillStyle = alpha(VENEER.player, 0.9 * a);
+      ctx.strokeStyle = alpha('#0B1117', 0.6 * a);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-9, -11); ctx.lineTo(-4, 0); ctx.lineTo(-9, 11); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ------------------------------------------------------------ the stone's life
+
+  /** Bits of the world a stone knocked loose: dust, chips, leaves, sparks, birds. */
+  private particles: Particle[] = [];
+  /** Seconds since the band was let go, and how far it had been drawn. */
+  private release = { t: 99, draw: 0 };
+  /** A short jolt of the aiming view on release and on a solid hit. */
+  private recoil = 0;
+  /** True once the player has taken a shot this afternoon; retires the hint. */
+  private shotTaken = false;
+  /** Whether the host is a phone, for the one-time pull hint. */
+  touchHints = false;
+
+  /** The band has just been let go. */
+  onRelease(draw: number): void {
+    this.release = { t: 0, draw };
+    this.recoil = Math.max(this.recoil, 0.35 + draw * 0.65);
+    this.shotTaken = true;
+  }
+
+  /** A solid hit near enough to feel. */
+  jolt(amount: number): void { this.recoil = Math.max(this.recoil, amount); }
+
+  /** A tree was hit; it shivers for a second and a half. */
+  shakeTree(id: string): void { this.perspective.treeShake.set(id, 1); }
+
+  /**
+   * Throw some of the world into the air.
+   *
+   * `kind` decides what: pale dust off a lawn or a road, grey chips off a wall,
+   * green leaves out of a tree, bright sparks off metal, and birds — which go
+   * up and away rather than falling.
+   */
+  burst(kind: Particle['kind'], pos: Vec2, z: number, n: number, heading = 0, force = 1): void {
+    const seed = pos.x * 12.9898 + pos.y * 78.233 + this.particles.length;
+    const rnd = (i: number) => {
+      const v = Math.sin(seed + i * 43.758) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    for (let i = 0; i < n; i++) {
+      const a = heading + Math.PI + (rnd(i) - 0.5) * (kind === 'bird' ? 2.2 : 3.4);
+      const sp = (kind === 'bird' ? 5 : kind === 'leaf' ? 1.2 : 2.2) * (0.5 + rnd(i + 7)) * force;
+      const life = kind === 'bird' ? 2.6 : kind === 'leaf' ? 2.2 + rnd(i + 3) : kind === 'dust' ? 0.7 : 0.55;
+      this.particles.push({
+        kind,
+        x: pos.x + (rnd(i + 11) - 0.5) * (kind === 'leaf' ? 2.4 : 0.2),
+        y: pos.y + (rnd(i + 13) - 0.5) * (kind === 'leaf' ? 2.4 : 0.2),
+        z: z + (kind === 'leaf' ? (rnd(i + 17) - 0.5) * 1.6 : 0.05),
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        vz: kind === 'bird' ? 3 + rnd(i + 5) * 2 : kind === 'leaf' ? 0.3 : (1.2 + rnd(i + 5) * 2.4) * force,
+        life, max: life,
+        size: kind === 'dust' ? 0.16 + rnd(i + 19) * 0.12 : kind === 'bird' ? 0.14 : kind === 'leaf' ? 0.07 : 0.04,
+        phase: rnd(i + 23) * 6.28,
+      });
+    }
+    if (this.particles.length > 260) this.particles.splice(0, this.particles.length - 260);
+  }
+
+  private stepParticles(dt: number): void {
+    const keep: Particle[] = [];
+    for (const p of this.particles) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      if (p.kind === 'bird') {
+        p.vz += 1.2 * dt;
+        p.phase += dt * 22;
+      } else if (p.kind === 'leaf') {
+        // Leaves fall slowly and side to side.
+        p.vz = Math.max(-0.9, p.vz - 2.2 * dt);
+        p.phase += dt * 3;
+        p.vx *= 0.97; p.vy *= 0.97;
+      } else {
+        p.vz -= (p.kind === 'dust' ? 4 : 9.81) * dt;
+        if (p.kind === 'dust') { p.vx *= 0.9; p.vy *= 0.9; }
+      }
+      p.x += p.vx * dt + (p.kind === 'leaf' ? Math.sin(p.phase) * 0.6 * dt : 0);
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      if (p.z < 0 && p.kind !== 'bird') { p.z = 0; p.vz = 0; p.vx *= 0.5; p.vy *= 0.5; }
+      keep.push(p);
+    }
+    this.particles = keep;
+    for (const [id, v] of this.perspective.treeShake) {
+      const n = v - dt / 1.5;
+      if (n <= 0) this.perspective.treeShake.delete(id); else this.perspective.treeShake.set(id, n);
+    }
+  }
+
+  private drawParticles(ctx: CanvasRenderingContext2D, eye: CamState): void {
+    if (this.particles.length === 0) return;
+    ctx.save();
+    for (const p of this.particles) {
+      const at = this.perspective.project3(eye, p.x, p.y, p.z, this.w, this.h);
+      if (!at) continue;
+      const k = p.life / p.max;
+      const r = Math.max(0.8, Math.min(14, p.size * at.s));
+      switch (p.kind) {
+        case 'dust':
+          ctx.fillStyle = alpha('#D9CFBE', 0.55 * k);
+          ctx.beginPath(); ctx.arc(at.x, at.y, r * (1.6 - k * 0.6), 0, Math.PI * 2); ctx.fill();
+          break;
+        case 'leaf':
+          ctx.fillStyle = alpha(p.phase % 2 > 1 ? VENEER.treeLight : VENEER.tree, Math.min(1, k * 2));
+          ctx.beginPath(); ctx.ellipse(at.x, at.y, r * 1.4, r * 0.6, p.phase, 0, Math.PI * 2); ctx.fill();
+          break;
+        case 'spark':
+          ctx.fillStyle = alpha('#FFE3A3', k);
+          ctx.beginPath(); ctx.arc(at.x, at.y, Math.max(1, r * 0.7), 0, Math.PI * 2); ctx.fill();
+          break;
+        case 'chip':
+          ctx.fillStyle = alpha('#8A8D90', k);
+          ctx.fillRect(at.x - r / 2, at.y - r / 2, r, r);
+          break;
+        case 'bird': {
+          // Two strokes that beat: a bird at any distance.
+          const flap = Math.sin(p.phase) * r * 0.9;
+          ctx.strokeStyle = alpha('#2B3036', Math.min(1, k * 1.5));
+          ctx.lineWidth = Math.max(1, r * 0.35);
+          ctx.beginPath();
+          ctx.moveTo(at.x - r * 1.6, at.y - flap);
+          ctx.quadraticCurveTo(at.x - r * 0.6, at.y - r * 0.2, at.x, at.y);
+          ctx.quadraticCurveTo(at.x + r * 0.6, at.y - r * 0.2, at.x + r * 1.6, at.y - flap);
+          ctx.stroke();
+          break;
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Where the stone will go, drawn in the world rather than on the glass.
+   *
+   * The dotted arc is the real ballistic path at the draw you are holding — it
+   * reaches the thing under the sight when the pull is enough to get there and
+   * visibly falls short when it is not, which is how a player learns the draw
+   * without being told a number. It stops where it would meet a wall. Nothing
+   * is snapped and nothing is highlighted: the arc is physics, not a lock.
+   */
+  private drawTrajectory(ctx: CanvasRenderingContext2D, eye: CamState, from: Vec2, draw: number, strength: number): void {
+    const sim = this.sim;
+    const { angle, pitch } = sim.aim;
+    const speed = MUZZLE_MIN + draw * (MUZZLE_MAX - MUZZLE_MIN);
+    const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+    const hz = Math.cos(pitch);
+    const pts: Array<{ x: number; y: number; z: number }> = [];
+    let end: { x: number; y: number; z: number; ground: boolean } | null = null;
+    const targets = sim.ballisticTargets();
+    for (let i = 1; i <= 90; i++) {
+      const t = i * 0.035;
+      const x = from.x + dir.x * speed * hz * t;
+      const y = from.y + dir.y * speed * hz * t;
+      const z = LAUNCH_Z + Math.sin(pitch) * speed * t - 0.5 * PROJ_GRAVITY * t * t;
+      if (z <= 0) { end = { x, y, z: 0, ground: true }; break; }
+      const b = sim.world.buildingAt({ x, y });
+      if (b && z < b.height) { end = { x, y, z, ground: false }; break; }
+      // It stops where the stone would: at whatever it meets first.
+      const hit = targets.find((tg) => Math.hypot(tg.pos.x - x, tg.pos.y - y, tg.z - z) <= tg.radius + 0.28);
+      if (hit && Math.hypot(hit.pos.x - from.x, hit.pos.y - from.y) > 1.5) { end = { x, y, z, ground: false }; break; }
+      pts.push({ x, y, z });
+    }
+    if (strength <= 0.01) return;
+    ctx.save();
+    // Dots, spaced along the flight, larger near and smaller far.
+    for (let i = 2; i < pts.length; i += 2) {
+      const p = pts[i];
+      const at = this.perspective.project3(eye, p.x, p.y, p.z, this.w, this.h);
+      if (!at) continue;
+      const r = Math.max(2.1, Math.min(5, 0.08 * at.s));
+      const fade = 1 - 0.6 * i / (pts.length + 8);
+      ctx.fillStyle = alpha('#12181F', 0.45 * strength * fade);
+      ctx.beginPath(); ctx.arc(at.x, at.y, r + 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = alpha('#F6F4EE', 0.95 * strength * fade);
+      ctx.beginPath(); ctx.arc(at.x, at.y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    if (end) {
+      // Where it comes down: a ring lying on the ground, or a tick on a wall.
+      ctx.strokeStyle = alpha(VENEER.player, 0.95 * strength);
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      if (end.ground) {
+        // Big enough to read edge-on from eye height twenty metres away.
+        const rr = 0.5 + Math.hypot(end.x - from.x, end.y - from.y) * 0.03;
+        for (let k = 0; k <= 24; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          const at = this.perspective.project3(eye, end.x + Math.cos(a) * rr, end.y + Math.sin(a) * rr, 0.02, this.w, this.h);
+          if (!at) continue;
+          if (k === 0) ctx.moveTo(at.x, at.y); else ctx.lineTo(at.x, at.y);
+        }
+      } else {
+        const at = this.perspective.project3(eye, end.x, end.y, end.z, this.w, this.h);
+        if (at) { ctx.moveTo(at.x - 6, at.y - 6); ctx.lineTo(at.x + 6, at.y + 6); ctx.moveTo(at.x + 6, at.y - 6); ctx.lineTo(at.x - 6, at.y + 6); }
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   render(dt: number): void {
     const sim = this.sim;
     const ctx = this.ctx;
+
+    this.stepParticles(dt);
+    this.release.t += dt;
+    this.recoil = Math.max(0, this.recoil - dt * 4.5);
 
     // Aiming is a place the player goes, not a layer on top of the world.
     this.aimFade += (sim.aimMode ? 1 : -1) * dt * 5.5;
     this.aimFade = clamp01(this.aimFade);
     if (sim.aimMode || this.aimFade > 0.01) {
       this.renderAiming(ctx, dt);
-      if (sim.aimMode) return;
+      if (sim.aimMode) {
+        if (this.controlVisual) this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
+        return;
+      }
     }
 
     /*
@@ -191,10 +612,16 @@ export class Renderer {
     this.chase.update(sim, dt);
     if (sim.planViewBlend < 0.999) {
       const eye = this.chase.state(sim);
+      this.lastEye = eye;
+      this.perspective.lens = 1;
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
+      this.drawParticles(ctx, eye);
+      // A sling drawn on the move, with a mouse: the same arc, from behind.
+      if (sim.player.aiming && !sim.aimMode) this.drawTrajectory(ctx, eye, sim.player.pos, sim.player.draw, 0.4 + sim.player.draw * 0.6);
       this.drawSkateHud(ctx);
       this.drawSpeech(ctx, eye, dt);
       this.drawInteractPrompt(ctx, eye, dt);
+      this.drawBeacon(ctx, eye, 1 - sim.planViewBlend);
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
@@ -204,6 +631,17 @@ export class Renderer {
       return;
     }
     ctx.globalAlpha = sim.planViewBlend;
+
+    // Opening the plan rises from the street to the map, rather than cutting.
+    const planOpen = sim.planViewActive && sim.planViewBlend > 0;
+    if (planOpen && !this.planWasOpen) {
+      this.cam.pos = { ...sim.player.pos };
+      this.cam.zoom = 15 * Math.min(1.15, Math.max(0.92, Math.min(this.w, this.h) / 810));
+      this.cam.planPan = { x: 0, y: 0 };
+    }
+    this.planWasOpen = planOpen;
+    this.cam.plan = planOpen || sim.planViewBlend > 0.05;
+    this.cam.planDetail = sim.visionUnlocked;
 
     this.cam.follow(
       sim.player.pos, sim.player.vel, sim.player.speed, sim.playerMaxSpeed, dt,
@@ -234,6 +672,7 @@ export class Renderer {
     this.drawAimAid(ctx);
     this.drawRipples(ctx, dt);
     this.drawVignette(ctx);
+    this.drawPlanOverlay(ctx, sim.planViewBlend);
 
     ctx.globalAlpha = 1;
 
@@ -251,15 +690,28 @@ export class Renderer {
   private renderAiming(ctx: CanvasRenderingContext2D, dt: number): void {
     const sim = this.sim;
     void dt;
-    const eye = {
-      pos: { x: (sim.aimAnchor ?? sim.player.pos).x, y: (sim.aimAnchor ?? sim.player.pos).y, z: EYE_Z },
-      yaw: sim.aim.angle,
-      pitch: sim.lookPitch,
-    };
-    this.perspective.draw(ctx, sim, eye, this.w, this.h, true);
-
-    const cx = this.w / 2, cy = this.h / 2;
     const draw = clamp01(sim.player.draw);
+    const from = sim.aimAnchor ?? sim.player.pos;
+    // The release throws the eye up a touch and lets it settle.
+    const kick = this.recoil * this.recoil * 0.035 * this.settings.cameraShake;
+    const eye = {
+      pos: { x: from.x, y: from.y, z: EYE_Z },
+      yaw: sim.aim.angle,
+      pitch: sim.lookPitch + kick,
+    };
+    // Attention narrows as the pull comes up: about ten per cent at full draw.
+    const eased = draw * draw * (3 - 2 * draw);
+    this.perspective.lens = 1 + eased * 0.1;
+    this.lastEye = eye;
+    this.perspective.draw(ctx, sim, eye, this.w, this.h, true);
+    this.drawParticles(ctx, eye);
+    // A ghost of the path while slack, confident once drawn.
+    // Held back for a moment after a shot, so the stone is the thing to watch.
+    const settle = clamp01((this.release.t - 0.5) / 0.5);
+    this.drawTrajectory(ctx, eye, from, Math.max(draw, 0.35), Math.max(0.22 * settle + eased * 0.78, eased));
+    this.perspective.lens = 1;
+
+    const cx = this.w / 2, cy = this.h / 2 - kick * 900;
 
     /*
      * No brackets on the thing under the sight.
@@ -307,7 +759,7 @@ export class Renderer {
      * it: the second one is a question.
      */
     const shot = sim.lastShot;
-    if (shot && sim.tick - shot.tick < 110) {
+    if (shot && shot.label && sim.tick - shot.tick < 110) {
       const a = 1 - (sim.tick - shot.tick) / 110;
       ctx.fillStyle = alpha(shot.hit ? VENEER.player : '#9AA3A9', a);
       ctx.font = '600 13px ui-monospace, Menlo, monospace';
@@ -317,6 +769,7 @@ export class Renderer {
     }
 
     this.drawSlingInHands(ctx, draw);
+    if (this.touchHints && !this.shotTaken) this.drawPullHint(ctx, draw);
 
     // A frame, so it is obvious this is a state and not the world.
     ctx.strokeStyle = alpha('#12181F', 0.5);
@@ -355,10 +808,26 @@ export class Renderer {
    * geometry: it is held against the eye, so it does not belong in the
    * projection, and this way it costs nothing and never clips into a wall.
    */
-  private drawSlingInHands(ctx: CanvasRenderingContext2D, draw: number): void {
+  private drawSlingInHands(ctx: CanvasRenderingContext2D, drawIn: number): void {
+    /*
+     * The band is a spring, and it behaves like one.
+     *
+     * Let go and the pouch does not simply reappear at rest: it snaps forward
+     * through the fork, overshoots, and rings back and forth a few times with
+     * the cords slapping — which is the whole of "release" as a feeling, and
+     * happens in the frame the stone leaves. Held at full draw too long, the
+     * arms start to shake.
+     */
+    const rt = this.release.t;
+    const spring = rt < 0.7 ? -this.release.draw * 0.42 * Math.exp(-rt * 7.5) * Math.cos(rt * 34) : 0;
+    const draw = drawIn + spring;
+    const held = this.sim.player.drawHeld;
+    const shake = held > 1.4 && !this.settings.reduceMotion ? Math.min(1, (held - 1.4) * 0.8) : 0;
+    const jx = shake * Math.sin(this.release.t * 71) * 2.2;
+    const jy = shake * Math.cos(this.release.t * 53) * 1.8;
     const base = this.h + 18;
-    const fx = this.slingRest.x;
-    const forkY = this.slingRest.y - 54;
+    const fx = this.slingRest.x + jx - this.recoil * this.recoil * 10;
+    const forkY = this.slingRest.y - 54 + jy + this.recoil * this.recoil * 14;
     const span = Math.min(46, this.w * 0.115);
     const prong = Math.min(54, this.h * 0.085);
     const skin = '#E8BE9B';
@@ -387,10 +856,12 @@ export class Renderer {
      */
     const crotch = { x: fx, y: forkY };
     const grab = { x: fx, y: forkY + prong * 1.2 };
-    const tipL = { x: fx - span, y: forkY - prong };
+    // Under load the prongs bow in toward the pouch: green wood gives.
+    const flex = Math.max(0, draw) * 6;
+    const tipL = { x: fx - span + flex, y: forkY - prong + flex * 0.5 };
     // The right prong is shorter and sits a little lower. A branch that forks
     // symmetrically is a branch nobody believes.
-    const tipR = { x: fx + span * 0.92, y: forkY - prong * 0.9 };
+    const tipR = { x: fx + span * 0.92 - flex * 0.4, y: forkY - prong * 0.9 + flex * 0.8 };
     const BARK = '#6E5236';
     const LIT = '#9C7B51';
     const CORD = '#D8C7A4';
@@ -463,7 +934,7 @@ export class Renderer {
 
     // Slack when it is not drawn, taut when it is. String does not thin the way
     // rubber does, so the tension has to read from the sag instead.
-    const sag = (1 - draw) * 7;
+    const sag = (1 - Math.min(1, Math.max(0, draw))) * 7 + (rt < 0.5 ? Math.sin(rt * 60) * 6 * Math.exp(-rt * 8) : 0);
     ctx.strokeStyle = CORD;
     ctx.lineWidth = 2.2;
     for (const [tip, end] of [[tipL, nearL], [tipR, nearR]] as const) {
@@ -528,7 +999,9 @@ export class Renderer {
     ctx.stroke();
 
     // The stone, lit from up and left so it reads as a lump off a driveway
-    // rather than a dot.
+    // rather than a dot. Gone for a moment after a shot — it is in the air —
+    // and back in the pouch by the time the band has stopped ringing.
+    if (rt < 0.45) { ctx.restore(); this.drawForeHand(ctx, fx, forkY, prong, skin); return; }
     ctx.fillStyle = '#4E545B';
     ctx.beginPath(); ctx.arc(pullX, pullY, 7, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#767D85';
@@ -536,9 +1009,60 @@ export class Renderer {
     ctx.fillStyle = '#9AA1A8';
     ctx.beginPath(); ctx.arc(pullX - 2.4, pullY - 2.6, 2.2, 0, Math.PI * 2); ctx.fill();
 
-    // The forward hand, closed around the grip.
+    ctx.restore();
+    this.drawForeHand(ctx, fx, forkY, prong, skin);
+  }
+
+  /** The forward hand, closed around the grip. */
+  private drawForeHand(ctx: CanvasRenderingContext2D, fx: number, forkY: number, prong: number, skin: string): void {
     ctx.fillStyle = skin;
     ctx.beginPath(); ctx.arc(fx, forkY + prong * 0.82, 13, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /**
+   * The first time only, on a phone: which thumb does what.
+   *
+   * Two quiet words over the two halves of the glass and a line showing the
+   * pull, gone for good after the first stone. A human could not find the
+   * pull at all with the object alone as the instruction; one shot is all
+   * it takes to never need this again.
+   */
+  private drawPullHint(ctx: CanvasRenderingContext2D, draw: number): void {
+    const a = (1 - draw) * (this.settings.reduceMotion ? 0.8 : 0.55 + 0.35 * Math.sin(this.release.t * 3.4));
+    if (a < 0.02) return;
+    const px = this.w * 0.75, py = this.h * 0.58;
+    const lx = this.w * 0.25;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 11px ui-monospace, Menlo, monospace';
+    ctx.lineCap = 'round';
+    const pill = (text: string, x: number, y: number) => {
+      const wd = ctx.measureText(text).width + 16;
+      const cx = Math.max(wd / 2 + 6, Math.min(this.w - wd / 2 - 6, x));
+      // The words hold still and solid; only the guide lines breathe.
+      const solid = 1 - draw;
+      ctx.fillStyle = alpha('#0B1117', 0.7 * solid);
+      roundRect(ctx, cx - wd / 2, y - 10, wd, 20, 10); ctx.fill();
+      ctx.fillStyle = alpha('#F6F4EE', 0.95 * solid);
+      ctx.fillText(text, cx, y + 0.5);
+    };
+    ctx.strokeStyle = alpha('#F6F4EE', a);
+    ctx.lineWidth = 2.2;
+    // Right: touch and pull back.
+    ctx.beginPath(); ctx.arc(px, py, 20, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath(); ctx.moveTo(px, py + 24); ctx.lineTo(px + 18, py + 96); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(px + 10, py + 88); ctx.lineTo(px + 18, py + 98); ctx.lineTo(px + 24, py + 86); ctx.stroke();
+    pill(SLING_HINT.pull, px, py - 36);
+    // Left: drag to aim.
+    ctx.beginPath();
+    ctx.moveTo(lx - 30, py); ctx.lineTo(lx + 30, py);
+    ctx.moveTo(lx - 30, py); ctx.lineTo(lx - 22, py - 6); ctx.moveTo(lx - 30, py); ctx.lineTo(lx - 22, py + 6);
+    ctx.moveTo(lx + 30, py); ctx.lineTo(lx + 22, py - 6); ctx.moveTo(lx + 30, py); ctx.lineTo(lx + 22, py + 6);
+    ctx.stroke();
+    pill(SLING_HINT.aim, lx, py - 36);
     ctx.restore();
   }
 

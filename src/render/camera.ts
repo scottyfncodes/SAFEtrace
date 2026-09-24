@@ -15,6 +15,37 @@ export class ViewCamera {
   offset: Vec2 = { x: 0, y: 0 };
   /** Set by cinematics to take manual control. */
   scripted: { pos: Vec2; zoom: number } | null = null;
+  /**
+   * The plan, as a map rather than a close-up.
+   *
+   * The plan view used to share the skating zoom — sixteen pixels a metre —
+   * so opening it showed the three houses already on screen, drawn in blue.
+   * A map is for seeing where things are relative to each other, so the plan
+   * pulls up to a few pixels a metre (a district or two across), can be
+   * dragged to look somewhere else, and drifts back to the rider when they
+   * move off.
+   */
+  plan = false;
+  /**
+   * Once VISION has put subjects, cones and forecasts on the map, it opens a
+   * little closer: those labels were drawn to be read at street scale, and at
+   * district scale they are a pile of words.
+   */
+  planDetail = false;
+  /** Where the map has been dragged to, relative to the rider. Metres. */
+  planPan: Vec2 = { x: 0, y: 0 };
+  /** Pinch / wheel zoom on the map, as a multiplier. */
+  planZoom = 1;
+  static readonly PLAN_ZOOM = 4.2;
+
+  /** Drag the map by a screen distance, in pixels. */
+  panBy(dx: number, dy: number): void {
+    this.planPan.x -= dx / this.zoom;
+    this.planPan.y -= dy / this.zoom;
+    const lim = 260;
+    this.planPan.x = clamp(this.planPan.x, -lim, lim);
+    this.planPan.y = clamp(this.planPan.y, -lim, lim);
+  }
 
   setViewport(w: number, h: number): void {
     // The floor used to be 0.7, which on a 390 px phone cancelled most of the
@@ -28,6 +59,20 @@ export class ViewCamera {
     if (this.scripted) {
       this.pos = { x: damp(this.pos.x, this.scripted.pos.x, 0.28, dt), y: damp(this.pos.y, this.scripted.pos.y, 0.28, dt) };
       this.zoom = damp(this.zoom, this.scripted.zoom * this.uiScale, 0.32, dt);
+      return;
+    }
+    if (this.plan) {
+      // Moving pulls the map back to you, gently; standing still leaves it
+      // wherever it was dragged, so you can read it.
+      if (speed > 1.5) {
+        this.planPan.x = damp(this.planPan.x, 0, 0.6, dt);
+        this.planPan.y = damp(this.planPan.y, 0, 0.6, dt);
+      }
+      const want = { x: target.x + this.planPan.x, y: target.y + this.planPan.y };
+      this.pos = { x: damp(this.pos.x, want.x, 0.1, dt), y: damp(this.pos.y, want.y, 0.1, dt) };
+      const base = this.planDetail ? ViewCamera.PLAN_ZOOM * 1.7 : ViewCamera.PLAN_ZOOM;
+      this.zoom = damp(this.zoom, base * this.planZoom * this.uiScale, 0.22, dt);
+      this.offset = { x: 0, y: 0 };
       return;
     }
     // Look ahead along travel: speed reads as speed.

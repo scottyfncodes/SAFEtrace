@@ -63,8 +63,24 @@ export interface SimEvents extends Record<string, unknown> {
   'player:trick': { pos: Vec2; name: string };
   /** Still holding it when the wheels touched down. */
   'player:grab': { pos: Vec2; name: string };
-  'player:fire': { pos: Vec2; draw: number };
-  'projectile:impact': { kind: ImpactKind; pos: Vec2; targetId?: string };
+  'player:fire': { pos: Vec2; draw: number; angle: number; pitch: number };
+  /**
+   * A stone met something. `z` is where on it, `speed` how hard, and `surface`
+   * what it met when that was the ground or a wall — so the sound and the dust
+   * can be the right sound and the right dust.
+   */
+  'projectile:impact': {
+    kind: ImpactKind; pos: Vec2; targetId?: string;
+    z?: number; speed?: number; surface?: string; vel?: Vec2;
+  };
+  /** A stone skipped off the ground or glanced off a wall and kept going. */
+  'projectile:bounce': { pos: Vec2; z: number; speed: number; surface: string; wall: boolean };
+  /** A stone came to rest. */
+  'projectile:settled': { pos: Vec2 };
+  /** Something in the world turned toward a sound: a camera, or a person. */
+  'world:attention': { pos: Vec2; sensors: string[]; people: number };
+  /** A stone went through a tree. Leaves, and whatever was sitting in it. */
+  'foliage:hit': { pos: Vec2; z: number; birds: boolean; treeId: string };
   'noise:event': { pos: Vec2; label: string };
   'hack:started': { verb: string; nodeId: string; seconds: number };
   'hack:completed': { verb: string; nodeId: string };
@@ -73,6 +89,8 @@ export interface SimEvents extends Record<string, unknown> {
   'drone:spotlight': { droneId: string; on: boolean };
   'patrol:contact': { patrolId: string };
   'vision:unlocked': Record<string, never>;
+  /** The player has found the number SAFEtrace keeps on them. */
+  'score:discovered': { where: string; score: number };
   'devon:met': Record<string, never>;
   'veneer:crack': { seconds: number };
   'story:beat': { id: string; label: string };

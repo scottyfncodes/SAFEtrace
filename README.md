@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 409 tests: simulation, story, the case, determinism, architecture, touch
+npm test         # 443 tests: simulation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -40,32 +40,45 @@ nobody. Five endings are read off what you did and what you worked out.
 
 | | |
 |---|---|
-| `W` | push (a rhythm, not a throttle) |
+| `W` | push — hold it to keep pushing, or tap it in rhythm |
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
 | `R` | trick — which trick is the board's business, not yours |
 | `G` | grab — cycles through six, same reasoning as `R` |
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
+| Right mouse, dragged | look round the rider; the camera settles back behind you |
 | `F` | take out the slingshot, and stand still to use it |
-| Left mouse | draw the band; release to throw |
+| Mouse, or `A` `D` `W` `S` | aim the sling, while it is out |
+| Left mouse | draw the band — it tightens as you hold — and let go to throw |
 | `E` | talk to whoever you are next to, look at what is in front of you, or reach into a node |
 | `1`–`3` | answer, in a conversation; act on a node, at a node |
 | `N` | your notes: what you know, and what goes with what |
-| `Esc` | pause: settings, controls, endings found, start over |
-| `Q` | hold for the plan view — the town from above, from the first frame |
+| `Q` | the plan: tap to open and close (or hold to peek); click it to pin where you are going |
+| `Esc` | put away whatever is open; otherwise pause |
 | `F3` | diagnostics, including the pursuit state and the risk decomposition |
 
 Nothing opens on its own. A node's panel appears because you pressed `E` — or,
 on a phone, because you tapped the thing itself — and never because you skated
-past it. On a phone the slingshot is two thumbs: the left one drags the sling
-where you want it, the right one pulls the band back and lets go.
+past it.
 
-A phone gets four buttons, in the bottom-right, from the first frame: `SLING`,
-`TRICK`, `GRAB`, and `PLAN`. The plan view is a *view* and is always available
-on every device. SAFEtrace VISION is a story unlock, and what it changes is
-what the plan view contains — coverage, subjects, the forecast — not how you
-open it.
+A phone gets three buttons in the bottom-right: `SLING`, `TRICK` and `PLAN`.
+Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
+round. `SLING` raises the slingshot: the left thumb drags the aim, the right
+thumb touches, pulls back and lets go — and `SLING` again puts it away.
+
+**The plan** is the town as a map: districts, the buildings with names, the
+people you have met and the things you have looked at. You open it to work out
+where you are going, tap the map to pin it, and follow the pin — a column of
+light in the street, or an arrow at the edge of the screen when it is behind
+you. You can keep skating with it open. SAFEtrace VISION is a story unlock, and
+what it changes is what the plan contains — coverage, subjects, the forecast.
+
+**The Community Safety Score** is not on the screen. SAFEtrace has been keeping
+it about you all along; you find out by reading a camera's record (it lists who
+it is holding, and the number beside them) or by opening the plan once VISION
+has put subjects on it. After that it is in your notes, on the plan, and it
+speaks up only when it moves from one band to another.
 
 ## The idea, in one table
 
@@ -143,7 +156,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-409 tests, all headless, in about fifteen seconds.
+443 tests, all headless, in about twenty seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
@@ -159,6 +172,10 @@ because if a refactor ever made it impossible the premise would break silently.
   record clue backed by the record's actual text, the ending table, the stop
   choice and its consequence, conversations, overheard lines, and an afternoon
   saved and restored without replaying anything.
+- **Feel** — the sling draws only while pulled and eases in, a stone skips on
+  a road and dies in a lawn, rolls out, glances off walls, sends birds out of
+  a tree once, and turns cameras toward the sound; the plan can be skated in;
+  the score is found, not shown; the lens gives an upright phone room to see.
 - **Touch** — the gesture engine is pure, so every thumb is a synthetic trace:
   the two-thumb slingshot, and a nine-viewport ergonomics matrix asserting touch
   target sizes, separation between neighbours, safe-area clearance and screen
@@ -169,8 +186,9 @@ because if a refactor ever made it impossible the premise would break silently.
 The slice is a complete afternoon: the advertisement, a solo start, Devon,
 the Channel, the match, the stop, an investigation with an answer, a
 decision, the advertisement again, and one of five endings. The afternoon is
-saved as it goes and can be continued. The design record for this pass is
-[`docs/36-an-afternoon-with-an-ending.md`](docs/36-an-afternoon-with-an-ending.md).
+saved as it goes and can be continued. The design record for the latest pass —
+controls, the camera, the plan, the score and the slingshot — is
+[`docs/37-the-feel-pass.md`](docs/37-the-feel-pass.md).
 
 The playtest gate in [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md)
 §4 is still a set of observations of people, and still the most useful next

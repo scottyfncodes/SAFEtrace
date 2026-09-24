@@ -24,6 +24,14 @@ export interface Sensor {
   light: number;
   /** Ticks the sensor has continuously seen the player, for the "it noticed you" tell. */
   dwell: number;
+  /**
+   * A sound it has turned to look at, and until when. Only cameras built to
+   * turn — the ones on a sweep — do this, and they ease there and back.
+   */
+  attend: { x: number; y: number } | null;
+  attendUntil: number;
+  /** 0..1, how far round toward `attend` it currently is. */
+  attendBlend: number;
 }
 
 export function makeSensor(data: SensorData): Sensor {
@@ -38,6 +46,9 @@ export function makeSensor(data: SensorData): Sensor {
     prioritisedTrackId: null,
     light: 1,
     dwell: 0,
+    attend: null,
+    attendUntil: 0,
+    attendBlend: 0,
   };
 }
 
@@ -69,6 +80,15 @@ export function updateSensor(s: Sensor, tick: number, time: number): void {
   if (s.knockOffset !== 0) {
     const remaining = Math.max(0, s.stateUntil - tick);
     if (remaining < 60) s.knockOffset *= 0.96;
+  }
+  // Turning to a sound: roughly a second to swing round, and back again.
+  const attending = s.attend !== null && tick < s.attendUntil;
+  s.attendBlend = clamp01(s.attendBlend + (attending ? 1 / 55 : -1 / 80));
+  if (!attending && s.attendBlend === 0) s.attend = null;
+  if (s.attend && s.attendBlend > 0) {
+    const toward = Math.atan2(s.attend.y - d.pos.y, s.attend.x - d.pos.x);
+    const ease = s.attendBlend * s.attendBlend * (3 - 2 * s.attendBlend);
+    base = base + angleDelta(base, toward) * ease;
   }
   s.facing = wrapAngle(base + s.knockOffset);
 }

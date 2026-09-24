@@ -47,7 +47,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan' | 'grab') =>
+const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
 beforeEach(() => { engine = make(); clock = 1000; });
@@ -213,9 +213,10 @@ describe('the controls are laid out for a thumb, on the phones that exist', () =
         a.setAiming(true);
         expect(a.zoneAt(v.safe.left + 10, v.h * 0.5)).toBe('aim');
         expect(a.zoneAt(v.w - v.safe.right - 10, v.h * 0.5)).toBe('pull');
-        // And nothing else is reachable: the mode owns the whole screen.
+        // Nothing else is reachable except the SLING button itself, which
+        // puts the sling away: the same control in and out.
         for (const b of a.buttonLayout()) {
-          expect(a.zoneAt(b.pos.x, b.pos.y)).toBe('pull');
+          expect(a.zoneAt(b.pos.x, b.pos.y)).toBe(b.id === 'sling' ? 'putAway' : 'pull');
         }
       });
     });
@@ -364,14 +365,16 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
 
     fresh.setSlingAvailable(false);
     fresh.setAiming(true);
     fresh.setAiming(false);
     fresh.setSlingAvailable(true);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
-    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['grab', 'plan', 'sling', 'trick']);
+    fresh.setPlanOpen(true);
+    fresh.setPlanOpen(false);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
   });
 
   /*
@@ -395,26 +398,61 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   it('exposes no way to unlock, enable or otherwise grow a control', () => {
     const setters = Object.getOwnPropertyNames(TouchEngine.prototype)
       .filter((k) => /^set[A-Z]/.test(k));
-    expect(setters.sort()).toEqual(['setAiming', 'setSlingAvailable', 'setViewport']);
+    // setPlanOpen closes (or opens) a view, it does not add a control.
+    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setViewport']);
   });
 
-  it('holds the plan view open while the thumb is down, and closes it on release', () => {
+  /*
+   * PLAN is a toggle on a phone. It used to be a hold, which left one thumb
+   * holding a map open and one thumb to do everything else with — so moving
+   * inside the plan meant not being able to do anything at all.
+   */
+  it('opens the plan view on a tap, keeps it open with no thumb on it, and closes on the next tap', () => {
     const p = button(engine, 'plan');
-    engine.handle('down', at(p, 1, clock));
+    tap(engine, p);
+    expect(engine.sample().planView).toBe(true);
+    clock += 2000;
     expect(engine.sample().planView).toBe(true);
     expect(engine.planViewHeld).toBe(true);
-    clock += 500;
-    engine.handle('up', at(p, 1, clock));
+    tap(engine, p);
     expect(engine.sample().planView).toBe(false);
-    expect(engine.planViewHeld).toBe(false);
+  });
+
+  it('lets both thumbs go free while the plan is open: the stick still moves you', () => {
+    tap(engine, button(engine, 'plan'));
+    drag(engine, 2, [STICK, { x: STICK.x, y: STICK.y - 70 }]);
+    const i = engine.sample();
+    expect(i.planView).toBe(true);
+    expect(i.moveVector).not.toBeNull();
+    expect(i.push).toBe(true);
+  });
+
+  it('drags the map, and does not tap it, when a finger moves on empty glass', () => {
+    tap(engine, button(engine, 'plan'));
+    engine.sample();
+    drag(engine, 3, [WORLD, { x: WORLD.x + 40, y: WORLD.y + 10 }, { x: WORLD.x + 80, y: WORLD.y + 20 }]);
+    clock += 16;
+    engine.handle('up', at({ x: WORLD.x + 80, y: WORLD.y + 20 }, 3, clock));
+    const d = engine.takeLookDrag();
+    expect(d.x).toBeCloseTo(80, 5);
+    expect(d.y).toBeCloseTo(20, 5);
+    expect(engine.takeTap()).toBeNull();
+    // Consumed: asked again, nothing is left.
+    expect(engine.takeLookDrag()).toEqual({ x: 0, y: 0 });
+  });
+
+  it('can be put away from outside, by the host, when something else takes over', () => {
+    tap(engine, button(engine, 'plan'));
+    engine.setPlanOpen(false);
+    expect(engine.sample().planView).toBe(false);
   });
 
   it('opens the plan view from nowhere else on the glass', () => {
-    // Every square millimetre, and only the one button reports a hold.
+    // Every square millimetre, and only the one button opens it.
     for (let x = 8; x < VIEWPORT.w; x += 12) {
       for (let y = 60; y < VIEWPORT.h; y += 12) {
         const e = make();
-        e.handle('down', at({ x, y }, 1, clock));
+        tap(e, { x, y });
         const expected = e.zoneAt(x, y) === 'plan';
         expect({ x, y, plan: e.sample().planView }).toEqual({ x, y, plan: expected });
       }
@@ -447,9 +485,47 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     expect(engine.sample().aimModePressed).toBe(true);
   });
 
-  it('asks for a grab on a tap of GRAB, the same shape as a tap of TRICK', () => {
-    tap(engine, button(engine, 'grab'));
+  /*
+   * There is no GRAB button. It was a fourth circle whose job was a variant
+   * of TRICK's, so it is what holding TRICK does: a tap flips the board, a
+   * hold grabs it.
+   */
+  it('has no GRAB button any more', () => {
+    expect(engine.buttonLayout().map((b) => b.id)).not.toContain('grab');
+    expect(engine.buttonLayout().length).toBe(3);
+  });
+
+  it('grabs on a hold of TRICK, once, and does not also flip on the release', () => {
+    const p = button(engine, 'trick');
+    engine.handle('down', at(p, 1, clock));
+    clock += 120;
+    engine.handle('move', at(p, 1, clock));
+    expect(engine.sample().grabPressed).toBe(false);
+    clock += 120;
+    engine.handle('move', at(p, 1, clock));
     expect(engine.sample().grabPressed).toBe(true);
+    clock += 400;
+    engine.handle('move', at(p, 1, clock));
+    expect(engine.sample().grabPressed).toBe(false);
+    engine.handle('up', at(p, 1, clock));
+    const after = engine.sample();
+    expect(after.trickPressed).toBe(false);
+    expect(after.grabPressed).toBe(false);
+  });
+
+  it('grabs on a hold of TRICK even when the thumb never moves and sends no events', () => {
+    const p = button(engine, 'trick');
+    engine.handle('down', at(p, 1, clock));
+    let grabs = 0;
+    for (let f = 0; f < 30; f++) if (engine.sample().grabPressed) grabs++;
+    expect(grabs).toBe(1);
+  });
+
+  it('still flips on a quick tap of TRICK, and does not grab', () => {
+    tap(engine, button(engine, 'trick'));
+    const i = engine.sample();
+    expect(i.trickPressed).toBe(true);
+    expect(i.grabPressed).toBe(false);
   });
 
   it('dims and refuses the sling when there is nothing to shoot with', () => {

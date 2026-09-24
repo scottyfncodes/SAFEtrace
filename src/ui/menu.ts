@@ -18,13 +18,18 @@ export interface MenuActions {
 }
 
 const KEYS: Array<[string, string]> = [
-  ['W', 'push'], ['A D', 'carve'], ['Space', 'ollie (hold to load)'], ['S', 'brake / slide'],
-  ['R', 'trick'], ['G', 'grab'], ['Shift', 'step off the board'], ['F', 'slingshot — stand still, hold mouse to draw, release'],
-  ['E', 'talk, look, reach into a node'], ['1–3', 'answer'], ['Q', 'plan view (hold)'], ['N', 'notes'], ['Esc', 'this menu'],
+  ['W', 'push (hold to keep pushing)'], ['A D', 'carve'], ['Space', 'ollie (hold to load)'], ['S', 'brake / slide'],
+  ['R', 'trick'], ['G', 'grab'], ['Shift', 'step off the board'], ['Right mouse drag', 'look around'],
+  ['F', 'slingshot — mouse or A D W S to aim, hold left mouse to draw, let go to throw'],
+  ['E', 'talk, look, reach into a node'], ['1–3', 'answer'],
+  ['Q', 'plan — tap to open, click to pin where you are going (or hold to peek)'], ['N', 'notes'], ['Esc', 'this menu'],
 ];
 const TOUCH: Array<[string, string]> = [
-  ['Left thumb', 'push the way you want to go'], ['Right thumb tap', 'ollie'], ['SLING', 'stand and aim: left thumb aims, right thumb draws and lets go'],
-  ['TRICK / GRAB', 'in the air'], ['PLAN', 'the town from above'], ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
+  ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
+  ['TRICK', 'tap to flip the board, hold to grab it'],
+  ['SLING', 'left thumb aims, right thumb pulls back and lets go; SLING again to put it away'],
+  ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
+  ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];
 
 export class Menu {

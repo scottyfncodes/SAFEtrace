@@ -19,6 +19,7 @@ const KEY_PROMPTS = [
   // an unlisted key, so half the players never found out it existed.
   '<span><kbd>R</kbd>trick</span>',
   '<span><kbd>G</kbd>grab</span>',
+  '<span><kbd>RMB</kbd>look</span>',
   '<span><kbd>S</kbd>slide</span>',
   '<span><kbd>F</kbd>sling</span>',
   '<span><kbd>Q</kbd>plan</span>',
@@ -37,7 +38,6 @@ import { resolveRecords } from '../sim/worldTypes';
 import { INSPECT, PHONE, SYSTEM } from '../content/copy';
 import type { TalkView } from '../content/story';
 
-const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
 
 export class Hud {
   private notifications: HTMLElement;
@@ -45,12 +45,14 @@ export class Hud {
   private prompts: HTMLElement;
   private dialogue: HTMLElement;
   private debug: HTMLElement;
-  private scoreValue!: HTMLElement;
-  private scoreMeter!: HTMLElement;
-  private phoneRows!: HTMLElement;
-  private scoreState!: HTMLElement;
-  /** The drawn score eases toward the real one, so it reads instead of flickering. */
-  private shownScore = 96;
+  /**
+   * The Community Safety Score is not on the HUD. It is found (see
+   * `Sim.scoreDiscovered`), and after that it only speaks when it moves from
+   * one band to another — a small chip under the buttons, and gone.
+   */
+  private scoreChip!: HTMLElement;
+  private lastBand: string | null = null;
+  private chipTimer = 0;
 
   private talk: HTMLElement;
   private toasts: HTMLElement;
@@ -76,16 +78,6 @@ export class Hud {
   ) {
     root.innerHTML = `
       <div id="corner">
-      <div id="phone">
-        <div class="wordmark">${WORDMARK}</div>
-        <div class="score-row">
-          <span class="score-label">${PHONE.scoreLabel}</span>
-          <span class="score-value" id="score">96</span>
-        </div>
-        <div class="meter"><i id="meter" style="width:4%"></i></div>
-        <div class="score-state" id="score-state">NOMINAL</div>
-        <div class="phone-rows" id="phone-rows"></div>
-      </div>
       <div id="hud-buttons">
         <button class="hud-button" data-act="notes" aria-label="Notes">
           <span class="hb-label">Notes</span><span class="hb-key">${touch ? '' : 'N'}</span><span class="badge" id="notes-badge"></span>
@@ -94,6 +86,7 @@ export class Hud {
           <span class="hb-label">${touch ? 'II' : 'Menu'}</span><span class="hb-key">${touch ? '' : 'Esc'}</span>
         </button>
       </div>
+      <div id="score-chip" aria-live="polite"></div>
       </div>
       <div id="notifications"></div>
       <div id="inspect"></div>
@@ -109,10 +102,7 @@ export class Hud {
     this.prompts.innerHTML = touch ? TOUCH_PROMPTS : KEY_PROMPTS;
     this.dialogue = root.querySelector('#dialogue')!;
     this.debug = root.querySelector('#debug')!;
-    this.scoreValue = root.querySelector('#score')!;
-    this.scoreMeter = root.querySelector('#meter')!;
-    this.phoneRows = root.querySelector('#phone-rows')!;
-    this.scoreState = root.querySelector('#score-state')!;
+    this.scoreChip = root.querySelector('#score-chip')!;
     this.talk = root.querySelector('#talk')!;
     this.toasts = root.querySelector('#toasts')!;
     this.notesBadge = root.querySelector('#notes-badge')!;
@@ -140,6 +130,11 @@ export class Hud {
       const c = sim.casefile.clue(id);
       // The first note ever says where the notes are; nobody needs telling twice.
       if (c) this.toast('NOTED', sim.casefile.clues.size === 1 ? `${c.title} — ${touch ? 'tap Notes' : 'N'} to read` : c.title, false);
+    });
+    sim.bus.on('score:discovered', ({ score }) => {
+      // Said once, as a thing found, in the same voice as a note.
+      this.toast('FOUND', `${PHONE.found} — ${score}, ${riskLabel(100 - score).toLowerCase()}`, true);
+      this.lastBand = riskLabel(sim.playerRisk);
     });
     sim.bus.on('case:deduction', ({ id }) => {
       const d = sim.casefile.deduction(id);
@@ -217,7 +212,7 @@ export class Hud {
 
   update(dt: number): void {
     this.drainMessages();
-    this.updatePhone();
+    this.updateScoreChip(dt);
     this.updateInspect();
 
     if (this.dialogueTimer > 0) {
@@ -234,7 +229,9 @@ export class Hud {
     // Aiming is one job. The phone stays — SAFEtrace does not stop watching
     // because you stood still — but nothing else competes with the reticle.
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
-    this.inspect.classList.toggle('hidden', this.sim.aimMode);
+    // Nor does a node panel sit over the plan: the plan cannot reach into
+    // anything, so a panel full of verbs on top of it is only in the way.
+    this.inspect.classList.toggle('hidden', this.sim.aimMode || this.sim.planViewActive);
     this.dialogue.classList.toggle('hidden', this.sim.aimMode);
     this.talk.classList.toggle('hidden', this.sim.aimMode);
 
@@ -340,39 +337,21 @@ export class Hud {
     }, afterMs);
   }
 
-  private updatePhone(): void {
-    const risk = this.sim.playerRisk;
-    // Risk moves every tick, and a number that twitches is a number nobody
-    // reads. Easing it costs nothing and turns it into something watchable.
-    const target = 100 - risk;
-    this.shownScore += (target - this.shownScore) * 0.12;
-    const score = Math.round(this.shownScore);
-    const band = risk < 25 ? 'var(--st-teal)' : risk < 65 ? 'var(--st-warn)' : 'var(--st-risk)';
-
-    this.scoreValue.textContent = String(score);
-    this.scoreValue.style.color = risk < 65 ? '' : 'var(--st-risk)';
-    this.scoreMeter.style.width = `${Math.max(2, 100 - risk)}%`;
-    this.scoreMeter.style.background = band;
-    // The word under the number is what makes the number mean anything. The
-    // player does not need the formula; they need to know which way is bad.
-    this.scoreState.textContent = riskLabel(risk);
-    this.scoreState.style.color = band;
-
-    const t = this.sim.playerTrack;
-    const flags = [...t.flags].filter((f) => f !== 'NORMAL_TRANSIT');
-    const rows: Array<[string, string]> = [
-      [PHONE.subject, t.attributedIdentity === 'UNKNOWN' ? 'UNRESOLVED' : this.sim.playerSubject.displayName],
-    ];
-    if (this.sim.visionUnlocked) {
-      rows.push(['TRACK', t.confidence > 0.28 ? `HELD ${Math.round(t.confidence * 100)}%` : 'NOT HELD']);
-      rows.push(['FORECAST', `${Math.round(t.predictionConfidence * 100)}%`]);
-      rows.push(['ANOMALY', `${Math.round(t.predictionError * 100)}%`]);
+  private updateScoreChip(dt: number): void {
+    if (this.chipTimer > 0) {
+      this.chipTimer -= dt;
+      if (this.chipTimer <= 0) this.scoreChip.classList.remove('show');
     }
-    if (flags.length) rows.push(['FLAGS', flags.join(', ')]);
-
-    this.phoneRows.innerHTML = rows
-      .map(([k, v]) => `<div class="phone-row"><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`)
-      .join('');
+    if (!this.sim.scoreDiscovered) return;
+    const risk = this.sim.playerRisk;
+    const band = riskLabel(risk);
+    if (this.lastBand === null) { this.lastBand = band; return; }
+    if (band === this.lastBand) return;
+    this.lastBand = band;
+    this.scoreChip.textContent = PHONE.moved(Math.round(100 - risk), band);
+    this.scoreChip.dataset.band = risk < 25 ? 'ok' : risk < 65 ? 'warn' : 'risk';
+    this.scoreChip.classList.add('show');
+    this.chipTimer = 4.5;
   }
 
   private updateInspect(): void {
@@ -395,6 +374,7 @@ export class Hud {
       `<div>${escapeHtml(node.label)}</div>` +
       `<div class="rec">SEGMENT ${escapeHtml(node.segmentId)} · ${escapeHtml(node.state)}</div>` +
       (node.discovered ? this.recordsOf(node) : '') +
+      this.holding(node) +
       (node.discovered && node.edges.length
         ? `<div class="rec">EDGES: ${node.edges.map(escapeHtml).join(', ')}</div>`
         : '') +
@@ -431,6 +411,17 @@ export class Hud {
         return `<button class="verb node" data-node="${s.id}">${key}${escapeHtml(s.id)}</button>`;
       }).join('')
     }</div>`;
+  }
+
+  /**
+   * Who a camera currently has, with the number beside them. This is where
+   * most players first find out there is a number at all.
+   */
+  private holding(node: NetworkNode): string {
+    if (node.kind !== 'CAMERA') return '';
+    const risk = this.sim.playerRisk;
+    const who = this.sim.playerTrack.attributedIdentity === 'UNKNOWN' ? 'SUBJECT 4417' : this.sim.playerSubject.displayName;
+    return `<div class="rec held">${escapeHtml(PHONE.record(who, Math.round(100 - risk), riskLabel(risk)))}</div>`;
   }
 
   /** A node's records, whether authored as text or written at read time. */

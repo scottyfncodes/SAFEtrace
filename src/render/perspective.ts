@@ -52,6 +52,19 @@ export const EYE_Z = 1.62;
  * half of "smaller and further away" cost nothing to keep.
  */
 const VFOV = (40 * Math.PI) / 180;
+/*
+ * ...and a floor on the horizontal, because forty degrees vertical on a phone
+ * held upright is twenty-four degrees across: a letterbox slot of town either
+ * side of the rider, which is the whole of why skating on a phone felt like
+ * looking down a corridor. Landscape screens never reach the floor, so the
+ * desktop picture is exactly what it was.
+ */
+const HFOV_MIN = (48 * Math.PI) / 180;
+
+/** Focal length, in pixels, for a viewport. */
+export function focalFor(w: number, h: number): number {
+  return Math.min((h / 2) / Math.tan(VFOV / 2), (w / 2) / Math.tan(HFOV_MIN / 2));
+}
 const NEAR = 0.25;
 /*
  * How far the world is drawn.
@@ -222,10 +235,35 @@ export class ChaseCamera {
    */
   focus: Vec2 | null = null;
   private focusBlend = 0;
+  /**
+   * Where the player has swung the camera to, as an offset from behind the
+   * board. A drag on empty glass (or the right mouse button) turns it; it
+   * holds for a moment after the thumb lifts and then eases back behind the
+   * rider once they are moving — so looking round is free, and forgetting to
+   * put it back costs nothing.
+   */
+  private freeLook = 0;
+  /** Set by the host: the viewport, which decides how far back is far enough. */
+  viewport = { w: 1280, h: 760 };
+  /** How far over a wall the rig has had to lift, 0..1. */
+  private crane = 0;
+
+  /** Swing the camera round the rider by this many radians. */
+  swing(radians: number): void {
+    this.yaw = wrapAngle(this.yaw + radians);
+    // Held where the player put it for a moment after they let go. The stick
+    // is camera-relative, so a camera that kept chasing the board while the
+    // player was turning it would spin the two of them round each other.
+    this.freeLook = 1.4;
+  }
+
+  /** True while the player is looking round rather than being followed. */
+  get lookingRound(): boolean { return this.freeLook > 0; }
 
   reset(sim: Sim): void {
     this.yaw = sim.player.heading;
     this.look = { ...sim.player.pos };
+    this.freeLook = 0;
   }
 
   update(sim: Sim, dt: number): void {
@@ -254,7 +292,8 @@ export class ChaseCamera {
 
     // Face the way the board is pointed. Travel direction would judder every
     // time the board washed out; the nose is what the rider is looking over.
-    let want = speed > 0.6 ? p.heading : this.yaw;
+    this.freeLook = Math.max(0, this.freeLook - dt);
+    let want = speed > 0.6 && this.freeLook <= 0 ? p.heading : this.yaw;
     if (this.focus && this.focusBlend > 0.05) {
       // Look past the rider toward the thing, from a little off their shoulder.
       const toward = Math.atan2(this.focus.y - p.pos.y, this.focus.x - p.pos.x);
@@ -263,7 +302,10 @@ export class ChaseCamera {
     const turn = wrapAngle(want - this.yaw);
     // Quicker to catch up on a hard turn, so the camera never falls behind the
     // player's own intention, but still eased.
-    this.yaw = wrapAngle(this.yaw + turn * clamp01(dt * (3.4 + Math.abs(turn) * 2.2) * (this.focus ? 0.5 : 1)));
+    // Coming back from a look round is slower than following a carve, so it
+    // reads as the camera settling rather than being yanked.
+    const settle = this.freeLook > 0 ? 0 : 1;
+    this.yaw = wrapAngle(this.yaw + turn * settle * clamp01(dt * (2.6 + Math.abs(turn) * 1.6) * (this.focus ? 0.5 : 1)));
 
     /*
      * The other half of the miniature: more town in the frame at once.
@@ -277,11 +319,26 @@ export class ChaseCamera {
      * tried and it is worse: past thirty degrees the horizon leaves the frame,
      * taking every drone in the sky and the top of every building with it.
      */
+    /*
+     * Further out again, and by the screen rather than by one number.
+     *
+     * The rig sat at 29–36 m, which on a desktop is a comfortable street and
+     * on an upright phone — where the lens used to be twenty-four degrees
+     * across — was a corridor. With a floor on the horizontal field of view
+     * the phone now sees as wide as a laptop does, and the distance is set so
+     * the rider stays about the same size on the glass whatever the glass:
+     * the focal length says how big a metre is, and the rig backs off until
+     * the board is a readable size and no bigger.
+     */
     const f = this.focusBlend;
-    this.dist = damp(this.dist, lerp(lerp(29.0, 36.0, t), 17.0, f), 0.24, dt);
-    this.height = damp(this.height, lerp(lerp(14.5, 17.5, t), 8.0, f), 0.24, dt);
+    const k = clamp(focalFor(this.viewport.w, this.viewport.h) / 1040, 0.5, 1.15);
+    const far = lerp(lerp(36.0, 44.0, t), 20.0, f) * k;
+    this.dist = damp(this.dist, far, 0.3, dt);
+    this.height = damp(this.height, lerp(lerp(17.0, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
-    this.pitch = damp(this.pitch, lerp(lerp(-0.42, -0.36, t), -0.36, f), 0.3, dt);
+    // An upright phone has sky to spare and street to want: tip it down a touch.
+    const upright = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h)) * 0.1;
+    this.pitch = damp(this.pitch, lerp(lerp(-0.41, -0.36, t), -0.36, f) - this.crane * 0.08 - upright, 0.3, dt);
 
     // The point the rig is looking at lags the rider under acceleration, and
     // slides toward whatever they are talking to.
@@ -306,7 +363,19 @@ export class ChaseCamera {
       // the line at that point does not block anything.
       if (b && b.height > 1.2 + this.height * k) { clear = Math.max(0.28, k - 0.14); break; }
     }
-    this.reach = clear < this.reach ? damp(this.reach, clear, 0.06, dt) : damp(this.reach, clear, 0.45, dt);
+    /*
+     * Walls: lift over them rather than push through them.
+     *
+     * Pulling straight in toward the rider when a house slid between them was
+     * the camera-on-a-rope feeling at its worst — a sudden close-up of a
+     * back, with nothing else in frame. Now the rig mostly rises (a crane
+     * shot, looking over the roof line down at the street) and only closes
+     * in by what rising cannot fix.
+     */
+    const blocked = 1 - clear;
+    this.crane = blocked > this.crane ? damp(this.crane, blocked, 0.12, dt) : damp(this.crane, blocked, 0.6, dt);
+    const wantReach = 1 - blocked * 0.5;
+    this.reach = wantReach < this.reach ? damp(this.reach, wantReach, 0.1, dt) : damp(this.reach, wantReach, 0.5, dt);
   }
 
   private wasCinematic = false;
@@ -369,9 +438,48 @@ const easeHandoff = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.p
 
 export class PerspectiveRenderer {
   private faces: Face[] = [];
+  /** Trees currently shivering from a stone, by prop id, 1 → 0. Set by the host. */
+  readonly treeShake = new Map<string, number>();
+  /**
+   * The lens, as a multiplier on the focal length. The aiming view narrows a
+   * little as the draw comes up — attention, not a scope — and the host sets it.
+   */
+  lens = 1;
 
   private cam(state: CamState, w: number, h: number): Cam {
-    return { ...state, f: (h / 2) / Math.tan(VFOV / 2), w, h };
+    return { ...state, f: focalFor(w, h) * this.lens, w, h };
+  }
+
+  /**
+   * A point in the world, on the glass, with how many pixels one metre is
+   * there. Null behind the eye.
+   */
+  project3(state: CamState, x: number, y: number, z: number, w: number, h: number): { x: number; y: number; s: number } | null {
+    const cam = this.cam(state, w, h);
+    const cp = toCamera(cam, x, y, z);
+    if (cp.z <= NEAR) return null;
+    const pt = project(cam, cp);
+    return { x: pt.x, y: pt.y, s: cam.f / cp.z };
+  }
+
+  /**
+   * Where on the ground a point on the glass is, or null above the horizon.
+   * The pointer's answer to "where is that", in a view that is not a map.
+   */
+  groundAt(state: CamState, sx: number, sy: number, w: number, h: number): Vec2 | null {
+    const cam = this.cam(state, w, h);
+    // Ray in camera space, then back into the world.
+    const rx = (sx - w / 2) / cam.f, ry = -(sy - h / 2) / cam.f, rz = 1;
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    // Invert toCamera: fwd/dz from camera y,z.
+    const fwd = rz * cp - ry * sp;
+    const dz = ry * cp + rz * sp;
+    if (dz >= -1e-4) return null;
+    const cy = Math.cos(cam.yaw), sy2 = Math.sin(cam.yaw);
+    const dx = fwd * cy - rx * sy2;
+    const dy = fwd * sy2 + rx * cy;
+    const t = -cam.pos.z / dz;
+    return { x: cam.pos.x + dx * t, y: cam.pos.y + dy * t };
   }
 
   draw(ctx: CanvasRenderingContext2D, sim: Sim, state: CamState, w: number, h: number, firstPerson: boolean): void {
@@ -897,7 +1005,18 @@ export class PerspectiveRenderer {
       this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
-    for (const pr of sim.projectiles) this.rock(cam, pr.pos, pr.z, 0.07, pr.shape);
+    for (const pr of sim.projectiles) {
+      // Not while it is still in your hands' reach of the eye: the first frame
+      // after release it is thirty centimetres from the lens and would fill
+      // the sight. The pouch snapping forward is what that moment looks like.
+      if (Math.hypot(pr.pos.x - cam.pos.x, pr.pos.y - cam.pos.y, pr.z - cam.pos.z) < 2.2) continue;
+      // Tumbling, and a little larger than life in flight so the eye can
+      // follow it — a seven-centimetre stone at forty metres is one pixel.
+      const spun = { ...pr.shape, spin: pr.shape.spin + sim.tick * 0.45 + pr.id };
+      this.rock(cam, pr.pos, Math.max(0.06, pr.z), 0.11, spun);
+      // Its shadow on the ground, which is what actually tells you how high it is.
+      if (pr.z > 0.15) this.card(cam, pr.pos, 0.012, 0.12, 0.012, alpha('#26313B', Math.max(0.12, 0.4 - pr.z * 0.03)));
+    }
     for (const b of sim.droppedRocks) this.rock(cam, b.pos, 0.05, 0.055, b.shape);
   }
 
@@ -927,13 +1046,22 @@ export class PerspectiveRenderer {
   private prop(cam: Cam, p: Prop, sim: Sim): void {
     const tint = p.tint && p.tint.startsWith('#') ? p.tint : undefined;
     const dist = Math.hypot(p.pos.x - cam.pos.x, p.pos.y - cam.pos.y);
+    // Seconds since a stone knocked it, and a wobble that dies away over a
+    // second and a half: hit things move, and then they settle.
+    const age = p.knockedAt !== undefined ? (sim.tick - p.knockedAt) / 60 : Infinity;
+    const wob = age < 1.6 ? Math.sin(age * 26) * Math.exp(-age * 3.2) : 0;
+    const kx = Math.cos(p.knockDir ?? 0), ky = Math.sin(p.knockDir ?? 0);
     switch (p.kind) {
       case 'tree': {
         const s = p.scale;
         const seed = (hashString(p.id) % 100) / 10;
+        // A tree a stone went through shivers.
+        const sh = this.treeShake.get(p.id) ?? 0;
+        const sway = sh > 0 ? Math.sin(sim.tick * 0.9) * 0.22 * sh : 0;
+        const crown = { x: p.pos.x + sway, y: p.pos.y - sway * 0.6 };
         this.card(cam, p.pos, 1.2 * s, 0.14 * s, 1.2 * s, '#6B5646');
-        this.blob(cam, p.pos, 3.5 * s, 2.25 * s, 0.95, VENEER.tree, seed);
-        this.blob(cam, { x: p.pos.x - 0.3, y: p.pos.y - 0.3 }, 3.9 * s, 1.35 * s, 0.9, VENEER.treeLight, seed + 2);
+        this.blob(cam, crown, 3.5 * s, 2.25 * s, 0.95, VENEER.tree, seed);
+        this.blob(cam, { x: crown.x - 0.3, y: crown.y - 0.3 }, 3.9 * s, 1.35 * s, 0.9, VENEER.treeLight, seed + 2);
         return;
       }
       case 'bush':
@@ -953,7 +1081,15 @@ export class PerspectiveRenderer {
         return;
       }
       case 'bin':
-        this.box(cam, p.pos, p.rot, 0.62, 0.62, p.knocked ? 0.45 : 1.05, '#4E6B58');
+        if (p.knocked) {
+          // Over on its side, pointing the way it was hit, lid off.
+          const tip = clamp01(age / 0.35);
+          const at = { x: p.pos.x + kx * 0.45 * tip, y: p.pos.y + ky * 0.45 * tip };
+          this.box(cam, at, (p.knockDir ?? 0), lerp(0.62, 1.05, tip), 0.62, lerp(1.05, 0.62, tip), '#4E6B58');
+          if (tip >= 1) this.box(cam, { x: at.x + kx * 1.1 - ky * 0.4, y: at.y + ky * 1.1 + kx * 0.4 }, 0.6, 0.66, 0.66, 0.06, '#3E5747');
+        } else {
+          this.box(cam, p.pos, p.rot, 0.62, 0.62, 1.05, '#4E6B58');
+        }
         return;
       case 'hydrant':
         this.card(cam, p.pos, 0.38, 0.14, 0.38, '#C8513E');
@@ -974,13 +1110,21 @@ export class PerspectiveRenderer {
         this.card(cam, p.pos, 3.2, 0.6, 0.4, '#F2F0EA');
         return;
       case 'cone':
-        this.card(cam, p.pos, 0.3, 0.14, 0.3, '#E8773A');
+        if (p.knocked) {
+          const t = clamp01(age / 0.4);
+          const at = { x: p.pos.x + kx * 1.2 * t, y: p.pos.y + ky * 1.2 * t };
+          this.card(cam, at, lerp(0.3, 0.12, t), lerp(0.14, 0.3, t), lerp(0.3, 0.12, t), '#E8773A');
+        } else {
+          this.card(cam, p.pos, 0.3, 0.14, 0.3, '#E8773A');
+        }
         return;
       case 'sign': {
+        // A sign rings like a sign: the panel swings on its post.
+        const sp = { x: p.pos.x + kx * wob * 0.18, y: p.pos.y + ky * wob * 0.18 };
         this.card(cam, p.pos, 1.3, 0.05, 1.3, '#50575E');
         const label = p.tint && !p.tint.startsWith('#') ? p.tint : '';
         for (const side of [1, -1]) {
-          this.panel(cam, p.pos, p.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2), 1.8, 0.7, 2.7, '#F4F2EC',
+          this.panel(cam, sp, p.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2) + wob * 0.2, 1.8, 0.7, 2.7, '#F4F2EC',
             label ? { str: label, colour: '#2C8C8C', aspect: 2.57 } : undefined, 0.02);
         }
         return;
@@ -990,7 +1134,8 @@ export class PerspectiveRenderer {
         return;
       default: {
         const tall = p.kind === 'pole';
-        this.card(cam, p.pos, tall ? 1.8 : 0.5, tall ? 0.2 : 0.55, tall ? 1.8 : 0.5, tint ?? VENEER.gravel);
+        const at = { x: p.pos.x + kx * wob * (tall ? 0.12 : 0.06), y: p.pos.y + ky * wob * (tall ? 0.12 : 0.06) };
+        this.card(cam, at, tall ? 1.8 : 0.5, tall ? 0.2 : 0.55, tall ? 1.8 : 0.5, tint ?? VENEER.gravel);
       }
     }
   }
