@@ -239,7 +239,8 @@ class Game {
   private progressLabel(): string {
     const st = this.story.state;
     if (st.report) return 'After the decision';
-    if (st.devonReleasedAt > 0) return `Investigating · ${this.sim.casefile.clues.size} notes`;
+    if (st.devonReleasedAt > 0 && this.sim.tick >= st.devonReleasedAt) return `Investigating · ${this.sim.casefile.clues.size} notes`;
+    if (st.devonReleasedAt > 0) return 'Devon is being stopped';
     if (st.matchFiredAt > 0) return 'After the match';
     if (st.metDevonAt > 0) return 'With Devon';
     return 'Maple Court';

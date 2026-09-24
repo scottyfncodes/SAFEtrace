@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 378 tests: simulation, determinism, architecture, content, touch
+npm test         # 409 tests: simulation, story, the case, determinism, architecture, touch
 npm run build
 ```
 
@@ -28,6 +28,14 @@ The session starts solo. Devon is somewhere down the street, not already
 riding beside you — you skate to him, and he starts following once you
 actually arrive.
 
+After the match, the afternoon is an investigation. There is an answer to
+what happened on Northgate Lane, and it is spread across records you read at
+the camera or relay that holds them, things left on doorsteps, and what the
+people of Bellhaven will tell you. You write it down, you put two things
+side by side in your notes to work something out, and then you decide who to
+show it to — Priya Venn at the SAFEtrace drop-in, Mara's shop window, or
+nobody. Five endings are read off what you did and what you worked out.
+
 ## Controls
 
 | | |
@@ -41,7 +49,10 @@ actually arrive.
 | `Shift` | step off the board |
 | `F` | take out the slingshot, and stand still to use it |
 | Left mouse | draw the band; release to throw |
-| `E` then `1`–`6` | reach for the node you are standing next to, and act on it |
+| `E` | talk to whoever you are next to, look at what is in front of you, or reach into a node |
+| `1`–`3` | answer, in a conversation; act on a node, at a node |
+| `N` | your notes: what you know, and what goes with what |
+| `Esc` | pause: settings, controls, endings found, start over |
 | `Q` | hold for the plan view — the town from above, from the first frame |
 | `F3` | diagnostics, including the pursuit state and the risk decomposition |
 
@@ -132,7 +143,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-378 tests, all headless, in about ten seconds.
+409 tests, all headless, in about fifteen seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
@@ -144,6 +155,10 @@ because if a refactor ever made it impossible the premise would break silently.
   single document or it drifts.
 - **Content** — the shipped town validates: every sensor on a segment, every
   segment on an uplink, a connected road graph, and the Channel genuinely off it.
+- **The case** — every clue reachable from somewhere a player can go, every
+  record clue backed by the record's actual text, the ending table, the stop
+  choice and its consequence, conversations, overheard lines, and an afternoon
+  saved and restored without replaying anything.
 - **Touch** — the gesture engine is pure, so every thumb is a synthetic trace:
   the two-thumb slingshot, and a nine-viewport ergonomics matrix asserting touch
   target sizes, separation between neighbours, safe-area clearance and screen
@@ -151,15 +166,12 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Status
 
-**Phase 7 — the slice — is built, and its gate has not been run.** Every item
-required by [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md) §2 is in the
-build and playable end to end, from the advertisement to the reprise. But all
-six of that document's success criteria in §4 are observations of a person who
-has never seen the game — a clean line inside four minutes without instruction,
-the sling-into-a-camera move happening by accident and then on purpose, somebody
-asking "how did it know I was going there?" — and none of them is a thing a test
-suite can assert. They need a room and a stranger.
+The slice is a complete afternoon: the advertisement, a solo start, Devon,
+the Channel, the match, the stop, an investigation with an answer, a
+decision, the advertisement again, and one of five endings. The afternoon is
+saved as it goes and can be continued. The design record for this pass is
+[`docs/36-an-afternoon-with-an-ending.md`](docs/36-an-afternoon-with-an-ending.md).
 
-So the next gate is playtesting, not code. Broad content production is
-deliberately Phase 8 and stays there, per
-[`docs/16-production-roadmap.md`](docs/16-production-roadmap.md).
+The playtest gate in [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md)
+§4 is still a set of observations of people, and still the most useful next
+thing anybody can do with this build.
