@@ -273,6 +273,12 @@ export const PLAN = {
   moveMouse: 'DRAG TO LOOK AROUND · SCROLL TO ZOOM · Q TO CLOSE',
 };
 
+/** The first time the sling comes up on a phone, and never again after a shot. */
+export const SLING_HINT = {
+  aim: 'DRAG TO AIM',
+  pull: 'PULL BACK · LET GO',
+};
+
 /** What a shot did. One word, in the aiming view, then gone. */
 export const SHOT = {
   /** It landed, on nothing in particular. */

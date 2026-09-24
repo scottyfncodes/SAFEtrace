@@ -2,7 +2,7 @@
 
 export interface Settings {
   holdToAim: boolean;
-  /** Hold Q for the plan view, rather than toggling it. */
+  /** Let a long hold of Q peek at the plan and close it on release (a tap always toggles). */
   holdForPlanView: boolean;
   /** 0 = no flashing, soft cross-fade only. 1 = full peel. */
   transitionIntensity: number;

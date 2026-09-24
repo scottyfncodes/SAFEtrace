@@ -160,6 +160,11 @@ interface Track {
   moved: number;
   /** A TRICK held long enough has already become a grab. */
   grabbed?: boolean;
+  /**
+   * Frames this finger has been down. A thumb held perfectly still sends no
+   * events at all, so time spent holding has to be counted here too.
+   */
+  frames?: number;
 }
 
 export interface ControlButton {
@@ -466,7 +471,7 @@ export class TouchEngine {
 
   private onRelease(track: Track, s: PointerSample, cancelled: boolean): void {
     this.tracks.delete(track.id);
-    const held = s.t - track.start.t;
+    const held = Math.max(s.t - track.start.t, (track.frames ?? 0) * (1000 / 60));
     const isTap = !cancelled && held <= this.tuning.tapMs && track.moved <= this.tuning.tapSlop;
 
     switch (track.role) {
@@ -620,7 +625,9 @@ export class TouchEngine {
 
     // A TRICK held past the threshold is a grab, asked for once.
     for (const tr of this.tracks.values()) {
-      if (tr.role === 'trick' && !tr.grabbed && tr.cur.t - tr.start.t >= t.grabHoldMs && tr.moved <= t.tapSlop * 2) {
+      tr.frames = (tr.frames ?? 0) + 1;
+      const heldMs = Math.max(tr.cur.t - tr.start.t, tr.frames * (1000 / 60));
+      if (tr.role === 'trick' && !tr.grabbed && heldMs >= t.grabHoldMs && tr.moved <= t.tapSlop * 2) {
         tr.grabbed = true;
         this.pendingGrab = true;
       }

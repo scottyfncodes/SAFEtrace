@@ -513,6 +513,14 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     expect(after.grabPressed).toBe(false);
   });
 
+  it('grabs on a hold of TRICK even when the thumb never moves and sends no events', () => {
+    const p = button(engine, 'trick');
+    engine.handle('down', at(p, 1, clock));
+    let grabs = 0;
+    for (let f = 0; f < 30; f++) if (engine.sample().grabPressed) grabs++;
+    expect(grabs).toBe(1);
+  });
+
   it('still flips on a quick tap of TRICK, and does not grab', () => {
     tap(engine, button(engine, 'trick'));
     const i = engine.sample();

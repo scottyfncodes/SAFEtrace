@@ -19,6 +19,7 @@ const KEY_PROMPTS = [
   // an unlisted key, so half the players never found out it existed.
   '<span><kbd>R</kbd>trick</span>',
   '<span><kbd>G</kbd>grab</span>',
+  '<span><kbd>RMB</kbd>look</span>',
   '<span><kbd>S</kbd>slide</span>',
   '<span><kbd>F</kbd>sling</span>',
   '<span><kbd>Q</kbd>plan</span>',
@@ -228,7 +229,9 @@ export class Hud {
     // Aiming is one job. The phone stays — SAFEtrace does not stop watching
     // because you stood still — but nothing else competes with the reticle.
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
-    this.inspect.classList.toggle('hidden', this.sim.aimMode);
+    // Nor does a node panel sit over the plan: the plan cannot reach into
+    // anything, so a panel full of verbs on top of it is only in the way.
+    this.inspect.classList.toggle('hidden', this.sim.aimMode || this.sim.planViewActive);
     this.dialogue.classList.toggle('hidden', this.sim.aimMode);
     this.talk.classList.toggle('hidden', this.sim.aimMode);
 

@@ -336,7 +336,9 @@ export class ChaseCamera {
     this.dist = damp(this.dist, far, 0.3, dt);
     this.height = damp(this.height, lerp(lerp(17.0, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
-    this.pitch = damp(this.pitch, lerp(lerp(-0.41, -0.36, t), -0.36, f) - this.crane * 0.08, 0.3, dt);
+    // An upright phone has sky to spare and street to want: tip it down a touch.
+    const upright = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h)) * 0.1;
+    this.pitch = damp(this.pitch, lerp(lerp(-0.41, -0.36, t), -0.36, f) - this.crane * 0.08 - upright, 0.3, dt);
 
     // The point the rig is looking at lags the rider under acceleration, and
     // slides toward whatever they are talking to.
@@ -1004,6 +1006,10 @@ export class PerspectiveRenderer {
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
     for (const pr of sim.projectiles) {
+      // Not while it is still in your hands' reach of the eye: the first frame
+      // after release it is thirty centimetres from the lens and would fill
+      // the sight. The pouch snapping forward is what that moment looks like.
+      if (Math.hypot(pr.pos.x - cam.pos.x, pr.pos.y - cam.pos.y, pr.z - cam.pos.z) < 2.2) continue;
       // Tumbling, and a little larger than life in flight so the eye can
       // follow it — a seven-centimetre stone at forty metres is one pixel.
       const spun = { ...pr.shape, spin: pr.shape.spin + sim.tick * 0.45 + pr.id };

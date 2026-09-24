@@ -7,7 +7,7 @@ import {
 } from '../src/sim/slingshot';
 import { Rng } from '../src/core/rng';
 import { focalFor, PerspectiveRenderer } from '../src/render/perspective';
-import { makeSim, makeUnlockedSim, place, shootAt, step } from './harness';
+import { makeSim, makeUnlockedSim, place, shootAt, skate, step } from './harness';
 
 /**
  * The feel pass: the slingshot as something with weight, the plan as a place
@@ -147,6 +147,17 @@ describe('a stone has weight', () => {
     expect(impacts).toBeGreaterThanOrEqual(1);
     expect(bounces + impacts).toBeGreaterThanOrEqual(2);
     expect(sim.droppedRocks.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('every stone that lands is left lying somewhere', () => {
+  it('settles each one, however long it skipped and rolled', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    for (let i = 0; i < 4; i++) shootAt(sim, { x: 158 + (i - 1.5) * 2, y: 250 }, 0, 0, 1);
+    step(sim, 4);
+    expect(sim.projectiles.length).toBe(0);
+    expect(sim.droppedRocks.length).toBe(4);
   });
 });
 
@@ -344,5 +355,22 @@ describe('the camera sees enough of the town', () => {
     }
     // Above the horizon there is no ground.
     expect(r.groundAt(eye, 640, 0, 1280, 760)).toBeNull();
+  });
+});
+
+describe('Devon rides beside you, not between you and the camera', () => {
+  it('settles off the shoulder, clear of the line straight back from the board', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    sim.player.heading = Math.PI / 2;
+    sim.devonPos = { x: 158, y: 205 };
+    sim.meetDevon();
+    skate(sim, 5);
+    const h = sim.player.heading;
+    const rel = { x: sim.devonPos.x - sim.player.pos.x, y: sim.devonPos.y - sim.player.pos.y };
+    const behind = -(rel.x * Math.cos(h) + rel.y * Math.sin(h));
+    const lateral = Math.abs(-rel.x * Math.sin(h) + rel.y * Math.cos(h));
+    expect(behind).toBeGreaterThan(3);
+    expect(lateral).toBeGreaterThan(1.8);
   });
 });

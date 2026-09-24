@@ -12,7 +12,7 @@ import type { Settings } from '../core/settings';
 import type { Sim } from '../sim/sim';
 import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY } from '../sim/slingshot';
 import { ViewCamera } from './camera';
-import { PLAN } from '../content/copy';
+import { PLAN, SLING_HINT } from '../content/copy';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
@@ -292,7 +292,7 @@ export class Renderer {
     if (this.scoreLine) lines.unshift(this.scoreLine);
     ctx.font = '600 11px ui-monospace, Menlo, monospace';
     // Below the notes and toasts row, so nothing the town says covers it.
-    const top = this.safe.top + (this.touchHints ? 64 : 78);
+    const top = this.safe.top + (this.touchHints ? 132 : 78);
     lines.forEach((l, i) => {
       const wd = ctx.measureText(l).width + 20;
       ctx.fillStyle = alpha('#0B1117', 0.72 * a);
@@ -706,7 +706,9 @@ export class Renderer {
     this.perspective.draw(ctx, sim, eye, this.w, this.h, true);
     this.drawParticles(ctx, eye);
     // A ghost of the path while slack, confident once drawn.
-    this.drawTrajectory(ctx, eye, from, Math.max(draw, 0.35), 0.22 + eased * 0.78);
+    // Held back for a moment after a shot, so the stone is the thing to watch.
+    const settle = clamp01((this.release.t - 0.5) / 0.5);
+    this.drawTrajectory(ctx, eye, from, Math.max(draw, 0.35), Math.max(0.22 * settle + eased * 0.78, eased));
     this.perspective.lens = 1;
 
     const cx = this.w / 2, cy = this.h / 2 - kick * 900;
@@ -1029,28 +1031,38 @@ export class Renderer {
     const a = (1 - draw) * (this.settings.reduceMotion ? 0.8 : 0.55 + 0.35 * Math.sin(this.release.t * 3.4));
     if (a < 0.02) return;
     const px = this.w * 0.75, py = this.h * 0.58;
+    const lx = this.w * 0.25;
     ctx.save();
     ctx.textAlign = 'center';
-    ctx.font = '700 12px ui-monospace, Menlo, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 11px ui-monospace, Menlo, monospace';
     ctx.lineCap = 'round';
-    // Right: touch and pull back.
+    const pill = (text: string, x: number, y: number) => {
+      const wd = ctx.measureText(text).width + 16;
+      const cx = Math.max(wd / 2 + 6, Math.min(this.w - wd / 2 - 6, x));
+      // The words hold still and solid; only the guide lines breathe.
+      const solid = 1 - draw;
+      ctx.fillStyle = alpha('#0B1117', 0.7 * solid);
+      roundRect(ctx, cx - wd / 2, y - 10, wd, 20, 10); ctx.fill();
+      ctx.fillStyle = alpha('#F6F4EE', 0.95 * solid);
+      ctx.fillText(text, cx, y + 0.5);
+    };
     ctx.strokeStyle = alpha('#F6F4EE', a);
-    ctx.fillStyle = alpha('#F6F4EE', a);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.2;
+    // Right: touch and pull back.
     ctx.beginPath(); ctx.arc(px, py, 20, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([5, 6]);
     ctx.beginPath(); ctx.moveTo(px, py + 24); ctx.lineTo(px + 18, py + 96); ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(px + 10, py + 88); ctx.lineTo(px + 18, py + 98); ctx.lineTo(px + 24, py + 86); ctx.stroke();
-    ctx.fillText('HOLD · PULL BACK · LET GO', px, py - 32);
+    pill(SLING_HINT.pull, px, py - 36);
     // Left: drag to aim.
-    const lx = this.w * 0.25;
-    ctx.fillText('DRAG TO AIM', lx, py - 32);
     ctx.beginPath();
     ctx.moveTo(lx - 30, py); ctx.lineTo(lx + 30, py);
     ctx.moveTo(lx - 30, py); ctx.lineTo(lx - 22, py - 6); ctx.moveTo(lx - 30, py); ctx.lineTo(lx - 22, py + 6);
     ctx.moveTo(lx + 30, py); ctx.lineTo(lx + 22, py - 6); ctx.moveTo(lx + 30, py); ctx.lineTo(lx + 22, py + 6);
     ctx.stroke();
+    pill(SLING_HINT.aim, lx, py - 36);
     ctx.restore();
   }
 

@@ -601,10 +601,20 @@ export class Sim {
       this.devon.pos = { ...this.devonPos };
       return;
     }
-    // Devon skates a few metres behind, badly.
+    /*
+     * Devon skates a few metres behind, badly — and off to one side.
+     *
+     * Straight behind was exactly where the chase camera looks from, so for
+     * the whole of the time he was following, the boy stood on the line from
+     * the lens to the player and covered them. Off the shoulder is also
+     * simply where a mate rides: next to you and a bit back, not in your
+     * slipstream.
+     */
+    const back = 4.8, side = 2.6;
+    const hx = Math.cos(this.player.heading), hy = Math.sin(this.player.heading);
     const target = {
-      x: this.player.pos.x - Math.cos(this.player.heading) * 5.5,
-      y: this.player.pos.y - Math.sin(this.player.heading) * 5.5,
+      x: this.player.pos.x - hx * back - hy * side,
+      y: this.player.pos.y - hy * back + hx * side,
     };
     const d = dist(this.devonPos, target);
     /*
@@ -857,12 +867,17 @@ export class Sim {
       if (!impact) {
         if (proj.rolling && Math.hypot(proj.vel.x, proj.vel.y) < 0.25) { this.settle(proj); continue; }
         if (proj.life > 0) { keep.push(proj); continue; }
-        if (!proj.touched) this.lastShot = { tick: this.tick, hit: false, label: SHOT.miss };
+        // Out of time: a stone that has landed is left lying where it got to;
+        // one that never came down anywhere is a miss.
+        if (proj.touched) this.settle(proj);
+        else this.lastShot = { tick: this.tick, hit: false, label: SHOT.miss };
         continue;
       }
       const speed = Math.hypot(impact.vel.x, impact.vel.y, impact.vz);
       const first = !proj.touched;
       proj.touched = true;
+      // Once down, it has as long as it needs to skip and roll out.
+      if (first) proj.life = Math.max(proj.life, 2.5);
 
       /*
        * The ground and walls give the stone back.
