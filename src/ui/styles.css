@@ -98,58 +98,29 @@ html, body {
 @keyframes note-in { to { transform: translateX(0); opacity: 1; } }
 @keyframes note-out { to { transform: translateX(24px); opacity: 0; height: 0; padding: 0; margin: 0; } }
 
-/* --------------------------------------------------------------------- phone
-   The Community Safety Score widget. Every resident has this. It was always
-   in the app. In Act I it is a friendly green number. */
-/* The phone and the player's own two buttons under it, as one column in the
-   top-left corner, so neither ever has to guess how tall the other is. */
+/* -------------------------------------------------------------------- corner
+   The player's own two buttons, top-left. There is no score widget any more:
+   the Community Safety Score is found, not broadcast, and once found it only
+   appears here as a chip when it moves from one band to another. */
 #corner {
   position: absolute; top: 24px; left: 24px;
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
 }
-#phone {
-  position: relative;
-  width: calc(212px * var(--text-scale));
-  background: rgba(247, 245, 240, 0.94);
-  backdrop-filter: blur(14px);
-  border-radius: 16px;
-  box-shadow: 0 8px 28px rgba(16, 23, 31, 0.18);
-  padding: 12px 14px;
-  transition: opacity 260ms var(--ease);
-}
-#phone .wordmark {
-  font-size: calc(13px * var(--text-scale));
-  letter-spacing: -0.01em; margin-bottom: 10px; color: var(--st-teal);
-}
-#phone .wordmark b { font-weight: 600; }
-#phone .wordmark span { font-weight: 300; }
-#phone .wordmark sup { font-size: 0.55em; vertical-align: super; }
-
-.score-row { display: flex; align-items: baseline; justify-content: space-between; }
-.score-label {
-  font-size: calc(9px * var(--text-scale)); text-transform: uppercase;
-  letter-spacing: 0.13em; color: #6C7681;
-}
-.score-value { font-size: calc(30px * var(--text-scale)); font-weight: 300; line-height: 1; }
-.meter { height: 3px; border-radius: 2px; background: rgba(16,23,31,0.10); margin-top: 9px; overflow: hidden; }
-.meter i { display: block; height: 100%; background: var(--st-teal); transition: width 320ms var(--ease), background 320ms var(--ease); }
-.score-state {
-  margin-top: 6px;
+#score-chip {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: calc(10px * var(--text-scale));
-  letter-spacing: 0.16em;
-  font-weight: 600;
-  color: var(--st-teal);
-  transition: color 320ms var(--ease);
+  font-size: calc(10px * var(--text-scale)); letter-spacing: 0.08em;
+  padding: 5px 10px; border-radius: 999px;
+  background: rgba(247, 245, 240, 0.92); color: #2A3440;
+  border-left: 3px solid var(--st-teal);
+  box-shadow: 0 4px 14px rgba(16, 23, 31, 0.16);
+  opacity: 0; transform: translateY(-4px);
+  transition: opacity 260ms var(--ease), transform 260ms var(--ease);
 }
-
-.phone-rows { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
-.phone-row {
-  display: flex; justify-content: space-between; gap: 8px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: calc(9.5px * var(--text-scale)); letter-spacing: 0.04em; color: #55606B;
-}
-.phone-row b { font-weight: 500; color: #2A3440; }
+#score-chip:empty { display: none; }
+#score-chip.show { opacity: 1; transform: translateY(0); }
+#score-chip[data-band="warn"] { border-left-color: var(--st-warn); }
+#score-chip[data-band="risk"] { border-left-color: var(--st-risk); }
+#inspect .rec.held { color: #F2C86B; }
 
 /* ------------------------------------------------------------------ inspect */
 .node-head {
@@ -445,6 +416,11 @@ html, body {
   border: 1px solid rgba(35, 48, 58, 0.25); background: transparent; color: inherit;
 }
 .nb-body { flex: 1; overflow-y: auto; padding: 8px 22px 16px; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.nb-score {
+  margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(242, 200, 107, 0.14); border-left: 3px solid #E0A93A;
+  font-size: 13.5px; line-height: 1.45; color: #3A342A;
+}
 .nb-empty { padding: 40px 0; color: #7A8690; text-align: center; font-style: italic; }
 .nb-thread { margin: 14px 0 20px; }
 .nb-thread h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.005em; }

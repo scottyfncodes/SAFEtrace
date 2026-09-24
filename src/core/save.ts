@@ -23,6 +23,8 @@ export interface SavedAfternoon {
   /** Nodes whose `discovered` flag was set by QUERY/TRACE. */
   revealed: string[];
   priorContacts: number;
+  /** Whether the Community Safety Score has been found, and where. Absent in older saves. */
+  scoreFoundAt?: string | null;
   /** A line for the continue button: where the afternoon had got to. */
   label: string;
 }

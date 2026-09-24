@@ -62,6 +62,9 @@ export interface Prop {
   /** Runtime, mutable. */
   knocked?: boolean;
   alarmUntil?: number;
+  /** Runtime: the tick a stone knocked it, and which way it was going. */
+  knockedAt?: number;
+  knockDir?: number;
 }
 
 /**

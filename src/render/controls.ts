@@ -58,7 +58,7 @@ export class ControlsRenderer {
     ctx: CanvasRenderingContext2D, v: ControlVisual, w: number, h: number,
     safe = { top: 0, right: 0, bottom: 0, left: 0 },
   ): void {
-    if (v.aiming) return;
+    if (v.aiming) { this.drawPutAway(ctx, v); return; }
     if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
@@ -197,15 +197,13 @@ export class ControlsRenderer {
 
     if (id === 'trick') {
       ctx.font = `700 ${Math.round(r * 0.33)}px ui-monospace, Menlo, monospace`;
-      ctx.fillText('TRICK', x, y);
-      return;
-    }
-
-    if (id === 'grab') {
-      // The same reasoning as TRICK: which grab is the cycle's business, not
-      // the player's, so the button carries the word alone.
-      ctx.font = `700 ${Math.round(r * 0.33)}px ui-monospace, Menlo, monospace`;
-      ctx.fillText('GRAB', x, y);
+      ctx.fillText('TRICK', x, y - r * 0.08);
+      // What holding it does, quietly: the grab used to be a whole button.
+      const was = ctx.globalAlpha;
+      ctx.globalAlpha = was * 0.6;
+      ctx.font = `600 ${Math.round(r * 0.2)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('hold: grab', x, y + r * 0.38);
+      ctx.globalAlpha = was;
       return;
     }
 
@@ -278,6 +276,36 @@ export class ControlsRenderer {
     ctx.moveTo(x + q * 0.16, top); ctx.lineTo(x + q * 0.16, top + q * 1.7);
     ctx.stroke();
     label('PLAN');
+  }
+
+  /**
+   * While aiming, the SLING button stays where it was, lit, and tapping it
+   * puts the sling away. The rest of the cluster goes: aiming is one job.
+   */
+  private drawPutAway(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+    const b = v.buttons.find((x) => x.id === 'sling');
+    if (!b) return;
+    const r = b.radius * 0.82;
+    ctx.save();
+    ctx.fillStyle = alpha('#121A22', 0.55);
+    ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = alpha(VENEER.player, 0.85);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeStyle = alpha('#F6F4EE', 0.85);
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    const k = r * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(b.pos.x - k, b.pos.y - k - 4); ctx.lineTo(b.pos.x + k, b.pos.y + k - 4);
+    ctx.moveTo(b.pos.x + k, b.pos.y - k - 4); ctx.lineTo(b.pos.x - k, b.pos.y + k - 4);
+    ctx.stroke();
+    ctx.fillStyle = alpha('#F6F4EE', 0.8);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.round(r * 0.26)}px ui-monospace, Menlo, monospace`;
+    ctx.fillText('PUT AWAY', b.pos.x, b.pos.y + r * 0.55);
+    ctx.restore();
   }
 
   /**

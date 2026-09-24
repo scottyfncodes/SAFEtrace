@@ -17,7 +17,7 @@ import type { SimEvents } from './events';
 import { GRABS, TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
-  type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX,
+  type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX, rebound,
 } from './slingshot';
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
@@ -161,6 +161,8 @@ export class Sim {
   projectiles: Projectile[] = [];
   /** Rocks lying where they landed. Scenery, not supply. */
   droppedRocks: DroppedRock[] = [];
+  /** Trees a stone has already been through; birds do not come back this afternoon. */
+  private flushedTrees = new Set<string>();
   evidence = new Map<string, Evidence>();
   incidents: Incident[] = [];
 
@@ -198,6 +200,26 @@ export class Sim {
    * is what stops the HUD growing a button halfway through a session.
    */
   visionUnlocked = false;
+  /**
+   * Whether the player has found out that SAFEtrace keeps a number on them.
+   *
+   * The Community Safety Score used to be a permanent widget in the corner —
+   * a scoreboard from the first frame, which is the opposite of what it is
+   * in the fiction: something the town has been keeping about you that you
+   * did not know about. It is found now, in one of two places a curious
+   * player ends up: a camera's own record, which lists who it holds and the
+   * number beside each name, or the plan once VISION has put subjects on it.
+   */
+  scoreDiscovered = false;
+  /** Where it was found, for the notes. */
+  scoreFoundAt: string | null = null;
+
+  discoverScore(where: string): void {
+    if (this.scoreDiscovered) return;
+    this.scoreDiscovered = true;
+    this.scoreFoundAt = where;
+    this.bus.emit('score:discovered', { where, score: Math.round(100 - this.playerRisk) });
+  }
   /** 0..1 blend into the plan view; the renderer drives the peel from this. */
   planViewBlend = 0;
   planViewActive = false;
@@ -353,7 +375,19 @@ export class Sim {
       if (this.aimMode) this.exitAimMode(); else this.enterAimMode();
     }
     if (this.aimMode) {
+      /*
+       * The sling is up, but it is only drawn while something is drawing it.
+       *
+       * Holding the mode used to count as holding the draw: the moment the
+       * sling came up the pouch loaded itself to full on its own clock, so on
+       * a mouse there was no pull at all — a click fired a shot that was
+       * already fully drawn — and on a phone the pouch sprang back to full
+       * the instant the thumb let go. Now a mouse button held (or a thumb on
+       * the band) draws it, and with neither the draw eases back off.
+       */
+      const drawing = intent.aim || intent.drawAmount !== null;
       intent = holdStillToAim(intent);
+      if (!drawing) intent.drawAmount = Math.max(0, this.player.draw - dt * 3.2);
     }
 
     // 1-2. Input and movement.
@@ -783,6 +817,11 @@ export class Sim {
     }
 
     for (const p of this.world.propsNear(this.player.pos, 70)) {
+      if (p.kind === 'tree') {
+        // The crown, which is what a stone actually meets in a tree.
+        out.push({ id: p.id, pos: p.pos, z: 3.6 * p.scale, radius: 1.8 * p.scale, kind: 'foliage' });
+        continue;
+      }
       if (!p.hittable || p.knocked) continue;
       const z = p.kind === 'pole' || p.kind === 'sign' ? 3.2 : 0.7;
       out.push({ id: p.id, pos: p.pos, z, radius: p.kind === 'car' ? 1.5 : 0.6, kind: 'prop' });
@@ -797,37 +836,88 @@ export class Sim {
       // accuracy the projectile does not have.
       const sway = aimSway(this.player);
       const angle = this.aimAngle + this.rng.gauss() * sway;
-      const proj = fire(this.player.pos, angle, this.player.draw, this.aimPitch, this.rng);
+      const draw = this.player.draw;
+      const proj = fire(this.player.pos, angle, draw, this.aimPitch, this.rng);
       this.projectiles.push(proj);
       this.player.draw = 0;
-      this.bus.emit('player:fire', { pos: this.player.pos, draw: this.player.draw });
+      this.player.drawHeld = 0;
+      this.lastShot = null;
+      this.bus.emit('player:fire', { pos: this.player.pos, draw, angle, pitch: this.aimPitch });
     }
 
     if (this.projectiles.length === 0) return;
     const targets = this.ballisticTargets();
-    const ctx = {
-      targets,
-      solidAt: (p: Vec2) => this.world.buildingAt(p) !== null,
-      heightAt: (p: Vec2) => this.world.buildingAt(p)?.height ?? 0,
-    };
+    const solidAt = (p: Vec2) => this.world.buildingAt(p) !== null;
+    const heightAt = (p: Vec2) => this.world.buildingAt(p)?.height ?? 0;
+    const ctx = { targets, solidAt, heightAt };
 
     const keep: Projectile[] = [];
     for (const proj of this.projectiles) {
       const impact = stepProjectile(proj, ctx, dt);
-      if (impact) {
-        // Told plainly, because a shot you cannot read the result of is a shot
-        // you cannot learn from.
-        this.lastShot = impact.targetId
-          ? { tick: this.tick, hit: true, label: impact.targetId }
-          : { tick: this.tick, hit: false, label: SHOT.ground };
-        // Hitting the pavement is a miss with a sound, not a result.
-        this.resolveImpact(
-          impact.kind, impact.pos, impact.vel, impact.vz, impact.z, proj.shape, impact.targetId,
-        );
+      if (!impact) {
+        if (proj.rolling && Math.hypot(proj.vel.x, proj.vel.y) < 0.25) { this.settle(proj); continue; }
+        if (proj.life > 0) { keep.push(proj); continue; }
+        if (!proj.touched) this.lastShot = { tick: this.tick, hit: false, label: SHOT.miss };
         continue;
       }
-      if (proj.life > 0) keep.push(proj);
-      else this.lastShot = { tick: this.tick, hit: false, label: SHOT.miss };
+      const speed = Math.hypot(impact.vel.x, impact.vel.y, impact.vz);
+      const first = !proj.touched;
+      proj.touched = true;
+
+      /*
+       * The ground and walls give the stone back.
+       *
+       * It used to be that anything a rock touched ended it — the first frame
+       * it met the pavement it became a pebble lying there, which is exactly
+       * what a raycast wearing a rock costume does. A stone has weight and
+       * that weight has somewhere to go: it skips on a road, dies in a lawn,
+       * glances off brick and lands under the wall it hit, and rolls out. The
+       * first touch is still the shot's result; everything after it is the
+       * stone finishing what it started.
+       */
+      if (impact.kind === 'ground' || impact.kind === 'building') {
+        const surface = impact.kind === 'building' ? 'building' : this.world.surfaceAt(impact.pos);
+        if (first) {
+          this.lastShot = { tick: this.tick, hit: false, label: SHOT.ground };
+          this.bus.emit('projectile:impact', {
+            kind: impact.kind, pos: { ...impact.pos }, z: impact.z, speed, surface, vel: { ...impact.vel },
+          });
+          this.drawAttention(impact.pos, 7, 4.5, 0.9);
+        }
+        const r = rebound(impact, surface, solidAt, heightAt);
+        if (r === 'bounce' || r === 'roll') {
+          if (!first) {
+            this.bus.emit('projectile:bounce', {
+              pos: { ...proj.pos }, z: proj.z, speed, surface, wall: impact.kind === 'building',
+            });
+          }
+          keep.push(proj);
+        } else if (r === 'rest') {
+          this.settle(proj);
+        }
+        // A rock on a roof is simply gone from the street.
+        continue;
+      }
+
+      // Told plainly, because a shot you cannot read the result of is a shot
+      // you cannot learn from.
+      if (first) {
+        // A camera or a drone has a name worth saying; a bin or a tree does
+        // not, and what it did is right there to be seen.
+        const named = impact.kind === 'cameraLens' || impact.kind === 'drone' || impact.kind === 'junction';
+        this.lastShot = impact.targetId
+          ? { tick: this.tick, hit: true, label: named ? impact.targetId : '' }
+          : { tick: this.tick, hit: false, label: SHOT.ground };
+      }
+      this.resolveImpact(
+        impact.kind, impact.pos, impact.vel, impact.vz, impact.z, proj.shape, impact.targetId, speed,
+      );
+      // Whatever it hit, it falls from there.
+      if (impact.kind !== 'drone') {
+        const fall = { x: impact.pos.x - impact.vel.x * 0.04, y: impact.pos.y - impact.vel.y * 0.04 };
+        this.droppedRocks.push({ pos: fall, tick: this.tick, shape: proj.shape });
+        if (this.droppedRocks.length > 40) this.droppedRocks.shift();
+      }
     }
     this.projectiles = keep;
 
@@ -842,14 +932,53 @@ export class Sim {
      */
   }
 
+  /** A stone has stopped. It stays where it stopped. */
+  private settle(proj: Projectile): void {
+    this.droppedRocks.push({ pos: { ...proj.pos }, tick: this.tick, shape: proj.shape });
+    if (this.droppedRocks.length > 40) this.droppedRocks.shift();
+    this.bus.emit('projectile:settled', { pos: { ...proj.pos } });
+  }
+
+  /**
+   * Something made a sound, and the town turns to look.
+   *
+   * The pan-and-tilt cameras that can hear it swing toward it for a while —
+   * the ones on a sweep, which are the ones built to turn — and people near
+   * enough glance over. This is the whole of the slingshot as a tool rather
+   * than a weapon: a stone in a bin on the far side of a junction is a camera
+   * looking the other way while you go past.
+   *
+   * `reach` is how far the sound carries in metres, `seconds` how long a camera
+   * holds on it, and `peopleReach` scales how far away a person still hears it.
+   */
+  drawAttention(pos: Vec2, reach: number, seconds: number, peopleReach = 1): void {
+    const turned: string[] = [];
+    for (const s of this.sensors) {
+      if (s.state !== 'ONLINE' && s.state !== 'DEGRADED') continue;
+      if (s.data.sweep <= 0) continue;
+      const d = dist(s.data.pos, pos);
+      if (d > Math.max(reach, s.data.range * 0.9) || d > reach * 2.2) continue;
+      if (this.world.blocked(s.data.pos, pos, s.data.height)) continue;
+      s.attend = { x: pos.x, y: pos.y };
+      s.attendUntil = this.tick + Math.round(60 * seconds);
+      turned.push(s.data.id);
+    }
+    let people = 0;
+    for (const n of this.npcs) {
+      if (dist(n.pos, pos) > reach * 2.4 * peopleReach) continue;
+      if (this.world.blocked(n.pos, pos, 1.5)) continue;
+      glance(n, pos, Math.round(60 * 2.2));
+      people++;
+    }
+    if (turned.length || people) this.bus.emit('world:attention', { pos: { ...pos }, sensors: turned, people });
+  }
+
   private resolveImpact(
     kind: string, pos: Vec2, vel: Vec2, vz: number, z: number, shape: RockShape,
-    targetId?: string,
+    targetId?: string, speed = 20,
   ): void {
-    this.bus.emit('projectile:impact', { kind: kind as never, pos, targetId });
-    // The rock that lands is the rock that was thrown, lump for lump.
-    this.droppedRocks.push({ pos: { ...pos }, tick: this.tick, shape });
-    if (this.droppedRocks.length > 40) this.droppedRocks.shift();
+    void shape;
+    this.bus.emit('projectile:impact', { kind: kind as never, pos, targetId, z, speed, vel: { ...vel } });
 
     const observedBy = this.sensorsObserving(pos);
 
@@ -913,10 +1042,27 @@ export class Sim {
       return;
     }
 
+    if (kind === 'foliage' && targetId) {
+      /*
+       * Through a tree. Nothing is recorded — a tree shaking is not an
+       * incident — but whatever was sitting in it leaves, loudly, and people
+       * look up. The first stone into any given tree finds birds; after that
+       * the tree is just a tree, so it is a thing you discover rather than a
+       * thing you farm.
+       */
+      const birds = !this.flushedTrees.has(targetId);
+      this.flushedTrees.add(targetId);
+      this.bus.emit('foliage:hit', { pos: { ...pos }, z, birds, treeId: targetId });
+      if (birds) this.drawAttention(pos, 10, 3, 1.3);
+      return;
+    }
+
     if (kind === 'prop' && targetId) {
       const prop = this.world.data.props.find((p) => p.id === targetId);
       if (!prop) return;
       prop.knocked = true;
+      prop.knockedAt = this.tick;
+      prop.knockDir = Math.atan2(vel.y, vel.x);
       const isCar = prop.kind === 'car';
       const label = isCar ? 'VEHICLE ALARM' : SYSTEM.noiseAnomaly;
       if (isCar) prop.alarmUntil = this.tick + 60 * 30;
@@ -924,6 +1070,8 @@ export class Sim {
       this.bus.emit('noise:event', { pos, label });
       this.dispatcher.flagAnomaly(pos, this.tick, label, isCar ? 60 * 20 : 60 * 12);
       this.addEvidence('NOISE', pos, label, null, observedBy);
+      // And the town looks at the sound, not at you.
+      this.drawAttention(pos, isCar ? 30 : 18, isCar ? 12 : 8);
       return;
     }
   }
@@ -1431,6 +1579,8 @@ export class Sim {
     if (chosen && (chosen.kind === 'SERVICE' || dist(chosen.pos, this.player.pos) <= SELECT_RANGE)) {
       this.focusNode = chosen;
       if (chosen.discovered) this.readNodes.add(chosen.id);
+      // A camera's record lists who it holds — and you are on it.
+      if (chosen.kind === 'CAMERA' || chosen.kind === 'SERVICE') this.discoverScore(chosen.id);
       return;
     }
     // Skating away from a node lets it go, without a menu to dismiss.
@@ -1605,6 +1755,8 @@ export class Sim {
       return;
     }
     this.planViewActive = intent.planView;
+    // With VISION, the plan brackets every subject with their number — yours too.
+    if (this.visionUnlocked && this.planViewActive && this.planViewBlend > 0.9) this.discoverScore('the plan');
     const target = this.planViewActive ? 1 : 0;
     // Roughly 600 ms in, 430 ms out. Coming back is faster, so the real world
     // returns a little too suddenly, which is the correct feeling.
@@ -1702,13 +1854,17 @@ export class Sim {
 }
 
 /**
- * What a player may still do while the world is peeled open: keep their line,
- * and stop. Not push, not aim, not fire, not reach into anything.
+ * What a player may still do while the world is peeled open: skate. Not aim,
+ * not fire, not pop, not reach into anything.
+ *
+ * It used to take pushing away as well, which made the plan a place you
+ * could look at and not move in — the board coasted to a stop under you and
+ * the stick did nothing, so "find where I am going" and "go there" could not
+ * happen in the same view. Moving is what the plan is for.
  */
 function suppressWhileLooking(intent: Intent): Intent {
   return {
     ...intent,
-    push: false, pushPressed: false,
     aim: false, fire: false, firePressed: false,
     olliePressed: false, ollieReleased: false, ollieHeld: false,
     interact: false, interactPressed: false,

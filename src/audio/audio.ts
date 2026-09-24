@@ -250,9 +250,105 @@ export class Audio {
     this.burst(this.skateGain, 2200, 120, 0.5, 0.16);
     this.env(this.skateGain, 62, 'sine', 0.003, 0.3, 0.1);
   }
-  fire(): void { if (this.skateGain) this.burst(this.skateGain, 3200, 900, 0.05, 0.1); }
-  impactMetal(): void { if (this.uiGain) { this.env(this.uiGain, 2100, 'square', 0.001, 0.12, 0.055); this.env(this.uiGain, 3300, 'triangle', 0.001, 0.06, 0.03); } }
-  impactSoft(): void { if (this.uiGain) this.burst(this.uiGain, 700, 140, 0.18, 0.07); }
+  /**
+   * The release: a slap of cord against the fork, a thin whip of air, and a
+   * low thump in the hand. Louder and brighter the further it was drawn, so a
+   * full pull sounds like one before you see where it went.
+   */
+  fire(draw = 1): void {
+    if (!this.skateGain) return;
+    const k = Math.max(0.25, Math.min(1, draw));
+    this.burst(this.skateGain, 2400 + k * 1800, 700, 0.045, 0.08 + k * 0.1);
+    this.burst(this.skateGain, 5200, 1800, 0.16 + k * 0.1, 0.03 + k * 0.035);
+    this.env(this.skateGain, 150 + k * 40, 'sine', 0.001, 0.07, 0.07 + k * 0.05);
+  }
+
+  /**
+   * Cord creaking against wood while the draw is held.
+   *
+   * A continuous layer rather than a one-shot, because tension is a thing that
+   * lasts: it tightens in pitch as the pouch comes back and goes quiet the
+   * moment the draw is let off. Silent at rest, so nothing is heard unless a
+   * thumb is actually pulling.
+   */
+  setDraw(draw: number): void {
+    if (!this.ctx || !this.skateGain) return;
+    const c = this.ctx;
+    if (!this.stretchGain) {
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuffer(2);
+      src.loop = true;
+      this.stretchFilter = c.createBiquadFilter();
+      this.stretchFilter.type = 'bandpass';
+      this.stretchFilter.Q.value = 9;
+      this.stretchFilter.frequency.value = 300;
+      this.stretchGain = c.createGain();
+      this.stretchGain.gain.value = 0;
+      src.connect(this.stretchFilter).connect(this.stretchGain).connect(this.skateGain);
+      src.start();
+    }
+    const t = c.currentTime;
+    const moving = Math.abs(draw - this.lastDraw);
+    this.lastDraw = draw;
+    // Heard while the pouch is moving back, and faintly while it is held taut.
+    const g = draw > 0.02 ? Math.min(0.2, moving * 5 + draw * 0.035) : 0;
+    this.stretchGain.gain.setTargetAtTime(g, t, 0.03);
+    this.stretchFilter!.frequency.setTargetAtTime(260 + draw * 720, t, 0.05);
+  }
+  private stretchGain: GainNode | null = null;
+  private stretchFilter: BiquadFilterNode | null = null;
+  private lastDraw = 0;
+
+  /**
+   * A stone landing, by what it landed on. `force` is 0..1 and `near` is 0..1,
+   * 1 being right beside the player — a rock that lands sixty metres away is a
+   * small sound, which is most of how distance reads without a single pixel.
+   */
+  impact(kind: 'metal' | 'wood' | 'grass' | 'hard' | 'leaves' | 'plastic' | 'glass', force: number, near = 1): void {
+    const bus = this.uiGain;
+    if (!bus) return;
+    const a = Math.max(0.12, Math.min(1, force)) * (0.3 + 0.7 * Math.max(0, Math.min(1, near)));
+    switch (kind) {
+      case 'metal':
+        this.env(bus, 1900 + Math.random() * 500, 'square', 0.001, 0.16, 0.05 * a);
+        this.env(bus, 3100 + Math.random() * 400, 'triangle', 0.001, 0.32, 0.04 * a);
+        this.env(bus, 4700, 'sine', 0.001, 0.5, 0.02 * a);
+        break;
+      case 'glass':
+        this.env(bus, 3600, 'triangle', 0.001, 0.22, 0.05 * a);
+        this.burst(bus, 7000, 3000, 0.12, 0.05 * a);
+        break;
+      case 'plastic':
+        this.burst(bus, 1300, 380, 0.12, 0.12 * a);
+        this.env(bus, 240, 'triangle', 0.002, 0.12, 0.06 * a);
+        break;
+      case 'wood':
+        this.env(bus, 420 + Math.random() * 80, 'triangle', 0.001, 0.09, 0.09 * a);
+        this.burst(bus, 1600, 500, 0.07, 0.08 * a);
+        break;
+      case 'leaves':
+        this.burst(bus, 4200, 1800, 0.45, 0.07 * a);
+        this.burst(bus, 2600, 1200, 0.3, 0.04 * a);
+        break;
+      case 'grass':
+        this.burst(bus, 520, 110, 0.12, 0.08 * a);
+        break;
+      default:
+        this.burst(bus, 1500, 260, 0.08, 0.11 * a);
+        this.env(bus, 780 + Math.random() * 200, 'triangle', 0.001, 0.05, 0.05 * a);
+    }
+  }
+
+  /** Wings, several, all at once, going away. */
+  flutter(): void {
+    if (!this.worldGain || !this.ctx) return;
+    for (let i = 0; i < 7; i++) {
+      window.setTimeout(() => this.burst(this.worldGain!, 1800 + Math.random() * 900, 700, 0.07, 0.05), i * 55 + Math.random() * 30);
+    }
+  }
+
+  impactMetal(): void { this.impact('metal', 1); }
+  impactSoft(): void { this.impact('hard', 0.7); }
   noise(): void { if (this.worldGain) this.burst(this.worldGain, 500, 90, 0.5, 0.12); }
   alarm(): void {
     if (!this.worldGain || !this.ctx) return;

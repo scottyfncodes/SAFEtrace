@@ -129,8 +129,15 @@ export class InputManager {
   private down = new Set<string>();
   private pressed = new Set<string>();
   private released = new Set<string>();
-  private mouse = { x: 0, y: 0, left: false, active: false };
+  private mouse = { x: 0, y: 0, left: false, right: false, active: false };
+  /** Mouse travel since the last read, for looking while the sling is up. */
+  private look = { x: 0, y: 0 };
   private planViewToggle = false;
+  private planWasDown = false;
+  private planHeldFrames = 0;
+
+  /** The plan was closed from somewhere else (a menu, a scene, a thumb). */
+  setPlanOpen(on: boolean): void { this.planViewToggle = on; }
   private aimToggle = false;
   /** Whether the draw control was held last frame, so a release can be seen. */
   private wasDrawing = false;
@@ -147,15 +154,21 @@ export class InputManager {
     const ku = (e: KeyboardEvent) => { this.down.delete(e.code); this.released.add(e.code); };
     const mm = (e: MouseEvent) => {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true;
+      // A pointer-lock warp arrives as one enormous jump (and often its exact
+      // opposite straight after). No hand moves a mouse 150 px in one event.
+      const mx = e.movementX || 0, my = e.movementY || 0;
+      if (Math.abs(mx) < 150 && Math.abs(my) < 150) { this.look.x += mx; this.look.y += my; }
     };
     const md = (e: MouseEvent) => {
       if (e.button === 0) this.mouse.left = true;
+      if (e.button === 2) this.mouse.right = true;
     };
     const mu = (e: MouseEvent) => {
       if (e.button === 0) this.mouse.left = false;
+      if (e.button === 2) this.mouse.right = false;
     };
     const ctx = (e: Event) => e.preventDefault();
-    const blur = () => { this.down.clear(); this.mouse.left = false; };
+    const blur = () => { this.down.clear(); this.mouse.left = false; this.mouse.right = false; };
 
     const t = target as Window;
     t.addEventListener('keydown', kd as EventListener);
@@ -178,6 +191,19 @@ export class InputManager {
   }
 
   dispose(): void { for (const d of this.detach) d(); this.detach = []; }
+
+  /**
+   * How far the mouse has travelled since this was last asked, in pixels.
+   * Consumed, like the touch aim drag, so nothing is counted twice.
+   */
+  takeLook(): { x: number; y: number } {
+    const out = { x: this.look.x, y: this.look.y };
+    this.look.x = 0; this.look.y = 0;
+    return out;
+  }
+
+  /** The right button: held, it turns the camera round the rider. */
+  get rightHeld(): boolean { return this.mouse.right; }
 
   private any(codes: string[], set: Set<string>): boolean {
     for (const c of codes) if (set.has(c)) return true;
@@ -207,7 +233,14 @@ export class InputManager {
     const gpBtn = (n: number) => !!gp?.buttons[n]?.pressed;
 
     i.push = this.any(CODE.push, this.down) || gpBtn(0);
-    i.pushPressed = this.any(CODE.push, this.pressed);
+    /*
+     * Held, W keeps pushing — at the board's own rhythm, since a push cannot
+     * land before the last one's cooldown. It used to take one stride and
+     * then coast to a stop with the key still down, which read as the
+     * control being broken; a thumb on the stick has always pushed while it
+     * was held, so the two devices now agree. Tapping in time still works.
+     */
+    i.pushPressed = this.any(CODE.push, this.pressed) || i.push;
     i.brake = this.any(CODE.brake, this.down) || gpBtn(1);
     i.ollieHeld = this.any(CODE.ollie, this.down) || gpBtn(2);
     i.olliePressed = this.any(CODE.ollie, this.pressed);
@@ -246,13 +279,22 @@ export class InputManager {
     }
     i.fire = i.aim;
 
+    /*
+     * The plan: tap to open it, tap again to close it — or hold to peek, and
+     * it closes when you let go. Both habits work, so nobody has to find out
+     * which one this game wanted. (`holdForPlanView` off makes it tap-only.)
+     */
     const planRaw = this.any(CODE.planView, this.down) || gpBtn(4);
-    if (this.options.holdForPlanView) {
-      i.planView = planRaw;
-    } else {
-      if (this.any(CODE.planView, this.pressed)) this.planViewToggle = !this.planViewToggle;
-      i.planView = this.planViewToggle;
+    if (this.any(CODE.planView, this.pressed) || (planRaw && !this.planWasDown && gpBtn(4))) {
+      this.planViewToggle = !this.planViewToggle;
+      this.planHeldFrames = 0;
     }
+    if (planRaw) this.planHeldFrames++;
+    if (!planRaw && this.planWasDown && this.options.holdForPlanView && this.planHeldFrames > 20 && this.planViewToggle) {
+      this.planViewToggle = false;
+    }
+    this.planWasDown = planRaw;
+    i.planView = this.planViewToggle;
 
     i.pointer.x = this.mouse.x;
     i.pointer.y = this.mouse.y;

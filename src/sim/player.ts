@@ -113,6 +113,11 @@ export const TUNE = {
    * thing turning it is a person's weight and it answers immediately.
    */
   headingBand: 0.80,
+  /** How fast a held draw loads, and how much harder the last of it is. */
+  drawRate: 2.1,
+  drawStiffen: 0.55,
+  /** Held at full draw past this many seconds, the arm starts to shake. */
+  drawHoldSteady: 1.4,
   carveAimPenalty: 0.65,
   /**
    * Drawing the sling settles the board.
@@ -273,6 +278,12 @@ export interface PlayerState {
   onBoard: boolean;
   aiming: boolean;
   draw: number;
+  /**
+   * Seconds the sling has been held at (near) full draw. An arm can hold a
+   * full pull steady for a moment and then it starts to shake — which is the
+   * sling telling you to let go, not a timer telling you to hurry.
+   */
+  drawHeld: number;
   /** Metres travelled; used only for telemetry and story pacing. */
   odometer: number;
   lastSurface: string;
@@ -329,6 +340,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
     onBoard: true,
     aiming: false,
     draw: 0,
+    drawHeld: 0,
     odometer: 0,
     ollieBuffer: 0,
     pushBuffer: 0,
@@ -387,7 +399,10 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   // rate, which is what a key held down means.
   if (!p.aiming) p.draw = 0;
   else if (intent.drawAmount !== null) p.draw = clamp01(intent.drawAmount);
-  else p.draw = clamp01(p.draw + dt / 0.55);
+  // Held: the pull comes quickly at first and harder toward the end, the way
+  // cord against a fork actually does. About 0.8 s to a full draw.
+  else p.draw = clamp01(p.draw + dt * TUNE.drawRate * (1 - TUNE.drawStiffen * p.draw));
+  p.drawHeld = p.aiming && p.draw > 0.96 ? p.drawHeld + dt : 0;
 
   if (!p.onBoard) { updateFoot(p, intent, world, dt); return; }
 
@@ -740,5 +755,7 @@ function updateFlow(p: PlayerState, intent: Intent, dt: number, cap: number): vo
  */
 export function aimSway(p: PlayerState): number {
   const speedTerm = remap(p.speed, 0, maxSpeedFor(p), 0, 0.085);
-  return clamp(speedTerm * (1 - p.flow * 0.65), 0, 0.09);
+  // An arm that has held a full pull too long shakes, and the shot knows it.
+  const tired = clamp((p.drawHeld - TUNE.drawHoldSteady) * 0.012, 0, 0.03);
+  return clamp(speedTerm * (1 - p.flow * 0.65) + tired, 0, 0.1);
 }

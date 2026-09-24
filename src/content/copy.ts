@@ -219,6 +219,22 @@ export const DIALOGUE = {
 export const PHONE = {
   scoreLabel: 'Your Community Safety Score',
   subject: 'Registered to',
+  /**
+   * It is not on the screen any more; it is found. These are the places it
+   * turns up once it has been.
+   */
+  /** The line in a camera's own record: who it is holding, and their number. */
+  record: (subject: string, n: number, band: string) => `HOLDING ${subject} · COMMUNITY SAFETY SCORE ${n} · ${band}`,
+  /** The moment of finding it, as a note. */
+  found: 'SAFEtrace keeps a number on you',
+  foundDetail: (n: number, band: string) => `Community Safety Score ${n} — ${band}`,
+  /** When it moves between bands, once found: small, and gone. */
+  moved: (n: number, band: string) => `Community Safety Score ${n} · ${band}`,
+  /** On the plan, once found. */
+  plan: (n: number, band: string) => `SAFETRACE HAS YOU AT ${n} · ${band}`,
+  /** In the notes, in the player's own words. */
+  notes: (n: number, band: string, where: string) =>
+    `SAFEtrace has a number on me. It calls it my "Community Safety Score". Found it at ${where}. Right now it says ${n} — ${band.toLowerCase()}. Higher is better, apparently. Nobody asked me.`,
 };
 
 /**
@@ -244,6 +260,17 @@ export const INSPECT = {
     DOOR: 'Door',
   } as Record<string, string>,
   dismiss: 'Close',
+};
+
+/**
+ * The plan's own instructions. They say what the view is for — marking where
+ * you are going — and they retire themselves once a pin has been put down.
+ */
+export const PLAN = {
+  markTouch: 'TAP THE MAP TO MARK WHERE YOU ARE GOING',
+  markMouse: 'CLICK THE MAP TO MARK WHERE YOU ARE GOING',
+  moveTouch: 'DRAG TO LOOK AROUND · PLAN TO CLOSE',
+  moveMouse: 'DRAG TO LOOK AROUND · SCROLL TO ZOOM · Q TO CLOSE',
 };
 
 /** What a shot did. One word, in the aiming view, then gone. */

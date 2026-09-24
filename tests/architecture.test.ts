@@ -136,8 +136,10 @@ describe('architecture', () => {
   it('keeps the player\'s own buttons and the conversation card clear of the thumbs', () => {
     const base = read('src/ui/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
     const mobile = read('src/ui/mobile.css').replace(/\/\*[\s\S]*?\*\//g, '');
-    // The buttons live in the top-left column with the phone, never on their own.
-    expect(read('src/ui/hud.ts')).toMatch(/<div id="corner">[\s\S]*id="phone"[\s\S]*id="hud-buttons"/);
+    // The buttons live in the top-left column, never on their own — and the
+    // score widget that used to sit above them is gone: it is found, not shown.
+    expect(read('src/ui/hud.ts')).toMatch(/<div id="corner">[\s\S]*id="hud-buttons"/);
+    expect(read('src/ui/hud.ts')).not.toMatch(/id="phone"/);
     expect(/#corner\s*\{[^}]*top:\s*24px;[^}]*left:\s*24px;/.test(base)).toBe(true);
     expect(/#hud-buttons\s*\{[^}]*position:\s*absolute/.test(base + mobile)).toBe(false);
     // On a phone the conversation card sits above the control cluster, the

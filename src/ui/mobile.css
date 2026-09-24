@@ -42,21 +42,13 @@ html, body {
     left: calc(10px + var(--safe-left));
     gap: 6px;
   }
-  #phone {
-    width: calc(132px * var(--text-scale));
-    padding: 8px 10px;
-    border-radius: 13px;
-  }
-  #phone .wordmark { font-size: calc(11px * var(--text-scale)); margin-bottom: 7px; }
-  .score-value { font-size: calc(23px * var(--text-scale)); }
-  .score-label { font-size: calc(7.5px * var(--text-scale)); letter-spacing: 0.1em; }
-  .phone-row { font-size: calc(8.5px * var(--text-scale)); }
+  #score-chip { font-size: calc(9px * var(--text-scale)); }
 
   #notifications {
     top: calc(10px + var(--safe-top));
     right: calc(10px + var(--safe-right));
-    /* The phone widget owns the top-left corner; notifications take what is
-       left without ever reaching across it. */
+    /* The two small buttons own the top-left corner; notifications take what
+       is left without ever reaching across them. */
     width: min(56vw, calc(216px * var(--text-scale)));
     gap: 6px;
   }

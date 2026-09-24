@@ -111,7 +111,8 @@ export class MachineRenderer {
       ctx.stroke();
 
       // A house is no longer merely a house.
-      if (z > 2.2 && b.occupants) {
+      // Only close in: at map scale every house talking at once is noise.
+      if (z > 7 && b.occupants) {
         const c = cam.toScreen({ x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 - lift }, w, h);
         this.label(ctx, c, [
           b.label ?? b.id,

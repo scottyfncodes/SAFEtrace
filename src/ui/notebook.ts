@@ -13,6 +13,8 @@
  */
 import type { Sim } from '../sim/sim';
 import type { ClueDef, DeductionDef } from '../sim/casefile';
+import { PHONE } from '../content/copy';
+import { riskLabel } from '../sim/surveillance/risk';
 
 export class Notebook {
   private el: HTMLElement;
@@ -132,7 +134,7 @@ export class Notebook {
           <div class="nb-title">notes</div>
           <button class="nb-close" data-close="1">${this.touch ? 'Close' : 'Close · N'}</button>
         </header>
-        <div class="nb-body">${body}</div>
+        <div class="nb-body">${this.scoreNote()}${body}</div>
         <footer>
           ${resultLine}
           <div class="nb-actions">
@@ -141,6 +143,18 @@ export class Notebook {
           </div>
         </footer>
       </div>`;
+  }
+
+  /**
+   * The number, once found — in the player's own words, at the top of their
+   * own notes, because it is a thing they found out rather than a thing the
+   * game shows. Before it is found there is nothing here at all.
+   */
+  private scoreNote(): string {
+    const sim = this.sim;
+    if (!sim.scoreDiscovered) return '';
+    const risk = sim.playerRisk;
+    return `<div class="nb-score">${esc(PHONE.notes(Math.round(100 - risk), riskLabel(risk), sim.scoreFoundAt ?? 'a camera'))}</div>`;
   }
 
   private clue(c: ClueDef): string {

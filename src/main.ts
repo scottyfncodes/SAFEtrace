@@ -22,7 +22,8 @@ import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
 import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
-import { HINTS } from './content/copy';
+import { HINTS, PHONE } from './content/copy';
+import { riskLabel } from './sim/surveillance/risk';
 import { dist, damp } from './core/math';
 import { Notebook } from './ui/notebook';
 import { Menu } from './ui/menu';
@@ -32,6 +33,10 @@ import {
 } from './core/save';
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
+
+/** Radians of look per pixel of mouse travel while the sling is up. */
+const MOUSE_YAW = 0.0026;
+const MOUSE_PITCH = 0.0021;
 
 /** How close the player must be to reach into a node, in metres. */
 const NODE_REACH = 16;
@@ -65,6 +70,12 @@ class Game {
   /** Nothing in Bellhaven happens while the player is reading a menu. */
   private get paused(): boolean { return this.notebook.open || this.menu.open || this.ending.open; }
   private saveDue = 0;
+  /** The pin the player put on the plan, and who and what they have met. */
+  private waypoint: { x: number; y: number } | null = null;
+  private metPeople = new Set<string>();
+  private seenPlaces = new Set<string>();
+  /** Desktop map dragging, in the plan. */
+  private mapDrag: { x: number; y: number; moved: number } | null = null;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const worldData = buildBellhaven();
@@ -87,6 +98,7 @@ class Game {
     // The world's contextual prompt names the thing the player will actually
     // do, on the device they are actually holding.
     this.renderer.interactVerb = this.touchPrimary ? 'TAP' : 'E';
+    this.renderer.touchHints = this.touchPrimary;
     this.ad = new Advertisement(document.body, this.renderer, this.audio, this.touchPrimary);
     this.story = new StoryDirector({
       sim: this.sim,
@@ -129,6 +141,7 @@ class Game {
 
     this.bindAudio();
     this.bindKeys();
+    this.bindMap();
 
     const onViewportChange = () => this.syncViewport();
     window.addEventListener('resize', onViewportChange);
@@ -163,9 +176,60 @@ class Game {
     this.showPrefs();
   }
 
+  // ------------------------------------------------------------- the plan
+
+  /** Put the plan away, on every device at once. */
+  private closePlan(): void {
+    this.touch.setPlanOpen(false);
+    this.input.setPlanOpen(false);
+  }
+
+  /** Put a pin on the map, or take it off if the tap was on the pin. */
+  private markAt(world: { x: number; y: number }): void {
+    const wp = this.waypoint;
+    const pickUp = wp && dist(wp, world) < 34 / Math.max(1, this.renderer.cam.zoom) + 3;
+    this.waypoint = pickUp ? null : { x: world.x, y: world.y };
+    this.renderer.waypoint = this.waypoint;
+    this.audio.hackTick();
+  }
+
+  /**
+   * The plan on a desktop: click to pin, drag to look around, wheel to zoom.
+   * The same three things a thumb does, with the thing a mouse has instead.
+   */
+  private bindMap(): void {
+    const canvas = document.getElementById('game');
+    if (!canvas) return;
+    const inPlan = () => this.phase === 'play' && this.sim.planViewActive && !this.sim.aimMode;
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0 || !inPlan()) return;
+      this.mapDrag = { x: e.clientX, y: e.clientY, moved: 0 };
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!this.mapDrag || e.pointerType !== 'mouse') return;
+      const dx = e.clientX - this.mapDrag.x, dy = e.clientY - this.mapDrag.y;
+      this.mapDrag.moved += Math.hypot(dx, dy);
+      this.mapDrag.x = e.clientX; this.mapDrag.y = e.clientY;
+      if (this.mapDrag.moved > 6) this.renderer.cam.panBy(dx, dy);
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (!this.mapDrag || e.pointerType !== 'mouse') return;
+      const d = this.mapDrag;
+      this.mapDrag = null;
+      if (d.moved <= 6 && inPlan()) this.markAt(this.renderer.screenToWorld({ x: e.clientX, y: e.clientY }));
+    });
+    canvas.addEventListener('wheel', (e) => {
+      if (!inPlan()) return;
+      e.preventDefault();
+      const cam = this.renderer.cam;
+      cam.planZoom = Math.max(0.55, Math.min(3.2, cam.planZoom * Math.exp(-e.deltaY * 0.0015)));
+    }, { passive: false });
+  }
+
   // ------------------------------------------------------------- overlays
 
   private openNotebook(): void {
+    this.closePlan();
     if (this.menu.open) this.menu.hide(false);
     this.clearHeldInput();
     this.notebook.show();
@@ -173,6 +237,7 @@ class Game {
   }
 
   private openMenu(): void {
+    this.closePlan();
     if (this.notebook.open) this.notebook.hide();
     this.clearHeldInput();
     this.menu.show();
@@ -238,6 +303,7 @@ class Game {
       discoveredNodes: [...sim.discoveredNodes],
       revealed,
       priorContacts: sim.playerSubject.priorContacts,
+      scoreFoundAt: sim.scoreDiscovered ? sim.scoreFoundAt : null,
       label: this.progressLabel(),
     };
     saveAfternoon(s);
@@ -263,6 +329,7 @@ class Game {
     for (const id of save.discoveredNodes) sim.discoveredNodes.add(id);
     for (const id of save.revealed) { const n = sim.network.get(id); if (n) n.discovered = true; }
     sim.playerSubject.priorContacts = save.priorContacts;
+    if (save.scoreFoundAt) { sim.scoreDiscovered = true; sim.scoreFoundAt = save.scoreFoundAt; }
     sim.casefile.restore(save.casefile);
     this.story.restore(save.story as StorySnapshot);
     if (sim.devonFollowing && sim.devonVisible) {
@@ -290,6 +357,7 @@ class Game {
     // The canvas draws its own controls and its own frame, so it needs the
     // same insets the stylesheet gives the DOM layer.
     this.renderer.safe = safe;
+    this.renderer.chase.viewport = { w: this.renderer.w, h: this.renderer.h };
     this.publishControlBox();
     document.documentElement.classList.toggle('touch', this.touchPrimary);
   }
@@ -398,6 +466,7 @@ class Game {
    * transition goes through here, so there is one place this is true.
    */
   private clearTransientState(): void {
+    this.closePlan();
     this.sim.exitAimMode();
     this.sim.dismissFocus();
     this.touch.reset();
@@ -466,6 +535,7 @@ class Game {
       if (this.notebook.key(e.code) || this.menu.key(e.code)) { e.preventDefault(); return; }
       if (e.code === 'Escape' || e.code === 'KeyP') {
         if (this.sim.aimMode) { this.sim.exitAimMode(); return; }
+        if (this.sim.planViewActive) { this.closePlan(); return; }
         if (this.sim.engagedWith) { this.sim.disengage(); return; }
         if (this.sim.focusNode) { this.sim.dismissFocus(); return; }
         this.openMenu();
@@ -520,12 +590,62 @@ class Game {
       this.renderer.kick(0.5);
       this.renderer.ripple(pos, 0.6);
     });
-    bus.on('player:fire', () => this.audio.fire());
-    bus.on('projectile:impact', ({ kind, pos }) => {
-      if (kind === 'cameraLens' || kind === 'drone' || kind === 'junction') this.audio.impactMetal();
-      else this.audio.impactSoft();
-      this.renderer.ripple(pos, 0.5);
+    bus.on('player:fire', ({ draw }) => {
+      this.audio.fire(draw);
+      this.renderer.onRelease(draw);
     });
+    /*
+     * What a stone hitting something sounds and looks like depends on what it
+     * hit and how far away it was. A lens rings and throws sparks; a lawn
+     * thuds and puffs; a wall cracks and sheds grit; a bin clatters. Near hits
+     * are felt as a small jolt in the aiming view. Nothing shakes the screen.
+     */
+    bus.on('projectile:impact', ({ kind, pos, z, speed, surface, vel }) => {
+      const near = 1 - Math.min(1, dist(pos, this.sim.player.pos) / 60);
+      const force = Math.min(1, (speed ?? 20) / 30);
+      const heading = vel ? Math.atan2(vel.y, vel.x) : 0;
+      const zz = z ?? 0;
+      if (kind === 'cameraLens' || kind === 'cameraMount' || kind === 'cameraMotor' || kind === 'drone' || kind === 'junction') {
+        this.audio.impact('metal', force, near);
+        this.renderer.burst('spark', pos, zz, 9, heading, 1.2);
+        this.renderer.jolt(0.25);
+      } else if (kind === 'prop') {
+        this.audio.impact('plastic', force, near);
+        this.renderer.burst('chip', pos, Math.max(0.4, zz), 6, heading);
+        this.renderer.burst('dust', pos, 0.1, 4, heading, 0.6);
+        this.renderer.jolt(0.15);
+      } else if (kind === 'person') {
+        this.audio.impact('grass', force, near);
+      } else if (kind === 'building') {
+        this.audio.impact('hard', force, near);
+        this.renderer.burst('chip', pos, zz, 7, heading + Math.PI, 0.9);
+        this.renderer.burst('dust', pos, zz, 3, heading + Math.PI, 0.4);
+      } else if (kind === 'ground') {
+        const soft = surface === 'grass' || surface === 'dirt';
+        this.audio.impact(soft ? 'grass' : 'hard', force, near);
+        this.renderer.burst('dust', pos, 0.05, soft ? 5 : 7, heading, soft ? 0.6 : 1);
+        if (!soft) this.renderer.burst('chip', pos, 0.05, 3, heading, 0.7);
+      }
+      if (kind !== 'ground' && kind !== 'building' && kind !== 'foliage') this.renderer.ripple(pos, 0.5);
+    });
+    bus.on('projectile:bounce', ({ pos, z, speed, surface }) => {
+      const near = 1 - Math.min(1, dist(pos, this.sim.player.pos) / 60);
+      const soft = surface === 'grass' || surface === 'dirt';
+      this.audio.impact(soft ? 'grass' : 'hard', Math.min(1, speed / 18) * 0.6, near);
+      this.renderer.burst('dust', pos, z, 2, 0, 0.4);
+    });
+    bus.on('foliage:hit', ({ pos, z, birds, treeId }) => {
+      const near = 1 - Math.min(1, dist(pos, this.sim.player.pos) / 60);
+      this.audio.impact('leaves', 1, near);
+      this.renderer.shakeTree(treeId);
+      this.renderer.burst('leaf', pos, z, 14, 0, 1);
+      if (birds) {
+        this.renderer.burst('bird', pos, z + 0.6, 5, Math.atan2(pos.y - this.sim.player.pos.y, pos.x - this.sim.player.pos.x) + Math.PI, 1);
+        this.audio.flutter();
+      }
+    });
+    // Cameras turning to a sound are heard doing it, faintly.
+    bus.on('world:attention', ({ sensors }) => { if (sensors.length) this.audio.servo(); });
     bus.on('noise:event', ({ pos, label }) => {
       if (label === 'VEHICLE ALARM') this.audio.alarm(); else this.audio.noise();
       this.renderer.ripple(pos, 1.5);
@@ -548,7 +668,11 @@ class Game {
     // Caught it: a sound, and nothing written on the screen about it.
     bus.on('player:trick', () => this.audio.land(0.6));
     bus.on('player:grab', () => this.audio.land(0.6));
+    bus.on('talk:open', ({ kind, id }) => {
+      (kind === 'person' ? this.metPeople : this.seenPlaces).add(id);
+    });
     bus.on('aim:entered', () => {
+      this.closePlan();
       // Start looking where the character already faces, so the transition
       // never spins the world.
       this.aimYaw = this.sim.player.speed > 0.4
@@ -557,11 +681,23 @@ class Game {
       this.lookTargetYaw = this.aimYaw;
       // Start on the street rather than the sky: a long lens puts the horizon
       // low in the frame, and a reticle above it is aimed at nothing.
-      this.lookTargetPitch = -0.07;
-      this.sim.lookPitch = -0.07;
+      // Level with the street: the things worth hitting are at head height and
+      // above, and a first stone into the lawn at your feet teaches nothing.
+      this.lookTargetPitch = 0.0;
+      this.sim.lookPitch = 0.0;
+      this.input.takeLook();
       this.audio.hackTick();
+      // A mouse that can leave the window cannot aim all the way round.
+      if (!this.touchPrimary) {
+        const c = document.getElementById('game') as HTMLCanvasElement | null;
+        try { void (c?.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {}); } catch { /* not allowed here */ }
+      }
     });
-    bus.on('aim:exited', () => this.audio.hackTick());
+    bus.on('aim:exited', () => {
+      this.audio.hackTick();
+      this.audio.setDraw(0);
+      if (document.pointerLockElement) document.exitPointerLock();
+    });
     bus.on('patrol:contact', () => this.renderer.kick(0.2));
     bus.on('escalation:changed', ({ to }) => {
       if (to === 'INTERVENTION') this.renderer.kick(0.18);
@@ -608,8 +744,21 @@ class Game {
        * when the thumb does.
        */
       const drag = this.touch.takeAimDrag();
-      this.lookTargetYaw += drag.yaw;
-      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + drag.pitch);
+      /*
+       * And on a desktop, the mouse does the same job the left thumb does.
+       *
+       * It did not before: the only thing that ever turned the sling was the
+       * touch drag, so on a keyboard and mouse the aiming view pointed
+       * wherever the board happened to be facing and could not be moved. The
+       * mouse is read as travel (pointer-locked when the browser allows it)
+       * and A/D swing it too, for anybody who would rather.
+       */
+      const look = this.input.takeLook();
+      const keys = this.intent.steer * 1.5 * dt;
+      // W and S have nothing to do while stood still, so they tilt the sling.
+      const tilt = ((this.intent.push ? 1 : 0) - (this.intent.brake ? 1 : 0)) * 0.8 * dt;
+      this.lookTargetYaw += drag.yaw + look.x * MOUSE_YAW + keys;
+      this.lookTargetPitch = PerspectiveRenderer.clampPitch(this.lookTargetPitch + drag.pitch - look.y * MOUSE_PITCH + tilt);
       this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.012, dt);
       this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.012, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
@@ -617,10 +766,31 @@ class Game {
       return;
     }
 
+    /*
+     * A drag on empty glass: in the plan it moves the map, on the street it
+     * turns the camera round the rider. The right mouse button is the same
+     * drag on a desktop.
+     */
+    const look = this.touch.takeLookDrag();
+    const mouse = this.input.takeLook();
+    if (this.sim.planViewActive) {
+      if (look.x || look.y) this.renderer.cam.panBy(look.x, look.y);
+    } else {
+      const swing = look.x * 0.0062 + (this.input.rightHeld ? mouse.x * 0.0045 : 0);
+      if (swing) this.renderer.chase.swing(swing);
+    }
+
     if (tap) this.resolveTap(tap);
     this.orientMove();
     this.sim.step(dt, this.intent, this.aimPoint());
     this.story.update();
+
+    // Arriving at the pin puts it away.
+    if (this.waypoint && dist(this.waypoint, this.sim.player.pos) < 7) {
+      this.waypoint = null;
+      this.renderer.waypoint = null;
+      this.audio.clue();
+    }
   }
 
   /**
@@ -635,6 +805,8 @@ class Game {
   private orientMove(): void {
     const mv = this.intent.moveVector;
     if (!mv) return;
+    // On the plan the map is north-up and the screen is the world: up is up.
+    if (this.sim.planViewActive) return;
     // Screen-up is -y; the camera's forward is its yaw.
     const yaw = this.renderer.chase.yaw + Math.PI / 2;
     const c = Math.cos(yaw), s = Math.sin(yaw);
@@ -678,6 +850,7 @@ class Game {
   private resolveTap(screen: { x: number; y: number }): void {
     // A tap while talking is the next line; a tap with somebody or something
     // in reach is stopping to attend to it. The same rule as the E key.
+    if (this.sim.planViewActive) { this.markAt(this.renderer.screenToWorld(screen)); return; }
     if (this.sim.engagedWith) { if (!this.hud.talkChoices.length) this.story.advance(); return; }
     if (this.sim.interest) { this.sim.engageInterest(); this.audio.hackTick(); return; }
     const world = this.renderer.screenToWorld(screen);
@@ -698,6 +871,10 @@ class Game {
     // The fork sits here for the whole time a shot is being lined up, not
     // wherever the aim thumb currently is — see drawSlingInHands for why.
     this.renderer.slingRest = this.touch.slingRestPoint();
+    this.renderer.metPeople = this.metPeople;
+    this.renderer.scoreLine = this.sim.scoreDiscovered
+      ? PHONE.plan(Math.round(100 - this.sim.playerRisk), riskLabel(this.sim.playerRisk)) : null;
+    this.renderer.seenPlaces = this.seenPlaces;
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;
@@ -708,6 +885,7 @@ class Game {
       : null;
     this.renderer.render(dt);
     this.hud.update(dt);
+    this.audio.setDraw(this.sim.aimMode || this.sim.player.aiming ? this.sim.player.draw : 0);
 
     const p = this.sim.player;
     this.audio.update(
