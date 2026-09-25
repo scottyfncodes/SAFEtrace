@@ -21,7 +21,8 @@ import type { Vec2 } from '../core/math';
 import type { Sim } from '../sim/sim';
 import { sensorActive, VIGILANT } from '../sim/surveillance/sensors';
 import { DISTURBANCE_KINDS, levelRank, type DisturbanceLevel } from '../sim/surveillance/disturbance';
-import { PLAN_READ } from '../content/copy';
+import { PLAN_READ, THROW_READ } from '../content/copy';
+import type { BallisticTarget } from '../sim/slingshot';
 
 /** Marks closer than this, in metres, are drawn as one. */
 const MARK_MERGE = 6;
@@ -128,4 +129,38 @@ export function readPlan(sim: Sim, pin: Vec2 | null): PlanReading {
   if (earshot) lines.push(PLAN_READ.earshot(earshot, vision));
 
   return { cameras, earshot, marks, areas, lines };
+}
+
+/**
+ * What a drawn stone would do where its arc comes down, in a few words.
+ *
+ * The slingshot is a way of putting a noise somewhere you are not, first and
+ * mostly — so the reading leads with who would turn to look, using exactly
+ * the arithmetic the plan uses for a pin, and the same rule about what the
+ * player knows: before VISION only the cameras they have noticed are counted.
+ * A thing in the way of the arc is named for what hitting it is: a camera
+ * knocked aside, a bin made loud, a person — which is its own warning.
+ */
+export function readThrow(sim: Sim, end: Vec2, hit: BallisticTarget | null): string {
+  const knows = (id: string) => sim.visionUnlocked || sim.knownSensors.has(id);
+  if (hit) {
+    switch (hit.kind) {
+      case 'camera': return THROW_READ.camera;
+      case 'drone': return THROW_READ.drone;
+      case 'junction': return THROW_READ.junction;
+      case 'foliage': return THROW_READ.foliage;
+      case 'person': return THROW_READ.person;
+      case 'prop': {
+        const loud = sim.earshot(hit.pos).loud;
+        const n = loud && loud.propId === hit.id ? loud.sensors.filter(knows).length : 0;
+        const thing = loud && loud.propId === hit.id ? (loud.kind === 'car' ? 'CAR' : loud.kind.toUpperCase()) : 'THAT';
+        return THROW_READ.loud(thing, n);
+      }
+      default: break;
+    }
+  }
+  const e = sim.earshot(end);
+  const n = e.stone.filter(knows).length;
+  if (e.wary && n) return THROW_READ.wary;
+  return n ? THROW_READ.turns(n) : THROW_READ.unheard;
 }

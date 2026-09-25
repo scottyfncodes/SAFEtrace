@@ -11,13 +11,13 @@
  * when a hand is off the glass.
  */
 import { clamp01, smoothstep } from '../core/math';
-import type { ControlButton, ControlVisual } from '../core/touch';
+import type { ControlButton, ControlVisual, SlingVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
 import { taperedStroke } from './veneer';
 import { SLING_HINT } from '../content/copy';
 
-const THROW_HINT = SLING_HINT.throw;
+type P = { x: number; y: number };
 
 /** A tapering, slightly bent limb in the current stroke colour. */
 const taper = taperedStroke;
@@ -37,8 +37,20 @@ export class ControlsRenderer {
   private homeFade = 0;
   private buttonFade = 0;
   private pulse = 0;
-  /** Set by the host: the sling is out and has never been thrown. */
+  /** How far the rest of the cluster has stepped back for a held sling. */
+  private slingFocus = 0;
+  /** Set by the host: no stone has been thrown yet this afternoon. */
   throwHint = false;
+  /** Set by the host: 0..1, how recovered the band is since the last shot. */
+  slingReady = 1;
+  /** The last held pull, kept so the snap can play after the thumb is gone. */
+  private lastPull: { start: P; pouch: P; dir: P; draw: number } | null = null;
+  /** Seconds since the band was let go (the snap), and since a fumble. */
+  private snapT = 9;
+  private snapDraw = 0;
+  private fumbleT = 9;
+  private seenShots = -1;
+  private seenFumbles = -1;
 
   constructor(private settings: Settings) {}
 
@@ -56,7 +68,18 @@ export class ControlsRenderer {
     // Buttons live at a low resting alpha rather than vanishing: they are the
     // only permanent statement of what this game lets you do.
     this.buttonFade = to(this.buttonFade, !v.aiming, 4);
+    this.slingFocus = to(this.slingFocus, v.sling.held, 10);
     this.pulse = (this.pulse + dt * (this.settings.reduceMotion ? 0 : 0.85)) % 1;
+
+    // The engine counts releases; a change is the moment one happened.
+    const sl = v.sling;
+    if (sl.held) this.lastPull = { start: { ...sl.start }, pouch: { ...sl.pouch }, dir: { ...sl.dir }, draw: sl.draw };
+    if (this.seenShots >= 0 && sl.shots !== this.seenShots) { this.snapT = 0; this.snapDraw = this.lastPull?.draw ?? 0.5; }
+    if (this.seenFumbles >= 0 && sl.fumbles !== this.seenFumbles) this.fumbleT = 0;
+    this.seenShots = sl.shots;
+    this.seenFumbles = sl.fumbles;
+    this.snapT += dt;
+    this.fumbleT += dt;
   }
 
   draw(
@@ -64,9 +87,7 @@ export class ControlsRenderer {
     safe = { top: 0, right: 0, bottom: 0, left: 0 },
   ): void {
     if (v.aiming) { this.drawPutAway(ctx, v); return; }
-    if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
-    if (v.pull) this.drawPull(ctx, v.pull);
-    else if (v.slingOut && this.throwHint) this.drawThrowHint(ctx, w, h);
+    if (this.buttonFade > 0.01) this.drawButtons(ctx, v, w);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
     if (this.planFade > 0.01) this.drawPlanFrame(ctx, w, h, safe);
@@ -139,14 +160,16 @@ export class ControlsRenderer {
    * separate number from the drawn circle, so PLAN can read as furniture and
    * still take a 68 px-wide thumb.
    */
-  private drawButtons(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+  private drawButtons(ctx: CanvasRenderingContext2D, v: ControlVisual, w: number): void {
     const a = smoothstep(this.buttonFade);
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const b of v.buttons) {
+      if (b.id === 'sling') { this.drawSling(ctx, b, v.sling, a, w); continue; }
       const on = b.pressed;
-      const dim = b.enabled ? 1 : 0.4;
+      // A held sling is the one thing happening; the rest steps back.
+      const dim = (b.enabled ? 1 : 0.4) * (1 - 0.72 * smoothstep(this.slingFocus));
       const secondary = b.weight === 'secondary';
       // Bellhaven is a bright green suburb and a translucent dark disc on it
       // reads as a patch of grass, which is what happened on a real phone.
@@ -175,6 +198,53 @@ export class ControlsRenderer {
       this.glyph(ctx, b.id, b.pos.x, b.pos.y, b.radius);
     }
     ctx.restore();
+  }
+
+  /**
+   * A forked stick with string across it and a stone in the pouch.
+   *
+   * Two earlier attempts failed at the size a button actually is. A machined
+   * fork with one wide band folded through a point collapsed into a letter Y.
+   * Drawing the pouch back *below* the crotch put the cords, the pouch and the
+   * handle all in the same forty pixels and fused them into a blob.
+   *
+   * What reads is the object at rest: the string spans the two tips and dips
+   * into the mouth of the fork, with the pouch and its stone at the bottom of
+   * that dip. Held, the string is not drawn here at all — the cords leave the
+   * tips for the thumb — so this returns the tips for the caller to tie them
+   * to. Drawn a little above centre so the word fits beneath it.
+   */
+  private slingGlyph(ctx: CanvasRenderingContext2D, x: number, y0: number, r: number, withString: boolean): [P, P] {
+    const s = r * 0.5;
+    const y = y0 - r * 0.12;
+    const px = s * 0.70;              // prong half-width
+    const py = s * 0.86;              // prong tip height above the crotch
+    const crotch = y + s * 0.10;
+    const w = Math.max(1.7, r * 0.075);
+    const tipL = { x: x - px, y: crotch - py };
+    // Shorter, and a shade lower. A branch that forks evenly is a drawing.
+    const tipR = { x: x + px * 0.95, y: crotch - py * 0.92 };
+
+    ctx.strokeStyle = ctx.fillStyle as string;
+    taper(ctx, { x, y: crotch + s * 0.62 }, { x, y: crotch }, w * 1.15, w, -1.1);
+    taper(ctx, { x, y: crotch }, tipL, w, w * 0.5, -py * 0.2);
+    taper(ctx, { x, y: crotch }, tipR, w * 0.95, w * 0.48, py * 0.18);
+    if (!withString) return [tipL, tipR];
+
+    const dip = crotch - py * 0.40;
+    ctx.lineWidth = Math.max(1, r * 0.035);
+    ctx.beginPath();
+    ctx.moveTo(tipL.x, tipL.y);
+    ctx.quadraticCurveTo(x, dip + s * 0.16, tipR.x, tipR.y);
+    ctx.stroke();
+    ctx.lineWidth = Math.max(1.8, r * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.26, dip + s * 0.06); ctx.lineTo(x + s * 0.26, dip + s * 0.06);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    return [tipL, tipR];
   }
 
   private glyph(ctx: CanvasRenderingContext2D, id: ControlButton['id'], x: number, y: number, r: number): void {
@@ -214,59 +284,6 @@ export class ControlsRenderer {
       return;
     }
 
-    if (id === 'sling') {
-      /*
-       * A forked stick with string across it and a stone in the pouch.
-       *
-       * Two earlier attempts failed at the size a button actually is. A
-       * machined fork with one wide band folded through a point collapsed into
-       * a letter Y. Drawing the pouch back *below* the crotch — which is what
-       * the in-hand view does, correctly, with a whole screen to do it in —
-       * put the cords, the pouch and the handle all in the same forty pixels
-       * and fused them into a blob.
-       *
-       * What reads is the object at rest: the string spans the two tips and
-       * dips into the mouth of the fork, where there is nothing else, with the
-       * pouch and its stone at the bottom of that dip. Every element has clear
-       * air around it, the silhouette is unmistakable at a glance, and it is
-       * still honestly a stick with string tied across it — the limbs taper
-       * and bend, because a branch cut out of a hedge is not a rule.
-       */
-      const px = s * 0.70;              // prong half-width
-      const py = s * 0.86;              // prong tip height above the crotch
-      const crotch = y + s * 0.10;
-      const w = Math.max(1.7, r * 0.075);
-      const tipL = { x: x - px, y: crotch - py };
-      // Shorter, and a shade lower. A branch that forks evenly is a drawing.
-      const tipR = { x: x + px * 0.95, y: crotch - py * 0.92 };
-
-      taper(ctx, { x, y: crotch + s * 0.62 }, { x, y: crotch }, w * 1.15, w, -1.1);
-      taper(ctx, { x, y: crotch }, tipL, w, w * 0.5, -py * 0.2);
-      taper(ctx, { x, y: crotch }, tipR, w * 0.95, w * 0.48, py * 0.18);
-
-      // The string, tied tip to tip and sagging into the mouth of the fork,
-      // which is the one piece of clear space the mark has.
-      const dip = crotch - py * 0.40;
-      ctx.lineWidth = Math.max(1, r * 0.035);
-      ctx.beginPath();
-      ctx.moveTo(tipL.x, tipL.y);
-      ctx.quadraticCurveTo(x, dip + s * 0.16, tipR.x, tipR.y);
-      ctx.stroke();
-
-      // The pouch, and the stone sitting in it. The leather is drawn wider
-      // than the stone and the stone rides a little above it, so at button
-      // size the two still read as two things rather than one lump.
-      ctx.lineWidth = Math.max(1.8, r * 0.07);
-      ctx.beginPath();
-      ctx.moveTo(x - s * 0.26, dip + s * 0.06); ctx.lineTo(x + s * 0.26, dip + s * 0.06);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
-      ctx.fill();
-      label('SLING');
-      return;
-    }
-
     /*
      * PLAN: a plan of a town, and the word for it.
      *
@@ -286,50 +303,159 @@ export class ControlsRenderer {
   }
 
   /**
-   * The pull, under the thumb: a ring where it started, the band back to
-   * where the thumb is, tightening in colour as the draw comes up. It says
-   * "this is a sling you are holding" in the place the eye already is.
+   * SLING: the tool, at rest, drawn, and let go.
+   *
+   * At rest it is the same quiet disc as the others, a forked stick with its
+   * cord across it — findable at a glance, nothing that shouts. Pressed, it
+   * becomes the sling in your hand: the disc lifts and warms, the cords leave
+   * the fork and stretch to where the thumb has pulled the pouch, a ring round
+   * the fork fills with the draw, and a mark on the far side says which way
+   * the stone will go. Let go and the pouch snaps back through the fork and
+   * past it, the ring flashes once outward, and the control is quiet again in
+   * the time it takes the stone to leave.
+   *
+   * None of this is where the aim is read — the arc in the street is — so it
+   * can be as physical as it likes without having to be precise.
    */
-  private drawPull(ctx: CanvasRenderingContext2D, pull: NonNullable<ControlVisual['pull']>): void {
-    const { start, cur, draw } = pull;
+  private drawSling(ctx: CanvasRenderingContext2D, b: ControlButton, sl: SlingVisual, a: number, w: number): void {
+    const held = sl.held;
+    const focus = smoothstep(this.slingFocus);
+    const dim = b.enabled ? 1 : 0.4;
+    const r = b.radius * (1 + 0.06 * focus);
+    const { x, y } = b.pos;
+    const draw = held ? sl.draw : 0;
+    const full = draw > 0.96;
+    const warm = sl.cancel ? '#9AA3AB' : full ? VENEER.player : '#F2C46B';
+
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = alpha('#FFFFFF', 0.35);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(start.x, start.y, 20, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = alpha(draw > 0.95 ? VENEER.player : '#F6F4EE', 0.35 + draw * 0.5);
-    ctx.lineWidth = 2 + draw * 2;
-    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(cur.x, cur.y); ctx.stroke();
-    ctx.fillStyle = alpha('#F6F4EE', 0.5);
-    ctx.beginPath(); ctx.arc(cur.x, cur.y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // The disc. Held, it is a shade lighter and solid, so it reads as lifted.
+    ctx.fillStyle = alpha(held ? '#1D2833' : '#121A22', (held ? 0.94 : 0.72) * a * dim);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = alpha(held ? warm : '#FFFFFF', (held ? 0.95 : 0.55) * a * dim);
+    ctx.lineWidth = held ? 2.6 : 1.8;
+    ctx.stroke();
+
+    // Recovering after a shot: a thin ring that closes as the band comes back.
+    if (!held && this.slingReady < 0.999) {
+      ctx.strokeStyle = alpha('#F6F4EE', 0.55 * a);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp01(this.slingReady));
+      ctx.stroke();
+    }
+
+    // The draw: a ring round the fork filling clockwise from the top.
+    if (held) {
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = alpha('#0B1117', 0.55 * a);
+      ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.stroke();
+      if (draw > 0.01) {
+        ctx.strokeStyle = alpha(warm, 0.95 * a);
+        ctx.lineWidth = 4 + (full ? 1.5 : 0);
+        ctx.beginPath();
+        ctx.arc(x, y, r + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * draw);
+        ctx.stroke();
+      }
+      // Which way it goes: a chevron just outside the ring.
+      if (!sl.cancel) {
+        const d = sl.dir;
+        const px = -d.y, py = d.x;
+        const c = { x: x + d.x * (r + 17), y: y + d.y * (r + 17) };
+        ctx.strokeStyle = alpha(warm, 0.95 * a);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(c.x - d.x * 6 + px * 7, c.y - d.y * 6 + py * 7);
+        ctx.lineTo(c.x + d.x * 3, c.y + d.y * 3);
+        ctx.lineTo(c.x - d.x * 6 - px * 7, c.y - d.y * 6 - py * 7);
+        ctx.stroke();
+      }
+    }
+
+    // The fork. Held, the cords are drawn to the thumb instead of across it.
+    ctx.fillStyle = alpha('#F6F4EE', (held ? 1 : 0.9) * a * dim);
+    const tips = this.slingGlyph(ctx, x, y, r, !held && this.snapT > 0.28);
+    if (!held) {
+      ctx.font = `700 ${Math.round(r * 0.26)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText('SLING', x, y + r * 0.6);
+    }
+
+    // The cords and the pouch: to the thumb while held, snapping home after.
+    let pouch: P | null = null;
+    let slap = 0;
+    if (held) {
+      pouch = { x: sl.pouch.x, y: sl.pouch.y };
+    } else if (this.snapT < 0.28 && this.lastPull) {
+      // Through the fork and past it, then ringing back to rest.
+      const k = this.snapT / 0.28;
+      const lp = this.lastPull;
+      const back = { x: lp.pouch.x - x, y: lp.pouch.y - y };
+      const over = Math.sin(k * Math.PI * 2.5) * Math.exp(-k * 4) * (14 + this.snapDraw * 16);
+      const ease = 1 - Math.pow(1 - Math.min(1, k * 3), 3);
+      pouch = {
+        x: x + back.x * (1 - ease) + lp.dir.x * over,
+        y: y - r * 0.1 + back.y * (1 - ease) + lp.dir.y * over,
+      };
+      slap = 1 - k;
+    }
+    if (pouch) {
+      ctx.lineCap = 'round';
+      const taut = held ? draw : 0;
+      for (const tip of tips) {
+        ctx.strokeStyle = alpha('#12181F', 0.5 * a);
+        ctx.lineWidth = 4.5;
+        ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(pouch.x, pouch.y); ctx.stroke();
+        ctx.strokeStyle = alpha(sl.cancel ? '#9AA3AB' : '#E8DCC0', 0.95 * a);
+        ctx.lineWidth = 1.6 + taut * 1.4 + slap;
+        ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(pouch.x, pouch.y); ctx.stroke();
+      }
+      // The leather, across the pull, and the stone in it — until it has gone.
+      const ux = pouch.x - x, uy = pouch.y - y;
+      const ul = Math.hypot(ux, uy) || 1;
+      const qx = -uy / ul, qy = ux / ul;
+      ctx.strokeStyle = alpha('#8A6A48', a);
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(pouch.x + qx * 8, pouch.y + qy * 8); ctx.lineTo(pouch.x - qx * 8, pouch.y - qy * 8);
+      ctx.stroke();
+      if (held && !sl.cancel) {
+        ctx.fillStyle = alpha('#B9C0C6', a);
+        ctx.beginPath(); ctx.arc(pouch.x, pouch.y, 5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // The release: one ring, outward, gone.
+    if (this.snapT < 0.4 && !this.settings.reduceMotion) {
+      const k = this.snapT / 0.4;
+      ctx.strokeStyle = alpha(VENEER.player, (1 - k) * 0.85 * a);
+      ctx.lineWidth = 3 * (1 - k) + 1;
+      ctx.beginPath(); ctx.arc(x, y, r + 6 + k * (22 + this.snapDraw * 20), 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // Words, only when they help: how to use it until it has been used, what
+    // letting go now would do, and a nudge after a press that threw nothing.
+    let say: string | null = null;
+    if (held && sl.cancel) say = SLING_HINT.cancel;
+    else if (!held && this.fumbleT < 1.8) say = SLING_HINT.brushed;
+    else if (!held && this.throwHint && this.snapT > 1 && this.planFade < 0.5) say = SLING_HINT.hold;
+    // Above a held sling (the thumb is below it); below one at rest, so the
+    // words never sit over the rider on a short phone.
+    if (say) this.pill(ctx, say, x, held ? y - r - 38 : y + r + 18, w, a);
     ctx.restore();
   }
 
-  /** The first time the sling comes out on a phone: where and how to pull. */
-  private drawThrowHint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const breathe = this.settings.reduceMotion ? 0.5 : Math.sin(this.pulse * Math.PI * 2) * 0.5 + 0.5;
-    const x = w * 0.66, y = h * 0.42;
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = alpha('#FFFFFF', 0.75);
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.stroke();
-    const ty = y + 40 + breathe * 36;
-    ctx.setLineDash([5, 6]);
-    ctx.beginPath(); ctx.moveTo(x, y + 22); ctx.lineTo(x, ty); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(x - 7, ty - 8); ctx.lineTo(x, ty); ctx.lineTo(x + 7, ty - 8); ctx.stroke();
-    ctx.font = '700 11px ui-monospace, Menlo, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const text = THROW_HINT;
-    const tw = ctx.measureText(text).width + 16;
-    const cx = Math.min(w - tw / 2 - 8, x);
-    ctx.fillStyle = alpha('#0B1117', 0.7);
-    ctx.beginPath(); ctx.roundRect(cx - tw / 2, y - 44, tw, 20, 10); ctx.fill();
-    ctx.fillStyle = alpha('#F6F4EE', 0.95);
-    ctx.fillText(text, cx, y - 33.5);
-    ctx.restore();
+  /** A small dark pill of words, kept on the glass. */
+  private pill(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, w: number, a: number): void {
+    ctx.font = '700 10px ui-monospace, Menlo, monospace';
+    const tw = ctx.measureText(text).width + 14;
+    const cx = Math.max(tw / 2 + 8, Math.min(w - tw / 2 - 8, x));
+    ctx.fillStyle = alpha('#0B1117', 0.72 * a);
+    ctx.beginPath(); ctx.roundRect(cx - tw / 2, y - 9, tw, 18, 9); ctx.fill();
+    ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
+    ctx.fillText(text, cx, y + 0.5);
   }
 
   /**

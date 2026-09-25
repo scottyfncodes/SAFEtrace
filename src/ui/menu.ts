@@ -23,13 +23,13 @@ const KEYS: Array<[string, string]> = [
   ['Left mouse', 'slingshot: drag back from anywhere and let go — or point at a thing and hold'],
   ['F', 'steady aim: stand still and look down the sling (mouse or A D W S to aim)'],
   ['E', 'talk, look, reach into a node'], ['1–3', 'answer'],
-  ['Q', 'plan — tap to open, click to pin where you are going (or hold to peek)'], ['N', 'notes'], ['Esc', 'this menu'],
+  ['Q', 'plan — stop and read the town; click to pin where you are going; move to leave it'], ['N', 'notes'], ['Esc', 'this menu'],
 ];
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
   ['TRICK', 'tap to flip the board, hold to grab it'],
-  ['SLING', 'takes the sling out; then pull back anywhere on the right and let go. SLING again puts it away'],
-  ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
+  ['SLING', 'hold to draw — you keep skating; pull the pouch to aim, let go to throw'],
+  ['PLAN', 'stop and read the map; tap it to pin where you are going; push off to leave'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];
 

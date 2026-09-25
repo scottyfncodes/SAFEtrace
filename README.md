@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 491 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
+npm test         # 537 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -48,13 +48,13 @@ nobody. Five endings are read off what you did and what you worked out.
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
 | Right mouse, dragged | look round the rider; the camera settles back behind you |
-| Left mouse, dragged back | the slingshot: pull back from anywhere, let go to throw — on the move |
+| Left mouse, dragged back | the slingshot: pull back from anywhere, let go to throw — the board keeps rolling |
 | Left mouse, held still | point at a thing and hold: the draw loads, let go to throw at it |
 | `F` | steady aim: stand still and look down the sling (mouse or `A` `D` `W` `S` to aim) |
 | `E` | talk to whoever you are next to, look at what is in front of you, or reach into a node |
 | `1`–`3` | answer, in a conversation; act on a node, at a node |
 | `N` | your notes: what you know, and what goes with what |
-| `Q` | the plan: tap to open and close (or hold to peek); click it to pin where you are going |
+| `Q` | the plan: stop and read the town (or hold to peek); click it to pin where you are going; move to leave it |
 | `Esc` | put away whatever is open; otherwise pause |
 | `F3` | diagnostics, including the pursuit state and the risk decomposition |
 
@@ -62,19 +62,27 @@ Nothing opens on its own. A node's panel appears because you pressed `E` — or,
 on a phone, because you tapped the thing itself — and never because you skated
 past it.
 
-A phone gets three buttons in the bottom-right: `SLING`, `TRICK` and `PLAN`.
-Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
-round. `SLING` takes the slingshot out — nothing else changes, you are still
-in the street and can keep skating — and then a pull back anywhere on the
-right of the glass is a throw: the pull points it, its length says how far,
-and letting go throws. `SLING` again puts it away. (The old first-person
-aiming is still there as "Classic slingshot" in the pause menu.)
+A phone gets three buttons under the right thumb: `TRICK` in the corner,
+`SLING` up the thumb's arc, and a smaller `PLAN` beside `TRICK`. Tap `TRICK` to
+flip the board, hold it to grab. Drag on empty glass to look round.
+
+**The slingshot is one touch.** Press `SLING` and hold: the sling draws, the
+arc of the throw appears in the street, and you are still skating — the stick
+under your other thumb keeps working. Held still, it draws itself to about
+half and points up the street; pull the pouch back toward your palm for
+further, across to point it, or forward for a shorter lob. Let go to throw.
+Push it forward until the band is slack and letting go puts it down instead.
+Under the arc, a few words say what the stone would do there — `NOISE · TURNS
+2 CAMERAS`, `BIN · LOUD`, `THAT'S A PERSON`. (The old first-person aiming is
+still there as "Classic slingshot" in the pause menu.)
 
 **The plan** is the town as a map: districts, streets by name, the buildings with names, the
 people you have met and the things you have looked at. You open it to work out
 where you are going, tap the map to pin it, and follow the pin — a column of
 light in the street, or an arrow at the edge of the screen when it is behind
-you. You can keep skating with it open. It also shows the cameras you have
+you. Opening it is stopping to look: the board rolls out under you. Leaving
+it is doing the next thing — push off, pop, press `TRICK` or `SLING` — and that
+same input carries straight on into the street. It also shows the cameras you have
 noticed, which way they swing and which one has you — and, with a pin down,
 which of them a stone there would turn. SAFEtrace VISION is a story unlock, and
 what it changes is what the plan contains — every camera, subjects, the

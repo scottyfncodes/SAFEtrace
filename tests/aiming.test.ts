@@ -161,8 +161,13 @@ describe('the player aims, and nothing aims for them', () => {
   });
 });
 
-describe('drawing the sling settles the board', () => {
-  it('coasts a rolling player toward a stop instead of asking for three thumbs', () => {
+describe('drawing the sling on the move', () => {
+  /*
+   * It used to coast the board to a stop over about a second, when aiming
+   * took both thumbs. The sling is one held right thumb now, and the left is
+   * still on the stick, so the board keeps going and still answers it.
+   */
+  it('keeps a rolling player rolling while a full draw is held', () => {
     const sim = makeSim();
     place(sim, { x: 145, y: 62 }, { x: 0, y: -8 });
     const before = sim.player.speed;
@@ -171,7 +176,24 @@ describe('drawing the sling settles the board', () => {
       it.aim = true; it.drawAmount = 1; it.aimVector = { x: 0, y: -1 };
       sim.step(TICK_DT, it, { x: 145, y: 30 });
     }
-    expect(sim.player.speed).toBeLessThan(before * 0.45);
+    expect(sim.player.aiming).toBe(true);
+    expect(sim.player.speed).toBeGreaterThan(before * 0.8);
+  });
+
+  it('still steers and pushes with the sling drawn', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 }, { x: 0, y: 3 });
+    const heading = sim.player.heading;
+    let pushed = false;
+    for (let i = 0; i < 60; i++) {
+      const it = emptyIntent();
+      it.aim = true; it.drawAmount = 0.6;
+      it.moveVector = { x: 1, y: 0 }; it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, { x: 180, y: 214 });
+      pushed ||= sim.player.pushedThisTick;
+    }
+    expect(Math.abs(sim.player.heading - heading)).toBeGreaterThan(0.3);
+    expect(pushed).toBe(true);
   });
 
   it('does not take the board away: let go and you roll again', () => {

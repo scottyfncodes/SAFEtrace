@@ -208,6 +208,28 @@ describe('the controls are laid out for a thumb, on the phones that exist', () =
         expect(e.zoneAt(home.x, home.y)).toBe('stick');
       });
 
+      it('leaves a full draw of glass behind SLING, toward the palm and to the side', () => {
+        // The pull is the whole point of where SLING sits: pressed and drawn
+        // back toward the corner, a thumb must never run out of screen before
+        // the draw is full — straight back, or across to the edge.
+        const s = buttons.find((b) => b.id === 'sling')!;
+        const full = TOUCH_TUNING.throwFull;
+        expect(v.h - v.safe.bottom - s.pos.y).toBeGreaterThanOrEqual(full);
+        expect(v.w - v.safe.right - s.pos.x).toBeGreaterThanOrEqual(full);
+        expect(s.pos.y - v.safe.top).toBeGreaterThanOrEqual(full * 0.6);
+      });
+
+      it('keeps every control within the sweep of a right thumb from the corner', () => {
+        // A thumb pivots from the palm just beyond the bottom-right corner,
+        // and its comfortable arc is 60 mm or so — about 230 CSS px on a phone.
+        // Nothing is a stretch across the glass.
+        const corner = { x: v.w - v.safe.right, y: v.h - v.safe.bottom };
+        for (const b of buttons) {
+          const reach = Math.hypot(corner.x - b.pos.x, corner.y - b.pos.y);
+          expect({ id: b.id, ok: reach <= 230 }).toEqual({ id: b.id, ok: true });
+        }
+      });
+
       it('splits the glass down the middle while aiming, on both halves', () => {
         const a = forPhone(v);
         a.setAiming(true);
@@ -399,7 +421,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     const setters = Object.getOwnPropertyNames(TouchEngine.prototype)
       .filter((k) => /^set[A-Z]/.test(k));
     // setPlanOpen closes (or opens) a view, it does not add a control.
-    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setSlingOut', 'setThrowMode', 'setViewport']);
+    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setThrowMode', 'setViewport']);
   });
 
   /*

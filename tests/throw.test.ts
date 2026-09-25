@@ -2,16 +2,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { TouchEngine, type PointerSample } from '../src/core/touch';
 import { InputManager, emptyIntent, type Intent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
-import { THROW_FLOOR } from '../src/sim/sim';
+import { SLING_RECOVERY, THROW_FLOOR } from '../src/sim/sim';
 import { makeSim, place, step } from './harness';
 
 /**
- * The drag-back sling: taken out without leaving the street, pulled back from
- * anywhere on the right of the glass, and let go.
+ * The held sling: press SLING, hold, pull back toward the palm, let go.
  *
- * It replaces a mode — stop, drop to first person, left thumb aims, right thumb
- * pulls, find the way back out — with a gesture. The first-person view is kept
- * as the classic option and as `F`'s steady aim on a desktop.
+ * It replaces two earlier shapes. The first was a mode — stop, drop to first
+ * person, left thumb aims, right thumb pulls, find the way back out. The second
+ * was a toggle — tap SLING to take it out, then pull back anywhere on the right
+ * of the glass, then tap SLING again to put it away — which was two controls
+ * and a state to remember for one throw. Now the whole shot is one touch, on
+ * the control itself, and nothing is left on screen when the thumb comes off.
+ * The first-person view is kept as the classic option and as `F` on a desktop.
  */
 
 const VIEWPORT = { w: 390, h: 844, safe: { top: 47, right: 0, bottom: 34, left: 0 } };
@@ -25,131 +28,329 @@ function engine(): TouchEngine {
   return e;
 }
 const sling = (e: TouchEngine) => e.buttonLayout().find((b) => b.id === 'sling')!.pos;
+const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') => e.buttonLayout().find((b) => b.id === id)!.pos;
 function tap(e: TouchEngine, x: number, y: number, id = 1): void {
   e.handle('down', at(x, y, id)); clock += 80; e.handle('up', at(x, y, id));
 }
-function pull(e: TouchEngine, from: { x: number; y: number }, by: { x: number; y: number }, id = 3, steps = 10, ms = 30): void {
+/** Press SLING and pull by `by`, over `steps` moves `ms` apart, sampling like frames do. */
+function pull(e: TouchEngine, by: { x: number; y: number }, id = 3, steps = 10, ms = 30): { x: number; y: number } {
+  const from = sling(e);
   e.handle('down', at(from.x, from.y, id));
   for (let i = 1; i <= steps; i++) {
     clock += ms;
     e.handle('move', at(from.x + by.x * i / steps, from.y + by.y * i / steps, id));
+    e.sample();
   }
+  return { x: from.x + by.x, y: from.y + by.y };
+}
+/** Hold SLING still for `ms`, sampling each frame. */
+function hold(e: TouchEngine, ms: number, id = 3): void {
+  const s = sling(e);
+  e.handle('down', at(s.x, s.y, id));
+  for (let t = 0; t < ms; t += 16) { clock += 16; e.sample(); }
 }
 
 beforeEach(() => { clock = 1000; });
 
-describe('taking the sling out is not a mode', () => {
-  it('takes it out and puts it away with SLING, and never asks for the aiming view', () => {
+describe('SLING is pressed, held, and let go', () => {
+  it('starts aiming the moment it is pressed, and shows it on the control', () => {
     const e = engine();
     const s = sling(e);
-    tap(e, s.x, s.y);
-    const i = e.sample();
-    expect(e.isSlingOut).toBe(true);
-    expect(i.aimModePressed).toBe(false);
-    expect(e.visual.buttons.find((b) => b.id === 'sling')!.pressed).toBe(true);
-    tap(e, s.x, s.y);
-    expect(e.isSlingOut).toBe(false);
-  });
-
-  it('still opens the old aiming view in the classic scheme', () => {
-    const e = engine();
-    e.setThrowMode(false);
-    const s = sling(e);
-    tap(e, s.x, s.y);
-    expect(e.sample().aimModePressed).toBe(true);
-    expect(e.isSlingOut).toBe(false);
-  });
-
-  it('keeps the stick and the other buttons working with the sling out', () => {
-    const e = engine();
-    const s = sling(e);
-    tap(e, s.x, s.y);
-    e.sample();
-    e.handle('down', at(90, 700, 2));
-    clock += 16;
-    e.handle('move', at(90, 640, 2));
-    const i = e.sample();
-    expect(i.moveVector).not.toBeNull();
-    expect(i.push).toBe(true);
-    for (const b of e.buttonLayout()) expect(e.zoneAt(b.pos.x, b.pos.y)).toBe(b.id);
-  });
-
-  it('leaves a drag on the plan to the plan, even with the sling out', () => {
-    const e = engine();
-    e.setSlingOut(true);
-    e.setPlanOpen(true);
-    expect(e.zoneAt(280, 300)).not.toBe('throw');
-    e.setPlanOpen(false);
-    expect(e.zoneAt(280, 300)).toBe('throw');
-  });
-
-  it('puts the sling away when there is nothing to throw with', () => {
-    const e = engine();
-    e.setSlingOut(true);
-    expect(e.isSlingOut).toBe(true);
-    e.setSlingAvailable(false);
-    expect(e.isSlingOut).toBe(false);
-  });
-});
-
-describe('pulling back', () => {
-  it('reads a drag on the right of the glass as a pull, pointing the other way', () => {
-    const e = engine();
-    e.setSlingOut(true);
-    pull(e, { x: 280, y: 300 }, { x: -20, y: 80 });
+    e.handle('down', at(s.x, s.y, 3));
     const i = e.sample();
     expect(i.aim).toBe(true);
-    expect(i.throwVector!.x).toBeCloseTo(20, 5);
-    expect(i.throwVector!.y).toBeCloseTo(-80, 5);
+    expect(i.throwVector).not.toBeNull();
+    expect(i.aimModePressed).toBe(false);
+    expect(e.slingHeld).toBe(true);
+    expect(e.visual.sling.held).toBe(true);
+    expect(e.visual.buttons.find((b) => b.id === 'sling')!.pressed).toBe(true);
+  });
+
+  it('held without pulling, points straight up the street and draws itself to about half', () => {
+    const e = engine();
+    hold(e, 800);
+    const i = e.sample();
+    expect(i.throwVector!.x).toBeCloseTo(0, 5);
+    expect(i.throwVector!.y).toBeLessThan(0);
     expect(i.drawAmount!).toBeGreaterThan(0.4);
-    expect(e.visual.pull).not.toBeNull();
+    expect(i.drawAmount!).toBeLessThan(0.5);
+  });
+
+  it('points the other way from the pull, and follows the thumb every frame', () => {
+    const e = engine();
+    pull(e, { x: -20, y: 80 });
+    const a = e.sample();
+    expect(a.throwVector!.x).toBeGreaterThan(0);
+    expect(a.throwVector!.y).toBeLessThan(0);
+    // Pulled straight away, so the hand had barely drawn it: the pull is the aim.
+    expect(Math.abs(Math.atan2(a.throwVector!.y, a.throwVector!.x) - Math.atan2(-80, 20))).toBeLessThan(0.05);
+    // Swing the thumb across without letting go: the aim goes with it.
+    const s = sling(e);
+    clock += 16; e.handle('move', at(s.x + 60, s.y + 60, 3));
+    const b = e.sample();
+    expect(b.throwVector!.x).toBeLessThan(0);
+    expect(b.aim).toBe(true);
   });
 
   it('draws harder the further back it comes', () => {
-    const a = engine(); a.setSlingOut(true);
-    pull(a, { x: 280, y: 300 }, { x: 0, y: 40 });
-    const b = engine(); b.setSlingOut(true);
-    pull(b, { x: 280, y: 300 }, { x: 0, y: 110 });
+    const a = engine();
+    pull(a, { x: 0, y: 70 }, 3, 3, 16);
+    const b = engine();
+    pull(b, { x: 0, y: 120 }, 3, 3, 16);
     expect(b.sample().drawAmount!).toBeGreaterThan(a.sample().drawAmount!);
+    expect(b.sample().drawAmount!).toBeCloseTo(1, 5);
   });
 
-  it('throws on release, along the pull as it was just before the thumb came off', () => {
+  it('fires on release, once, along the pull as it was just before the thumb came off', () => {
     const e = engine();
-    e.setSlingOut(true);
-    // A steady pull straight back, then the thumb smears sideways as it lifts.
-    pull(e, { x: 280, y: 300 }, { x: 0, y: 100 }, 3, 10, 30);
-    e.sample();
-    clock += 20; e.handle('move', at(300, 402, 3));
-    clock += 20; e.handle('move', at(318, 404, 3));
-    clock += 10; e.handle('up', at(322, 404, 3));
+    const end = pull(e, { x: 0, y: 100 }, 3, 10, 30);
+    // The thumb smears sideways as it lifts.
+    clock += 20; e.handle('move', at(end.x + 20, end.y + 2, 3));
+    clock += 20; e.handle('move', at(end.x + 38, end.y + 4, 3));
+    clock += 10; e.handle('up', at(end.x + 42, end.y + 4, 3));
     const i = e.sample();
     expect(i.fire).toBe(true);
     expect(i.firePressed).toBe(true);
     expect(i.aim).toBe(true);
-    // Straight ahead, not skewed by the lift.
     expect(Math.abs(i.throwVector!.x)).toBeLessThan(3);
     expect(i.throwVector!.y).toBeLessThan(-85);
-    // And only once.
-    expect(e.sample().fire).toBe(false);
+    expect(e.visual.sling.shots).toBe(1);
+    // And only once; then it is gone from the glass.
+    const next = e.sample();
+    expect(next.fire).toBe(false);
+    expect(next.aim).toBe(false);
+    expect(next.throwVector).toBeNull();
+    expect(e.visual.sling.held).toBe(false);
   });
 
-  it('does not throw a pull let back down to where it started — that is putting it down', () => {
+  it('fires a plain press-hold-release up the street, with no pull at all', () => {
     const e = engine();
-    e.setSlingOut(true);
-    pull(e, { x: 280, y: 300 }, { x: 0, y: 80 });
-    for (let i = 1; i <= 10; i++) { clock += 30; e.handle('move', at(280, 380 - i * 8, 3)); }
-    clock += 200; e.handle('move', at(280, 302, 3));
-    clock += 100; e.handle('up', at(280, 302, 3));
-    expect(e.sample().fire).toBe(false);
+    hold(e, 400);
+    const s = sling(e);
+    e.handle('up', at(s.x, s.y, 3));
+    const i = e.sample();
+    expect(i.fire).toBe(true);
+    expect(i.throwVector!.y).toBeLessThan(0);
   });
 
-  it('still lets a tap on the world be a tap, with the sling out', () => {
+  it('does not throw on a brush too quick to have meant anything', () => {
     const e = engine();
-    e.setSlingOut(true);
-    tap(e, 280, 300, 4);
+    const s = sling(e);
+    tap(e, s.x, s.y, 3);
     const i = e.sample();
     expect(i.fire).toBe(false);
-    expect(e.takeTap()).toEqual({ x: 280, y: 300 });
+    expect(e.visual.sling.shots).toBe(0);
+    expect(e.visual.sling.fumbles).toBe(1);
+    // A tap on SLING is not a tap on the world either.
+    expect(e.takeTap()).toBeNull();
+  });
+
+  it('still throws a quick flick, because a flick has a pull in it', () => {
+    const e = engine();
+    pull(e, { x: 0, y: 60 }, 3, 2, 30);
+    const s = sling(e);
+    clock += 20; e.handle('up', at(s.x, s.y + 60, 3));
+    expect(e.sample().fire).toBe(true);
+  });
+
+  it('throws shorter when the pouch is eased forward, after the hand has drawn it', () => {
+    // Held long enough to draw itself, then the thumb eases the pouch toward
+    // the target: a short lob at the bin across the path, not the far end.
+    const e = engine();
+    hold(e, 700);
+    const drawn = e.sample().drawAmount!;
+    const s = sling(e);
+    for (let k = 1; k <= 5; k++) { clock += 16; e.handle('move', at(s.x, s.y - k * 6, 3)); e.sample(); }
+    const eased = e.sample();
+    expect(eased.drawAmount!).toBeLessThan(drawn * 0.6);
+    expect(eased.throwVector!.y).toBeLessThan(0);
+  });
+
+  it('keeps the bearing still under a thumb holding a line, once it has started aiming', () => {
+    const e = engine();
+    hold(e, 150);
+    const s = sling(e);
+    clock += 16; e.handle('move', at(s.x + 30, s.y + 30, 3));
+    const a = e.sample().throwVector!;
+    for (let k = 0; k < 40; k++) { clock += 16; e.sample(); }
+    const b = e.sample().throwVector!;
+    expect(Math.atan2(b.y, b.x)).toBeCloseTo(Math.atan2(a.y, a.x), 6);
+  });
+
+  it('puts it down without throwing when the pouch is pushed forward until the band is slack', () => {
+    const e = engine();
+    pull(e, { x: 0, y: 80 });
+    const s = sling(e);
+    for (let k = 1; k <= 10; k++) { clock += 30; e.handle('move', at(s.x, s.y + 80 - k * 9.5, 3)); e.sample(); }
+    expect(e.visual.sling.cancel).toBe(true);
+    const drawn = e.sample();
+    expect(drawn.drawAmount).toBe(0);
+    expect(drawn.throwVector).toBeNull();
+    clock += 150; e.handle('up', at(s.x, s.y + 2, 3));
+    expect(e.sample().fire).toBe(false);
+    expect(e.visual.sling.fumbles).toBe(1);
+  });
+
+  it('never throws from a cancelled touch — a call coming in, a palm', () => {
+    const e = engine();
+    const end = pull(e, { x: 0, y: 100 });
+    e.handle('cancel', at(end.x, end.y, 3));
+    expect(e.sample().fire).toBe(false);
+  });
+
+  it('lets go of a pull without a shot when there is suddenly nothing to throw with', () => {
+    const e = engine();
+    pull(e, { x: 0, y: 100 });
+    e.setSlingAvailable(false);
+    expect(e.slingHeld).toBe(false);
+    expect(e.sample().aim).toBe(false);
+    // And the dimmed control refuses a press.
+    const s = sling(e);
+    e.handle('down', at(s.x, s.y, 4));
+    expect(e.sample().aim).toBe(false);
+  });
+
+  it('allows only one sling: a second thumb on it does nothing', () => {
+    const e = engine();
+    pull(e, { x: 0, y: 80 }, 3);
+    const s = sling(e);
+    e.handle('down', at(s.x + 5, s.y, 4));
+    clock += 16; e.handle('move', at(s.x + 60, s.y - 60, 4));
+    const i = e.sample();
+    expect(i.throwVector!.y).toBeLessThan(0);
+    expect(Math.abs(i.throwVector!.x)).toBeLessThan(1);
+  });
+
+  it('still opens the old aiming view in the classic scheme, and draws nothing itself', () => {
+    const e = engine();
+    e.setThrowMode(false);
+    const s = sling(e);
+    e.handle('down', at(s.x, s.y, 3));
+    expect(e.sample().aim).toBe(false);
+    clock += 80; e.handle('up', at(s.x, s.y, 3));
+    expect(e.sample().aimModePressed).toBe(true);
+  });
+});
+
+describe('the sling and the board at the same time', () => {
+  it('keeps the stick moving the rider while the sling is held, pulled and let go', () => {
+    const e = engine();
+    e.handle('down', at(90, 700, 1));
+    clock += 16; e.handle('move', at(90, 640, 1));
+    const end = pull(e, { x: 0, y: 90 }, 3);
+    const held = e.sample();
+    expect(held.moveVector).not.toBeNull();
+    expect(held.push).toBe(true);
+    expect(held.aim).toBe(true);
+    clock += 16; e.handle('up', at(end.x, end.y, 3));
+    const fired = e.sample();
+    expect(fired.fire).toBe(true);
+    expect(fired.moveVector).not.toBeNull();
+    const after = e.sample();
+    expect(after.moveVector).not.toBeNull();
+    expect(after.aim).toBe(false);
+  });
+
+  it('lets the sling be pressed again straight after, and the other buttons still work', () => {
+    const e = engine();
+    const end = pull(e, { x: 0, y: 90 }, 3);
+    clock += 16; e.handle('up', at(end.x, end.y, 3));
+    e.sample();
+    const t = button(e, 'trick');
+    tap(e, t.x, t.y, 5);
+    expect(e.sample().trickPressed).toBe(true);
+    pull(e, { x: 10, y: 90 }, 6);
+    expect(e.sample().aim).toBe(true);
+  });
+
+  it('drives a rider in the simulation who keeps rolling through a whole shot', () => {
+    const sim = makeSim();
+    const e = engine();
+    place(sim, { x: 158, y: 214 }, { x: 0, y: 7 });
+    const run = (n: number) => { for (let k = 0; k < n; k++) { clock += 16; sim.step(TICK_DT, e.sample(), { x: 158, y: 240 }); } };
+    e.handle('down', at(90, 700, 1));
+    clock += 16; e.handle('move', at(90, 620, 1));
+    run(20);
+    const s = sling(e);
+    e.handle('down', at(s.x, s.y, 3));
+    run(10);
+    for (let k = 1; k <= 6; k++) { clock += 16; e.handle('move', at(s.x, s.y + k * 15, 3)); run(1); }
+    expect(sim.player.aiming).toBe(true);
+    const drawnSpeed = sim.player.speed;
+    clock += 16; e.handle('up', at(s.x, s.y + 90, 3));
+    run(1);
+    expect(sim.projectiles.length).toBe(1);
+    run(30);
+    expect(sim.player.aiming).toBe(false);
+    expect(sim.player.speed).toBeGreaterThan(drawnSpeed * 0.8);
+  });
+});
+
+describe('the sling recovers between shots', () => {
+  const shoot = (sim: ReturnType<typeof makeSim>) => {
+    const it = emptyIntent();
+    it.aim = true; it.fire = true; it.firePressed = true; it.drawAmount = 0.8;
+    sim.step(TICK_DT, it, { x: 158, y: 190 });
+  };
+
+  it('will not loose a second stone inside the recovery, and will after it', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    shoot(sim);
+    expect(sim.projectiles.length).toBe(1);
+    expect(sim.slingReady).toBeLessThan(0.1);
+    shoot(sim);
+    expect(sim.projectiles.length).toBe(1);
+    step(sim, SLING_RECOVERY + 0.05);
+    expect(sim.slingReady).toBeCloseTo(1, 5);
+    shoot(sim);
+    expect(sim.projectiles.length).toBe(2);
+  });
+
+  it('puts the draw back to nothing the moment a stone goes', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    shoot(sim);
+    expect(sim.player.draw).toBe(0);
+    sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.player.aiming).toBe(false);
+  });
+});
+
+describe('reaching for a tool from the plan leaves the plan', () => {
+  it('closes the plan on a press of SLING, and is aiming in that same touch', () => {
+    const e = engine();
+    const p = button(e, 'plan');
+    tap(e, p.x, p.y, 5);
+    expect(e.sample().planView).toBe(true);
+    const s = sling(e);
+    e.handle('down', at(s.x, s.y, 3));
+    const i = e.sample();
+    expect(i.planView).toBe(false);
+    expect(i.aim).toBe(true);
+  });
+
+  it('closes the plan on a press of TRICK, and does the trick', () => {
+    const e = engine();
+    const p = button(e, 'plan');
+    tap(e, p.x, p.y, 5);
+    e.sample();
+    const t = button(e, 'trick');
+    tap(e, t.x, t.y, 6);
+    const i = e.sample();
+    expect(i.planView).toBe(false);
+    expect(i.trickPressed).toBe(true);
+  });
+
+  it('leaves a drag on the map to the map', () => {
+    const e = engine();
+    const p = button(e, 'plan');
+    tap(e, p.x, p.y, 5);
+    e.sample();
+    e.handle('down', at(200, 300, 7));
+    clock += 16; e.handle('move', at(240, 330, 7));
+    expect(e.sample().planView).toBe(true);
+    expect(e.takeLookDrag()).toEqual({ x: 40, y: 30 });
   });
 });
 

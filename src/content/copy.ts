@@ -281,14 +281,15 @@ export const INSPECT = {
 };
 
 /**
- * The plan's own instructions. They say what the view is for — marking where
- * you are going — and they retire themselves once a pin has been put down.
+ * The plan's own instructions. They say what the view is for — reading the
+ * town and marking where you are going — and how you leave it, which is by
+ * doing the next thing rather than by finding a button.
  */
 export const PLAN = {
   markTouch: 'TAP THE MAP TO MARK WHERE YOU ARE GOING',
   markMouse: 'CLICK THE MAP TO MARK WHERE YOU ARE GOING',
-  moveTouch: 'DRAG TO LOOK AROUND · PLAN TO CLOSE',
-  moveMouse: 'DRAG TO LOOK AROUND · SCROLL TO ZOOM · Q TO CLOSE',
+  moveTouch: 'DRAG TO LOOK · PUSH OFF TO GO',
+  moveMouse: 'DRAG TO LOOK · SCROLL TO ZOOM · MOVE TO GO',
 };
 
 /**
@@ -329,8 +330,29 @@ export const PLAN_READ = {
 export const SLING_HINT = {
   aim: 'DRAG TO AIM',
   pull: 'PULL BACK · LET GO',
-  /** The drag-back sling, the first time it comes out. */
-  throw: 'PULL BACK FROM HERE · LET GO',
+  /** SLING at rest, until the first stone has gone. */
+  hold: 'HOLD · PULL BACK · LET GO',
+  /** A press let go before anything was drawn. */
+  brushed: 'HOLD IT — LET GO TO THROW',
+  /** Pushed forward into the fork until the band is slack. */
+  cancel: 'SLACK · LET GO TO PUT IT DOWN',
+};
+
+/**
+ * What a stone would do where the arc comes down, in a word or three, while
+ * the sling is drawn. Said as a kid who knows these streets would think it,
+ * and led by what a throw is mostly for: a noise somewhere you are not.
+ */
+export const THROW_READ = {
+  turns: (n: number) => `NOISE · TURNS ${n} CAMERA${n === 1 ? '' : 'S'}`,
+  loud: (thing: string, n: number) => `${thing} · LOUD${n ? ` · TURNS ${n}` : ''}`,
+  wary: "NOISE · THEY'D LOOK BACK AT YOU",
+  unheard: 'NOISE · NOBODY LOOKS',
+  camera: 'CAMERA · KNOCK IT ASIDE',
+  drone: 'DRONE · KNOCK IT OFF LINE',
+  junction: 'RELAY BOX',
+  foliage: 'TREE · RUSTLE',
+  person: "THAT'S A PERSON",
 };
 
 /** What a shot did. One word, in the aiming view, then gone. */

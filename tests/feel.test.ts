@@ -210,15 +210,30 @@ describe('the town reacts to a stone', () => {
   });
 });
 
-describe('the plan is somewhere you can move', () => {
-  const planning = (push = true) => aimIntent({ planView: true, push, pushPressed: push });
+describe('the plan is a stop, to look', () => {
+  /*
+   * It was somewhere you could skate — north-up on a map, so the stick meant
+   * one thing in the plan and another the moment it closed. Now the board
+   * rolls out under you while you read the town, and doing the next thing is
+   * how you leave (see PlanExit in the input tests).
+   */
+  const planning = (push = true) => aimIntent({ planView: true, push, pushPressed: push, moveVector: { x: 0, y: -1 } });
 
-  it('lets the player keep skating with the plan open', () => {
+  it('rolls the rider to a stand while it is open, whatever the stick says', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 }, { x: 0, y: 8 });
+    step(sim, 2, planning());
+    expect(sim.planViewActive).toBe(true);
+    expect(sim.player.speed).toBeLessThan(0.1);
+  });
+
+  it('gives the board straight back when the plan closes', () => {
     const sim = makeSim();
     place(sim, { x: 158, y: 214 });
     sim.player.heading = Math.PI / 2;
-    step(sim, 2, planning());
-    expect(sim.planViewActive).toBe(true);
+    step(sim, 1, planning());
+    step(sim, 1, aimIntent({ push: true, pushPressed: true, moveVector: { x: 0, y: 1 } }));
+    expect(sim.planViewActive).toBe(false);
     expect(sim.player.speed).toBeGreaterThan(3);
   });
 

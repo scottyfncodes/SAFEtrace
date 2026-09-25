@@ -118,17 +118,21 @@ export const TUNE = {
   drawStiffen: 0.55,
   /** Held at full draw past this many seconds, the arm starts to shake. */
   drawHoldSteady: 1.4,
-  carveAimPenalty: 0.65,
   /**
-   * Drawing the sling settles the board.
-   *
-   * The first human to play could partly see what the slingshot was for but
-   * could not land a shot, because aiming, steering and pushing were all being
-   * asked of two thumbs at once. Pulling the pouch back now coasts you to a
-   * stop over about a second, which separates EXPLORE from AIM without a mode
-   * switch, a menu, or taking the board away.
+   * A drawn sling costs a little carve — one hand is busy — and nothing else.
    */
-  aimSettleDecel: 7.0,
+  carveAimPenalty: 0.85,
+  /**
+   * Drawing the sling used to settle the board to a stop over about a second.
+   *
+   * That was the answer when aiming took both thumbs. It does not any more:
+   * the sling is one right thumb, held, and the left thumb is still on the
+   * stick — so stopping the rider under it was taking away the one thing the
+   * other hand was doing. The board now keeps what it has and only loses a
+   * little to friction while the pull is held; the cost of throwing at speed
+   * is where it has always been, in the sway on the shot.
+   */
+  aimSettleDecel: 0.6,
   /**
    * How fast sideways speed is scrubbed off, per frame at 60 Hz.
    *
@@ -477,10 +481,11 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   p.crouch = damp(p.crouch, wantCrouch, 0.045, dt);
   p.landTimer = Math.max(0, p.landTimer - dt);
   p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
-  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL' && !p.aiming) {
+  // A push with a sling drawn is shorter: one foot, one hand, no arms for balance.
+  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL') {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
     const room = clamp01((cap - speed) / cap);
-    const imp = TUNE.pushImpulse * room;
+    const imp = TUNE.pushImpulse * room * (p.aiming ? 0.6 : 1);
     if (imp > 0.05) {
       const h = fromAngle(p.heading, imp);
       p.vel.x += h.x;

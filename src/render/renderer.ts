@@ -10,13 +10,13 @@ import { type Rect, type Vec2, clamp01, easeInOutCubic, smoothstep } from '../co
 import type { ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { NOISE_REACH, type Sim } from '../sim/sim';
-import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY } from '../sim/slingshot';
+import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY, type BallisticTarget } from '../sim/slingshot';
 import { ViewCamera } from './camera';
 import { PLAN, SLING_HINT } from '../content/copy';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
-import { readPlan, type PlanReading } from './plan';
+import { readPlan, readThrow, type PlanReading } from './plan';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
 
@@ -259,16 +259,14 @@ export class Renderer {
     const drawing = sim.player.aiming && !sim.aimMode && this.throwAim;
     if (drawing) this.lastThrow = this.throwAim;
     const rt = this.release.t;
-    const out = !!this.controlVisual?.slingOut;
     const ringing = rt < 0.7 && !!this.lastThrow;
-    if (!drawing && !out && !ringing) return;
+    if (!drawing && !ringing) return;
     const eye = this.lastEye;
     if (!eye) return;
     const p = sim.player.pos;
     const at = this.perspective.project3(eye, p.x, p.y, 1.2 + sim.player.z, this.w, this.h);
     if (!at) return;
-    // Out but not pulled: held up at rest, pointing the way the rider looks.
-    const aim = drawing || ringing ? this.lastThrow! : { from: { x: at.x, y: at.y }, to: { x: at.x + 0.2, y: at.y - 1 } };
+    const aim = this.lastThrow!;
     // Larger than life, like the stone in flight: it is the thing being used.
     const size = Math.max(19, Math.min(38, at.s * 0.95));
     const from = { x: at.x, y: at.y };
@@ -316,6 +314,22 @@ export class Renderer {
     if (rt > 0.45 || drawing) {
       ctx.fillStyle = '#6A7178';
       ctx.beginPath(); ctx.arc(pouch.x, pouch.y, Math.max(2, size * 0.11), 0, Math.PI * 2); ctx.fill();
+    }
+    /*
+     * The first tenth of a second after the release: a whip of air leaving
+     * the fork along the throw. The stone itself is seven centimetres across
+     * and gone in a frame; this is what says it came out of *this*, here.
+     */
+    if (!drawing && rt < 0.14 && !this.settings.reduceMotion) {
+      const k = rt / 0.14;
+      const reach = size * (1.2 + this.release.draw * 2.2);
+      const tip = { x: fork.x + ux * size * 0.6, y: fork.y + uy * size * 0.6 };
+      ctx.strokeStyle = alpha('#FFFFFF', 0.85 * (1 - k));
+      ctx.lineWidth = Math.max(2, size * 0.14) * (1 - k * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(tip.x + ux * reach * k * 0.5, tip.y + uy * reach * k * 0.5);
+      ctx.lineTo(tip.x + ux * reach * (0.4 + k), tip.y + uy * reach * (0.4 + k));
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -909,6 +923,7 @@ export class Renderer {
     const pts: Array<{ x: number; y: number; z: number }> = [];
     let end: { x: number; y: number; z: number; ground: boolean } | null = null;
     const targets = sim.ballisticTargets();
+    let struck: BallisticTarget | null = null;
     for (let i = 1; i <= 90; i++) {
       const t = i * 0.035;
       const x = from.x + dir.x * speed * hz * t;
@@ -919,7 +934,7 @@ export class Renderer {
       if (b && z < b.height) { end = { x, y, z, ground: false }; break; }
       // It stops where the stone would: at whatever it meets first.
       const hit = targets.find((tg) => Math.hypot(tg.pos.x - x, tg.pos.y - y, tg.z - z) <= tg.radius + 0.28);
-      if (hit && Math.hypot(hit.pos.x - from.x, hit.pos.y - from.y) > 1.5) { end = { x, y, z, ground: false }; break; }
+      if (hit && Math.hypot(hit.pos.x - from.x, hit.pos.y - from.y) > 1.5) { end = { x, y, z, ground: false }; struck = hit; break; }
       pts.push({ x, y, z });
     }
     if (strength <= 0.01) return;
@@ -955,8 +970,29 @@ export class Renderer {
         if (at) { ctx.moveTo(at.x - 6, at.y - 6); ctx.lineTo(at.x + 6, at.y + 6); ctx.moveTo(at.x + 6, at.y - 6); ctx.lineTo(at.x - 6, at.y + 6); }
       }
       ctx.stroke();
+      // In the street, drawn: what this stone would *do* there, in a word or three.
+      // Under the mark rather than over it: over things is where the world's
+      // own prompts float, and the words must be readable at a light pull.
+      if (!sim.aimMode && sim.player.draw > 0.05) {
+        const at = this.perspective.project3(eye, end.x, end.y, end.z, this.w, this.h);
+        if (at) this.readoutPill(ctx, readThrow(sim, end, struck), at.x, at.y + 24, 0.95);
+      }
     }
     ctx.restore();
+  }
+
+  /** A few words over a place in the street, kept on the glass. */
+  private readoutPill(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, a: number): void {
+    ctx.font = '700 10px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(text).width + 14;
+    const cx = Math.max(tw / 2 + 8, Math.min(this.w - tw / 2 - 8, x));
+    const cy = Math.max(this.safe.top + 70, Math.min(this.h - 40, y));
+    ctx.fillStyle = alpha('#0B1117', 0.7 * a);
+    roundRect(ctx, cx - tw / 2, cy - 9, tw, 18, 9); ctx.fill();
+    ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
+    ctx.fillText(text, cx, cy + 0.5);
   }
 
   render(dt: number): void {
@@ -965,6 +1001,8 @@ export class Renderer {
 
     this.stepParticles(dt);
     this.release.t += dt;
+    this.controls.throwHint = this.touchHints && !this.shotTaken;
+    this.controls.slingReady = clamp01(sim.slingReady);
     this.recoil = Math.max(0, this.recoil - dt * 4.5);
 
     // Aiming is a place the player goes, not a layer on top of the world.
@@ -1010,7 +1048,6 @@ export class Renderer {
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
-        this.controls.throwHint = this.touchHints && !this.shotTaken;
         this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
         this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }

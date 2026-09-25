@@ -371,12 +371,18 @@ describe('what it costs to look', () => {
     expect(sim.player.stance).not.toBe('AIR');
   });
 
-  it('still lets the player hold their line and stop, so looking is not a crash', () => {
+  it('rolls the board out to a stand rather than stopping it dead, so looking is not a crash', () => {
     const sim = makeSim();
     place(sim, { x: 155, y: 215 }, { x: 8, y: 0 });
     const heading = sim.player.heading;
-    for (let i = 0; i < 40; i++) sim.step(TICK_DT, looking(), null);
-    expect(sim.player.heading).not.toBe(heading);
+    sim.step(TICK_DT, looking(), null);
+    // Not halted in a frame...
+    expect(sim.player.speed).toBeGreaterThan(7);
+    for (let i = 0; i < 100; i++) sim.step(TICK_DT, looking(), null);
+    // ...but stood still, on the line it was on, within a couple of seconds.
+    expect(sim.player.speed).toBeLessThan(0.05);
+    expect(sim.player.heading).toBeCloseTo(heading, 5);
+    expect(sim.player.stance).not.toBe('SLIDE');
     expect(sim.planViewActive).toBe(true);
   });
 

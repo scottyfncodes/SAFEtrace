@@ -438,10 +438,12 @@ export class Sim {
     }
 
     // 1-2. Input and movement.
+    this.slingCooldown = Math.max(0, this.slingCooldown - dt);
     this.updateAim(intent, pointerWorld);
     this.requestTrick(intent);
     this.requestGrab(intent);
     updatePlayer(this.player, intent, this.world, dt);
+    if (looking) this.settleToLook(dt);
     this.holdAimAnchor();
     this.emitPlayerFeedback();
 
@@ -965,8 +967,38 @@ export class Sim {
     return out;
   }
 
+  /**
+   * The band's recovery after a shot, in seconds.
+   *
+   * Short — about the time it takes a hand to find the next stone — but real:
+   * the snap has a moment to be seen, a double-tap can never loose two stones
+   * as one, and a held thumb that drew during it simply finds the sling ready
+   * when the recovery ends.
+   */
+  slingCooldown = 0;
+
+  /** 0..1: how ready the sling is to be loosed again. */
+  get slingReady(): number { return 1 - this.slingCooldown / SLING_RECOVERY; }
+
+  /**
+   * Stopping to read the plan: the board rolls out to a stand over about a
+   * second rather than halting, which is what taking your phone out mid-run
+   * looks like. Nothing is taken away — setting off again leaves the plan.
+   */
+  private settleToLook(dt: number): void {
+    const p = this.player;
+    if (p.stance === 'AIR') return;
+    const sp = Math.hypot(p.vel.x, p.vel.y);
+    if (sp < 1e-4) return;
+    const drop = Math.min(sp, PLAN_SETTLE * dt);
+    p.vel.x -= (p.vel.x / sp) * drop;
+    p.vel.y -= (p.vel.y / sp) * drop;
+    p.speed = Math.hypot(p.vel.x, p.vel.y);
+  }
+
   private updateProjectiles(dt: number, intent: Intent): void {
-    if (intent.firePressed && this.player.aiming && this.player.draw > (this.thrown ? 0.01 : 0.12)) {
+    if (intent.firePressed && this.player.aiming && this.slingCooldown <= 0
+      && this.player.draw > (this.thrown ? 0.01 : 0.12)) {
       // Sway is the documented reward for skating well, and it belongs on the
       // shot rather than only on the reticle: the reticle must not promise
       // accuracy the projectile does not have.
@@ -975,6 +1007,7 @@ export class Sim {
       const draw = this.shotDraw();
       const proj = fire(this.player.pos, angle, draw, this.aimPitch, this.rng);
       this.projectiles.push(proj);
+      this.slingCooldown = SLING_RECOVERY;
       this.player.draw = 0;
       this.player.drawHeld = 0;
       this.lastShot = null;
@@ -2223,23 +2256,36 @@ export class Sim {
 }
 
 /**
- * What a player may still do while the world is peeled open: skate. Not aim,
- * not fire, not pop, not reach into anything.
+ * What the plan is: a stop, to look.
  *
- * It used to take pushing away as well, which made the plan a place you
- * could look at and not move in — the board coasted to a stop under you and
- * the stick did nothing, so "find where I am going" and "go there" could not
- * happen in the same view. Moving is what the plan is for.
+ * It has been both. First a place you could look at and not move in, held
+ * open by a thumb, so "find where I am going" and "go there" could not happen
+ * together. Then a place you could skate in — north-up on a map four pixels
+ * to the metre, so the stick meant one thing in the plan and another the
+ * moment it closed, and the rider went wherever a thumb meant for the map
+ * sent them. Neither was a tactical state; both were a movement mode with a
+ * different picture.
+ *
+ * Now the board rolls out to a stand under you while you read the town, and
+ * nothing you do can act on the street from here. What gets you out is doing
+ * something: set off, pop, reach for the sling — the host closes the plan and
+ * that same input carries straight on into the street (see `PlanExit`).
  */
 function suppressWhileLooking(intent: Intent): Intent {
   return {
     ...intent,
+    steer: 0, push: false, pushPressed: false, brake: false, moveVector: null,
     aim: false, fire: false, firePressed: false,
     olliePressed: false, ollieReleased: false, ollieHeld: false,
     interact: false, interactPressed: false,
-    drawAmount: null, aimVector: null, pointerActive: false,
+    drawAmount: null, aimVector: null, throwVector: null, pointerActive: false,
   };
 }
+
+/** How quickly the board rolls out while the plan is read, m/s². */
+export const PLAN_SETTLE = 6;
+/** How long the band takes to recover after a shot. */
+export const SLING_RECOVERY = 0.3;
 
 /**
  * What a player may still do while they are lining up a shot: aim it and take

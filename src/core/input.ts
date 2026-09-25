@@ -381,3 +381,44 @@ export class InputManager {
     return i;
   }
 }
+
+/**
+ * Whether an intent is asking the character to go somewhere.
+ *
+ * A stick supplies a direction with a magnitude, and a thumb merely resting
+ * on it reports "push" at zero magnitude; that is a thumb waiting, not a
+ * player setting off. A keyboard has no magnitude, so a held key is the ask.
+ */
+export function movementAsked(i: Intent): boolean {
+  if (i.moveVector && Math.hypot(i.moveVector.x, i.moveVector.y) > 0.3) return true;
+  if (!i.moveVector && i.push) return true;
+  return Math.abs(i.steer) > 0.1;
+}
+
+/**
+ * When the plan puts itself away.
+ *
+ * The plan is where you stop and look: the board settles under you and the
+ * map is yours to read. Leaving it used to be a second job — find PLAN again,
+ * press it, then start doing the thing you had just decided to do. Now doing
+ * the thing *is* leaving: set off, pop a trick, reach for the sling, and you
+ * are back in the street in that same frame with the move already under way.
+ *
+ * One subtlety. A player who opens the plan while still holding the stick (or
+ * W) has not asked to leave it — they were already moving. So movement only
+ * counts once it has been let go at least once since the plan opened. The
+ * tools need no such grace: nobody presses TRICK by accident of having been
+ * holding it.
+ */
+export class PlanExit {
+  private armed = false;
+
+  /** True when the plan should close this frame. */
+  update(open: boolean, i: Intent): boolean {
+    if (!open) { this.armed = false; return false; }
+    if (i.trickPressed || i.grabPressed || i.aimModePressed || i.olliePressed) return true;
+    const moving = movementAsked(i);
+    if (!moving) { this.armed = true; return false; }
+    return this.armed;
+  }
+}

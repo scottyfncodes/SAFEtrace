@@ -43,6 +43,7 @@ before implementation and is the authority for what the game is trying to be.
 | 36 | [An Afternoon with an Ending](36-an-afternoon-with-an-ending.md) | The case, the people of Bellhaven, the choices the ending is read from, and four things that were broken on the way in |
 | 37 | [The Feel Pass](37-the-feel-pass.md) | Three buttons instead of four, a camera with room to see, a plan you use to get somewhere, a score you find, and a slingshot with weight |
 | 38 | [Stealth, Manipulation, and Escalation](38-stealth-manipulation-and-escalation.md) | A town that remembers where trouble happened, a board that makes noise, a plan that shows what a stone would turn, and sabotage that solves one problem by creating the next |
+| 39 | [Controls, and the Held Sling](39-controls-and-the-held-sling.md) | The whole shot in one touch on the move, a plan you leave by doing the next thing, and a throw that says what the noise will turn |
 
 ## The one-sentence pitch
 

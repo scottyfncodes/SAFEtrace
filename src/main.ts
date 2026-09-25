@@ -8,7 +8,7 @@ import './ui/styles.css';
 // Imported after the base sheet: media queries carry no extra specificity, so
 // the mobile overrides only win if they come later in source order.
 import './ui/mobile.css';
-import { InputManager, emptyIntent, mergeIntent, type Intent } from './core/input';
+import { InputManager, PlanExit, emptyIntent, mergeIntent, type Intent } from './core/input';
 import { TouchAdapter, TouchEngine, isTouchPrimary } from './core/touch';
 import { Loop } from './core/loop';
 import { loadSettings, saveSettings, type Settings } from './core/settings';
@@ -60,6 +60,8 @@ class Game {
   private story: StoryDirector;
   private input = new InputManager();
   private touch = new TouchEngine();
+  /** Closes the plan when the player sets off or reaches for a tool from it. */
+  private planExit = new PlanExit();
   private touchAdapter = new TouchAdapter(this.touch);
   /** Where the character is looking while stood still, in world radians. */
   private aimYaw = 0;
@@ -478,7 +480,6 @@ class Game {
    */
   private clearTransientState(): void {
     this.closePlan();
-    this.touch.setSlingOut(false);
     this.sim.exitAimMode();
     this.sim.dismissFocus();
     this.touch.reset();
@@ -736,6 +737,11 @@ class Game {
     this.input.options.dragThrow = !this.sim.aimMode;
     this.intent = mergeIntent(this.input.sample(), this.touch.sample());
     const tap = this.touch.takeTap();
+    // Doing the next thing is how the plan is left: that same input carries on.
+    if (this.phase === 'play' && this.planExit.update(this.intent.planView, this.intent)) {
+      this.closePlan();
+      this.intent.planView = false;
+    }
 
     if (this.phase === 'ad' || this.phase === 'reprise') {
       // A tap anywhere skips, the same as Escape. The world keeps running
@@ -823,8 +829,9 @@ class Game {
   private orientMove(): void {
     const mv = this.intent.moveVector;
     if (!mv) return;
-    // On the plan the map is north-up and the screen is the world: up is up.
-    if (this.sim.planViewActive) return;
+    // The plan never moves the rider (it is a stop), and a push that leaves
+    // it has already closed it by now, so this is always the street's frame.
+    if (this.intent.planView) return;
     // Screen-up is -y; the camera's forward is its yaw.
     const yaw = this.renderer.chase.yaw + Math.PI / 2;
     const c = Math.cos(yaw), s = Math.sin(yaw);
