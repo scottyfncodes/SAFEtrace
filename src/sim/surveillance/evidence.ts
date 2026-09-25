@@ -21,6 +21,14 @@ export const EVIDENCE_WEIGHT: Record<EvidenceKind, number> = {
   PERSON_STRUCK: 46,
 };
 
+/** What a place already under scrutiny does to the forensics. */
+export const SCRUTINY = {
+  /** Fraction of the analysis delay saved at full scrutiny. */
+  faster: 0.4,
+  /** Fraction of the search disc saved at full scrutiny. */
+  tighter: 0.35,
+};
+
 let counter = 0;
 export function resetEvidenceIds(): void { counter = 0; }
 
@@ -29,8 +37,9 @@ export function makeEvidence(
   pos: Vec2,
   tick: number,
   label: string,
-  opts: { impactVel?: Vec2; impactVz?: number; impactZ?: number; observedBy?: string[] } = {},
+  opts: { impactVel?: Vec2; impactVz?: number; impactZ?: number; observedBy?: string[]; scrutiny?: number } = {},
 ): Evidence {
+  const scrutiny = Math.max(0, Math.min(1, opts.scrutiny ?? 0));
   return {
     id: `EV-${(++counter).toString().padStart(4, '0')}`,
     kind,
@@ -41,10 +50,12 @@ export function makeEvidence(
     impactZ: opts.impactZ,
     observedBy: opts.observedBy ?? [],
     stage: 'NEW',
-    analysisCompleteTick: tick + ANALYSIS_TICKS,
+    // Somewhere already under review is analysed sooner: less time to leave.
+    analysisCompleteTick: tick + Math.round(ANALYSIS_TICKS * (1 - SCRUTINY.faster * scrutiny)),
     originUncertainty: 0,
     weight: EVIDENCE_WEIGHT[kind],
     label,
+    scrutiny,
   };
 }
 
@@ -92,10 +103,11 @@ export function analyse(
   // impact. An unobserved shot from cover back-projects into a disc wide
   // enough to hold half a street, which is exactly the skill the player learns.
   const observedBonus = e.observedBy.length > 0 ? 0.42 : 0.95;
-  const uncertainty = (5 + estRange * 0.34) * observedBonus + rng.range(-1, 2);
+  const focus = 1 - SCRUTINY.tighter * (e.scrutiny ?? 0);
+  const uncertainty = (5 + estRange * 0.34) * observedBonus * focus + rng.range(-1, 2);
 
   e.originEstimate = origin;
-  e.originUncertainty = Math.max(6, uncertainty);
+  e.originUncertainty = Math.max(6 - 2 * (e.scrutiny ?? 0), uncertainty);
 
   const candidates = tracks.filter((t) => {
     if (t.confidence < 0.22) return false;

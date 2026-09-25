@@ -26,15 +26,21 @@ export interface VerbSpec {
   description: string;
   /** Leaves a trace the system can later act on. */
   detectable: boolean;
+  /**
+   * What it leaves behind, in two words, for the panel. Hacking is the clean
+   * middle of the ladder — quieter than breaking something, louder than going
+   * round — and the player should be able to read how clean before choosing.
+   */
+  trace: string;
 }
 
 export const VERBS: Record<HackVerb, VerbSpec> = {
-  QUERY:    { verb: 'QUERY',    seconds: 0.8, label: 'QUERY',    description: 'Read node properties and recent records.', detectable: false },
-  TRACE:    { verb: 'TRACE',    seconds: 1.2, label: 'TRACE',    description: 'Follow an edge and reveal what is on the other end.', detectable: false },
-  LOOP:     { verb: 'LOOP',     seconds: 2.4, label: 'LOOP',     description: 'Node reports its last nominal state. Integrity check follows.', detectable: true },
-  SUPPRESS: { verb: 'SUPPRESS', seconds: 3.0, label: 'SUPPRESS', description: 'Reduce confidence in an active track.', detectable: true },
-  REROUTE:  { verb: 'REROUTE',  seconds: 2.0, label: 'REROUTE',  description: 'Flag a location as anomalous. Assets will investigate.', detectable: false },
-  MASK:     { verb: 'MASK',     seconds: 4.0, label: 'MASK',     description: 'Drop your identity attribution to UNKNOWN.', detectable: true },
+  QUERY:    { verb: 'QUERY',    seconds: 0.8, label: 'QUERY',    description: 'Read node properties and recent records.', detectable: false, trace: 'NO TRACE' },
+  TRACE:    { verb: 'TRACE',    seconds: 1.2, label: 'TRACE',    description: 'Follow an edge and reveal what is on the other end.', detectable: false, trace: 'NO TRACE' },
+  LOOP:     { verb: 'LOOP',     seconds: 2.4, label: 'LOOP',     description: 'Node reports its last nominal state. Integrity check follows.', detectable: true, trace: 'FOUND LATER' },
+  SUPPRESS: { verb: 'SUPPRESS', seconds: 3.0, label: 'SUPPRESS', description: 'Reduce confidence in an active track.', detectable: true, trace: 'GLITCH LOGGED' },
+  REROUTE:  { verb: 'REROUTE',  seconds: 2.0, label: 'REROUTE',  description: 'Flag a location as anomalous. Assets will investigate.', detectable: false, trace: 'FALSE FLAG' },
+  MASK:     { verb: 'MASK',     seconds: 4.0, label: 'MASK',     description: 'Drop your identity attribution to UNKNOWN.', detectable: true, trace: 'TAMPER LOGGED' },
 };
 
 /**

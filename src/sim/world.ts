@@ -7,6 +7,9 @@ import {
   rectExpand, closestOnSegment, rectsOverlap,
 } from '../core/math';
 import { SpatialHash, unique } from '../core/spatial';
+
+/** Slower than this, a rider has stopped and settled low: low cover hides them. */
+export const SETTLED_SPEED = 0.6;
 import type {
   WorldData, SurfaceKind, SurfacePatch, Building, Occluder, Cover, Prop,
   SkateFeature, RoadNode, RoadEdge, District, SensorData,
@@ -174,6 +177,48 @@ export class World {
   propsNear(p: Vec2, r: number): Prop[] {
     return unique(this.propHash.queryRadius(p, r, this.scratch as Prop[]))
       .filter((q) => dist2(q.pos, p) <= r * r);
+  }
+
+  /**
+   * How much of a camera's view of a rider survives the things between them
+   * that are not walls, 0..1.
+   *
+   * Walls and buildings block outright (`blocked`). This is the softer cover a
+   * skater actually uses: a tree crown the sight line passes through thins it
+   * to less than half, and something low — a parked car, a hedge — hides a
+   * rider completely, but only one who has *stopped* behind it, crouched off
+   * the board's height. Rolling past a car you are seen over it; settling
+   * behind it you are not. That is the skateboard's own stealth verb: move
+   * fast across the open, stop dead in the right place.
+   */
+  softCover(eye: Vec2, eyeZ: number, subject: Vec2, subjectSpeed: number): number {
+    const len = Math.hypot(subject.x - eye.x, subject.y - eye.y);
+    if (len < 2) return 1;
+    const settled = subjectSpeed < SETTLED_SPEED;
+    const subjectZ = settled ? 0.8 : 1.25;
+    const mid = { x: (eye.x + subject.x) / 2, y: (eye.y + subject.y) / 2 };
+    let k = 1;
+    for (const p of this.propsNear(mid, len / 2 + 3)) {
+      // (A car whose alarm is going off is still a car to hide behind.)
+      if (p.kind !== 'tree' && p.kind !== 'car' && p.kind !== 'bush') continue;
+      const c = closestOnSegment(eye, subject, p.pos);
+      const t = Math.hypot(c.x - eye.x, c.y - eye.y) / len;
+      if (t <= 0.02 || t >= 0.995) continue;
+      const lineZ = eyeZ + (subjectZ - eyeZ) * t;
+      const off = Math.hypot(c.x - p.pos.x, c.y - p.pos.y);
+      if (p.kind === 'tree') {
+        const crownZ = 3.6 * p.scale, crownR = 1.8 * p.scale;
+        if (off < crownR * 0.8 && Math.abs(lineZ - crownZ) < crownR) k *= 0.42;
+        continue;
+      }
+      if (!settled) continue;
+      // Low cover only counts right beside the rider.
+      if ((1 - t) * len > 4.5) continue;
+      const half = p.kind === 'car' ? 1.3 : 0.75 * p.scale;
+      const top = p.kind === 'car' ? 1.45 : 1.05 * p.scale;
+      if (off < half && lineZ < top) return 0;
+    }
+    return k;
   }
 
   featureAt(p: Vec2): SkateFeature | null {

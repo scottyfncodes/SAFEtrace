@@ -386,7 +386,10 @@ export class Hud {
           const pct = busy ? ` ${Math.round(progress * 100)}%` : '';
           const label = this.touch ? `${v}${pct}` : `${i + 1} ${v}${pct}`;
           const cls = `verb${busy ? ' busy' : ''}${rolling ? ' waiting' : ''}`;
-          return `<button class="${cls}" data-verb="${v}">${label}</button>`;
+          // What it leaves behind, read before choosing: hacking is the
+          // clean middle of the ladder, and how clean is part of the choice.
+          const trace = `<small class="trace">${escapeHtml(VERBS[v].trace)}</small>`;
+          return `<button class="${cls}" data-verb="${v}">${label}${trace}</button>`;
         }).join('')
       }</div>`;
 

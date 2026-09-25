@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 446 tests: simulation, story, the case, determinism, architecture, touch, feel
+npm test         # 470 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -71,8 +71,11 @@ thumb touches, pulls back and lets go — and `SLING` again puts it away.
 people you have met and the things you have looked at. You open it to work out
 where you are going, tap the map to pin it, and follow the pin — a column of
 light in the street, or an arrow at the edge of the screen when it is behind
-you. You can keep skating with it open. SAFEtrace VISION is a story unlock, and
-what it changes is what the plan contains — coverage, subjects, the forecast.
+you. You can keep skating with it open. It also shows the cameras you have
+noticed, which way they swing and which one has you — and, with a pin down,
+which of them a stone there would turn. SAFEtrace VISION is a story unlock, and
+what it changes is what the plan contains — every camera, subjects, the
+forecast, and the places SAFEtrace has flagged.
 
 **The Community Safety Score** is not on the screen. SAFEtrace has been keeping
 it about you all along; you find out by reading a camera's record (it lists who
@@ -154,9 +157,30 @@ to the wrong person and reports 98.7% — a number describing its own agreement,
 not its correctness. A regression test asserts that this remains reachable,
 because if a refactor ever made it impossible the premise would break silently.
 
+## Avoid, hide, distract, manipulate, sabotage
+
+The player's vocabulary is a ladder, and every rung leaves a different
+amount behind. Skating round a camera leaves nothing. Waiting out of sight
+is not loitering to a network that cannot see you, and a stopped rider
+behind a parked car is hidden. A stone somewhere else turns the cameras
+that hear it, and the board is not quiet either: a kickflip under a lens
+gets you looked at. A hack is clean when it runs and traced later. Breaking
+a camera works for six minutes.
+
+What stops the top rung from being the only one is **disturbance**: each
+place remembers what happened in it, and the town reacts to the place rather
+than to you. A street that has heard too many stones stops turning toward
+them and looks back up the throw. A dead camera brings a drone to its pole,
+and its neighbours on the circuit start to scan. Forensics run faster there,
+residents look up, and the neighbours start talking about it. None of this
+sends anybody after you; only something linked to your name does that. The
+plan shows the cameras you have noticed and which one has you, and with a
+pin down it shows which cameras a stone there would turn. See
+[`docs/38-stealth-manipulation-and-escalation.md`](docs/38-stealth-manipulation-and-escalation.md).
+
 ## Testing
 
-446 tests, all headless, in about twenty seconds.
+470 tests, all headless, in about twenty-five seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
@@ -176,6 +200,11 @@ because if a refactor ever made it impossible the premise would break silently.
   a road and dies in a lawn, rolls out, glances off walls, sends birds out of
   a tree once, and turns cameras toward the sound; the plan can be skated in;
   the score is found, not shown; the lens gives an upright phone room to see.
+- **Escalation** — going round leaves nothing; a stone works until a place
+  has heard too many and then turns the camera back up the throw; a broken
+  camera brings a drone and puts its neighbours on watch; a hack is clean now
+  and traced later; the board's own noise turns cameras; hiding is not
+  loitering; and the plan's preview of a throw agrees with the throw.
 - **Touch** — the gesture engine is pure, so every thumb is a synthetic trace:
   the two-thumb slingshot, and a nine-viewport ergonomics matrix asserting touch
   target sizes, separation between neighbours, safe-area clearance and screen
@@ -187,8 +216,9 @@ The slice is a complete afternoon: the advertisement, a solo start, Devon,
 the Channel, the match, the stop, an investigation with an answer, a
 decision, the advertisement again, and one of five endings. The afternoon is
 saved as it goes and can be continued. The design record for the latest pass —
-controls, the camera, the plan, the score and the slingshot — is
-[`docs/37-the-feel-pass.md`](docs/37-the-feel-pass.md).
+the escalation ladder, disturbance, the board as a stealth instrument, and the
+plan as a model of the surveillance — is
+[`docs/38-stealth-manipulation-and-escalation.md`](docs/38-stealth-manipulation-and-escalation.md).
 
 The playtest gate in [`docs/13-vertical-slice.md`](docs/13-vertical-slice.md)
 §4 is still a set of observations of people, and still the most useful next

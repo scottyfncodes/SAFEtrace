@@ -22,6 +22,7 @@ import {
 import { DEVON_HOME } from './cast';
 import { BARKS, BARK_GAP_SECONDS, BARK_LINE_SECONDS, BARK_MAX_SPEED, BARK_RANGE, type Bark, type BarkPhase } from './barks';
 import { sendTo } from '../sim/people';
+import { levelRank } from '../sim/surveillance/disturbance';
 
 export interface StoryContext {
   sim: Sim;
@@ -371,8 +372,13 @@ export const BEATS: Beat[] = [
     when: (c) => dist(c.sim.player.pos, CM207) < 22,
     run: (c, s) => {
       s.reachedCm207 = true;
-      // Its feed is fine. Nothing is broken. That is the horror.
-      c.sim.message('SYSTEM', ['NODE CM-207 — FEED NOMINAL', 'NO FAULT RECORDED'], 6.5);
+      // Its feed is fine. Nothing is broken. That is the horror. And if the
+      // player has broken it, the record it already made is exactly where it
+      // was: sabotage stops a lens, not a file.
+      const down = c.sim.sensorById.get('CM-207')?.state === 'OFFLINE';
+      c.sim.message('SYSTEM', down
+        ? ['NODE CM-207 — FEED DOWN', 'RECORD RETAINED — NO CHANGE']
+        : ['NODE CM-207 — FEED NOMINAL', 'NO FAULT RECORDED'], 6.5);
       c.after(4, () => c.sim.message('SYSTEM', [SYSTEM.queryAvailable, c.hint.inspect], 6.0));
     },
   },
@@ -554,10 +560,15 @@ export class StoryDirector {
       const d = dist(sim.npcs[i].pos, here);
       if (d < firstD && sim.npcs[i].startled === 0 && sim.npcs[i].fleeing === 0) { first = i; firstD = d; }
     }
-    const fits = (b: Bark) => !this.heard.has(b.id) && b.phase === phase
+    // A street that has had trouble talks about it, whatever else is going on.
+    const trouble = levelRank(sim.disturbance.districtLevel(district)) >= levelRank('NOTICED')
+      ? sim.disturbance.dominant(district, sim.tick) : null;
+    const fits = (b: Bark) => !this.heard.has(b.id)
+      && (b.trouble ? b.trouble === trouble : b.phase === phase)
       && (!b.after || b.after === this.state.report)
       && (!b.district || b.district === district);
-    let bark: Bark | undefined = BARKS.find((b) => fits(b) && b.at && dist(b.at, here) < BARK_RANGE * 1.6);
+    let bark: Bark | undefined = trouble && first >= 0 ? BARKS.find((b) => fits(b) && b.trouble) : undefined;
+    if (!bark) bark = BARKS.find((b) => fits(b) && b.at && dist(b.at, here) < BARK_RANGE * 1.6);
     if (!bark && first >= 0) bark = BARKS.find((b) => fits(b) && !b.at);
     if (!bark) return;
     this.heard.add(bark.id);

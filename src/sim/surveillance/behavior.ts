@@ -18,6 +18,9 @@ export const THRESHOLDS = {
   evidenceWindowTicks: 900,    // 15 s
 };
 
+/** Track confidence at which the system is holding somebody well enough to judge them. */
+const HELD = 0.25;
+
 interface BehaviourMemory {
   offRoadTicks: number;
   recklessTicks: number;
@@ -51,7 +54,18 @@ export function classify(
   if (offRoad > THRESHOLDS.offRoadDistance) m.offRoadTicks++;
   else m.offRoadTicks = Math.max(0, m.offRoadTicks - 3);
 
-  if (subject.speed > THRESHOLDS.recklessSpeed && pedestrianZone) m.recklessTicks++;
+  /*
+   * Some things can only be seen.
+   *
+   * Loitering and speeding are judgements about what somebody is doing, and
+   * the system can only make them about somebody it is actually holding. A
+   * skater waiting behind a wall for a camera to sweep past is not
+   * "extended presence" to a network that cannot see them — which is what
+   * makes waiting a verb. (An unusual route is different: the model knows
+   * where you are not, and the alley stays a choice with a cost.)
+   */
+  const held = track.confidence >= HELD;
+  if (held && subject.speed > THRESHOLDS.recklessSpeed && pedestrianZone) m.recklessTicks++;
   else m.recklessTicks = Math.max(0, m.recklessTicks - 2);
 
   // Evasion: the track was held, then lost quickly, repeatedly.
@@ -69,7 +83,7 @@ export function classify(
   if (m.duckCount >= 2) flags.add('EVASIVE');
 
   const disp = displacement(track, THRESHOLDS.loiterWindowTicks, tick);
-  if (disp < THRESHOLDS.loiterDisplacement && track.history.length > 40) flags.add('LOITERING');
+  if (held && disp < THRESHOLDS.loiterDisplacement && track.history.length > 40) flags.add('LOITERING');
 
   for (const e of evidence) {
     if (tick - e.tick > THRESHOLDS.evidenceWindowTicks) continue;

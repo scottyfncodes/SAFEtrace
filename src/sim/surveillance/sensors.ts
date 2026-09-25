@@ -32,6 +32,13 @@ export interface Sensor {
   attendUntil: number;
   /** 0..1, how far round toward `attend` it currently is. */
   attendBlend: number;
+  /**
+   * 0..1, how watchful this camera is because of what has been happening
+   * near it (see surveillance/disturbance.ts). A camera on a street where a
+   * lens was just shot out sweeps wider, hears further and looks harder; a
+   * fixed camera on that street starts scanning. Eased, so it never snaps.
+   */
+  vigilance: number;
 }
 
 export function makeSensor(data: SensorData): Sensor {
@@ -49,6 +56,7 @@ export function makeSensor(data: SensorData): Sensor {
     attend: null,
     attendUntil: 0,
     attendBlend: 0,
+    vigilance: 0,
   };
 }
 
@@ -72,9 +80,16 @@ export function updateSensor(s: Sensor, tick: number, time: number): void {
     return;
   }
   let base = d.facing;
+  const v = s.vigilance;
   if (d.sweep > 0 && d.sweepPeriod > 0) {
     const phase = ((time / d.sweepPeriod) + d.sweepPhase) % 1;
-    base = d.facing + Math.sin(phase * Math.PI * 2) * d.sweep;
+    // A watchful camera covers more of its street.
+    base = d.facing + Math.sin(phase * Math.PI * 2) * d.sweep * (1 + VIGILANT.sweepGain * v);
+  } else if (v > 0.01) {
+    // A fixed camera that is not usually a turner starts to scan: slowly, and
+    // not far, but a player who learned where its edge was must learn it again.
+    const phase = ((time / VIGILANT.scanPeriod) + d.sweepPhase + 0.25) % 1;
+    base = d.facing + Math.sin(phase * Math.PI * 2) * VIGILANT.scanArc * v;
   }
   // A knocked mount re-homes slowly rather than snapping, so the player can watch it.
   if (s.knockOffset !== 0) {
@@ -92,6 +107,19 @@ export function updateSensor(s: Sensor, tick: number, time: number): void {
   }
   s.facing = wrapAngle(base + s.knockOffset);
 }
+
+/** What watchfulness does to a camera. */
+export const VIGILANT = {
+  /** Extra sweep amplitude at full vigilance, as a fraction of its own. */
+  sweepGain: 0.6,
+  /** A fixed camera's scan, radians either side, at full vigilance. */
+  scanArc: 0.34,
+  scanPeriod: 9,
+  /** Observation quality gain at full vigilance. */
+  qualityGain: 0.22,
+  /** How much further it hears a sound, at full vigilance. */
+  hearingGain: 0.5,
+};
 
 /** Effective observation cone half-angle. */
 export const halfFov = (s: Sensor): number => s.data.fov / 2;
@@ -132,8 +160,11 @@ export function observe(
   const speedTerm = remap(subject.speed, 2, 13, 1, 0.42);
   const lightTerm = clamp01(0.35 + 0.65 * sensor.light * params.daylight);
   const degrade = sensor.state === 'DEGRADED' ? 0.45 : 1;
+  const watchful = 1 + VIGILANT.qualityGain * sensor.vigilance;
+  // Partial cover — a tree crown, a parked car — for the player only; see World.softCover.
+  const cover = subject.kind === 'player' ? world.softCover(d.pos, d.height, subject.pos, subject.speed) : 1;
 
-  let quality = clamp01(distTerm * angleTerm * speedTerm * lightTerm * degrade);
+  let quality = clamp01(distTerm * angleTerm * speedTerm * lightTerm * degrade * watchful * cover);
   if (quality < 0.08) return null;
 
   // Small deterministic jitter so identical geometry does not produce identical numbers.

@@ -173,6 +173,8 @@ export class MachineRenderer {
           d.id,
           s.state === 'ONLINE' ? d.label : s.state,
           `SEG ${this.sim.network.get(d.nodeId)?.segmentId ?? '—'}`,
+          // Made watchful by what has been happening near it.
+          ...(s.vigilance > 0.15 ? [`VIGILANCE ${Math.round(s.vigilance * 100)}%`] : []),
         ], live ? m.data : '#8A939A', 0.6);
       }
     }

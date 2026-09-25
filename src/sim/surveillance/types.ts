@@ -167,6 +167,13 @@ export interface Evidence {
   /** Weight this contributes to a linked subject's risk. */
   weight: number;
   label: string;
+  /**
+   * 0..1, how hard the system was already looking at this place when it
+   * happened (see disturbance.ts). A street under review analyses sooner and
+   * searches a tighter disc: the second broken camera on a road is found out
+   * faster than the first.
+   */
+  scrutiny?: number;
 }
 
 export type EscalationLevel =

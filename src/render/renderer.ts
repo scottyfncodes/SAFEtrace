@@ -9,15 +9,25 @@
 import { type Rect, type Vec2, clamp01, easeInOutCubic, smoothstep } from '../core/math';
 import type { ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
-import type { Sim } from '../sim/sim';
+import { NOISE_REACH, type Sim } from '../sim/sim';
 import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY } from '../sim/slingshot';
 import { ViewCamera } from './camera';
 import { PLAN, SLING_HINT } from '../content/copy';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
+import { readPlan, type PlanReading } from './plan';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
+
+/** The plan's own inks: the player's sketch, not the machine's colours. */
+const PLAN_INK = {
+  camera: '#F0B45A',
+  ghost: '#FFFFFF',
+  reading: '#F2C86B',
+  hot: '#FF6A4D',
+  dead: '#9AA3AA',
+};
 
 interface Particle {
   kind: 'dust' | 'chip' | 'leaf' | 'spark' | 'bird';
@@ -221,6 +231,10 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
+    // Under the words: what the player knows about who is watching.
+    const reading = readPlan(sim, this.waypoint);
+    this.drawPlanSurveillance(ctx, reading, a);
+
     // Districts, large and quiet: the words people give directions in.
     ctx.font = '700 13px ui-monospace, Menlo, monospace';
     for (const d of sim.world.data.districts) {
@@ -319,7 +333,11 @@ export class Renderer {
     const lines: string[] = [];
     if (!this.waypoint) lines.push(this.touchHints ? PLAN.markTouch : PLAN.markMouse);
     lines.push(this.touchHints ? PLAN.moveTouch : PLAN.moveMouse);
+    // What the plan reads off the town, above how to use it.
+    const readings = reading.lines.slice(0, 3);
+    lines.unshift(...readings);
     if (this.scoreLine) lines.unshift(this.scoreLine);
+    const readFrom = this.scoreLine ? 1 : 0;
     ctx.font = '600 11px ui-monospace, Menlo, monospace';
     // Below the notes and toasts row, so nothing the town says covers it.
     const top = this.safe.top + (this.touchHints ? 132 : 78);
@@ -328,9 +346,149 @@ export class Renderer {
       ctx.fillStyle = alpha('#0B1117', 0.72 * a);
       roundRect(ctx, this.w / 2 - wd / 2, top + i * 22 - 9, wd, 19, 9);
       ctx.fill();
-      ctx.fillStyle = alpha(i === 0 && this.scoreLine ? '#F2C86B' : MACHINE.structureBright, 0.95 * a);
+      const isReading = i >= readFrom && i < readFrom + readings.length;
+      ctx.fillStyle = alpha(i === 0 && this.scoreLine ? '#F2C86B' : isReading ? PLAN_INK.reading : MACHINE.structureBright, 0.95 * a);
       ctx.fillText(l, this.w / 2, top + i * 22 + 0.5);
     });
+    ctx.restore();
+  }
+
+  /**
+   * The surveillance, as the player understands it.
+   *
+   * Before VISION, the cameras the player has noticed, drawn in warm ink
+   * rather than the machine's cyan — this is their sketch, not the system's
+   * map — each with the arc it has been seen to swing through, and the ones
+   * that have the player right now drawn hot. With a pin down, the cameras a
+   * stone there would turn are drawn a second time, ghosted, facing where
+   * they would look: the route that opens is the gap they leave. Where
+   * trouble has been caused there is a small mark, fading as the place
+   * forgets. With VISION the machine layer below already draws every cone,
+   * so only the pin's ghosts, the marks and SAFEtrace's own flagged areas are
+   * added here.
+   */
+  private drawPlanSurveillance(ctx: CanvasRenderingContext2D, r: PlanReading, a: number): void {
+    const cam = this.cam;
+    const at = (p: Vec2) => cam.toScreen(p, this.w, this.h);
+    const vision = this.sim.visionUnlocked;
+    const wedge = (c: Vec2, facing: number, half: number, range: number) => {
+      const o = at(c);
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y);
+      ctx.arc(o.x, o.y, range * cam.zoom, facing - half, facing + half);
+      ctx.closePath();
+    };
+    ctx.save();
+
+    // SAFEtrace's own view of where things keep happening.
+    for (const ar of r.areas) {
+      const c = at(ar.pos);
+      const col = ar.level === 'REVIEW' ? PLAN_INK.hot : PLAN_INK.reading;
+      ctx.strokeStyle = alpha(col, 0.7 * a);
+      ctx.fillStyle = alpha(col, 0.07 * a);
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 34 * cam.zoom, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '700 10px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = alpha(col, 0.95 * a);
+      ctx.fillText(`${ar.district.toUpperCase()} — ${ar.level}`, c.x, c.y - 34 * cam.zoom - 8);
+    }
+
+    if (!vision) {
+      for (const c of r.cameras) {
+        const half = c.fov / 2;
+        const ink = c.seeing ? VENEER.player : PLAN_INK.camera;
+        if (!c.live) {
+          const o = at(c.pos);
+          ctx.strokeStyle = alpha(PLAN_INK.dead, 0.8 * a);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(o.x - 4, o.y - 4); ctx.lineTo(o.x + 4, o.y + 4);
+          ctx.moveTo(o.x + 4, o.y - 4); ctx.lineTo(o.x - 4, o.y + 4); ctx.stroke();
+          continue;
+        }
+        // Where it swings to: a thin arc at the edge of its reach.
+        if (c.sweep > 0.02) {
+          const o = at(c.pos);
+          ctx.strokeStyle = alpha(ink, 0.35 * a);
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 5]);
+          ctx.beginPath();
+          ctx.arc(o.x, o.y, c.range * cam.zoom, c.home - c.sweep - half, c.home + c.sweep + half);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        wedge(c.pos, c.facing, half, c.range);
+        ctx.fillStyle = alpha(ink, (c.seeing ? 0.26 : 0.13) * a);
+        ctx.fill();
+        ctx.strokeStyle = alpha(ink, (c.seeing ? 0.95 : 0.6) * a);
+        ctx.lineWidth = c.vigilant ? 2.2 : 1.2;
+        ctx.stroke();
+        const o = at(c.pos);
+        ctx.fillStyle = alpha(ink, a);
+        ctx.beginPath(); ctx.arc(o.x, o.y, 3.2, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      // The machine draws every cone; make the ones that have you unmissable.
+      for (const c of r.cameras) {
+        if (!c.seeing) continue;
+        wedge(c.pos, c.facing, c.fov / 2, c.range);
+        ctx.strokeStyle = alpha(VENEER.player, 0.9 * a);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    // Where trouble was made. Heavier things leave a bigger mark.
+    for (const m of r.marks) {
+      const c = at(m.pos);
+      const k = (m.heavy ? 6 : 3.5);
+      ctx.strokeStyle = alpha(m.heavy ? PLAN_INK.hot : PLAN_INK.reading, Math.min(1, 0.25 + m.strength) * a);
+      ctx.lineWidth = m.heavy ? 2 : 1.4;
+      ctx.beginPath();
+      ctx.moveTo(c.x - k, c.y - k); ctx.lineTo(c.x + k, c.y + k);
+      ctx.moveTo(c.x + k, c.y - k); ctx.lineTo(c.x - k, c.y + k);
+      ctx.stroke();
+    }
+
+    // What a noise at the pin would do.
+    const e = r.earshot;
+    if (e) {
+      const ghost = (ids: string[], toward: Vec2, faint: boolean) => {
+        for (const id of ids) {
+          const c = r.cameras.find((x) => x.id === id);
+          if (!c) continue;
+          // A place that has heard too much looks back at whoever threw it.
+          const target = e.wary ? this.sim.player.pos : toward;
+          const facing = Math.atan2(target.y - c.pos.y, target.x - c.pos.x);
+          const col = e.wary ? PLAN_INK.hot : PLAN_INK.ghost;
+          wedge(c.pos, facing, c.fov / 2, c.range);
+          ctx.fillStyle = alpha(col, (faint ? 0.05 : 0.09) * a);
+          ctx.fill();
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = alpha(col, (faint ? 0.45 : 0.8) * a);
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          const o = at(c.pos), t = at(toward);
+          ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      };
+      ghost(e.stone, e.at, false);
+      if (e.loud) {
+        ghost(e.loud.sensors.filter((id) => !e.stone.includes(id)), e.loud.pos, true);
+        const c = at(e.loud.pos);
+        ctx.strokeStyle = alpha(PLAN_INK.ghost, 0.9 * a);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, Math.PI * 2); ctx.stroke();
+      }
+      // The stone's own earshot, so "near the pin" means something.
+      const p = at(e.at);
+      ctx.strokeStyle = alpha(PLAN_INK.ghost, 0.35 * a);
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.arc(p.x, p.y, NOISE_REACH.ground * 2.2 * cam.zoom, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
   }
 

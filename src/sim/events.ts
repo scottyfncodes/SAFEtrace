@@ -77,8 +77,14 @@ export interface SimEvents extends Record<string, unknown> {
   'projectile:bounce': { pos: Vec2; z: number; speed: number; surface: string; wall: boolean };
   /** A stone came to rest. */
   'projectile:settled': { pos: Vec2 };
-  /** Something in the world turned toward a sound: a camera, or a person. */
-  'world:attention': { pos: Vec2; sensors: string[]; people: number };
+  /**
+   * Something in the world turned toward a sound: a camera, or a person.
+   * `discounted` when the cameras looked back up the throw instead, because
+   * the place has heard too many noises to believe this one.
+   */
+  'world:attention': { pos: Vec2; sensors: string[]; people: number; discounted?: boolean };
+  /** A district crossed a disturbance level, up or down. */
+  'disturbance:level': { district: string; from: string; to: string; pos: Vec2 };
   /** A stone went through a tree. Leaves, and whatever was sitting in it. */
   'foliage:hit': { pos: Vec2; z: number; birds: boolean; treeId: string };
   'noise:event': { pos: Vec2; label: string };

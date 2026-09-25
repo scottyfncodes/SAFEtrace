@@ -102,6 +102,23 @@ export const SYSTEM = {
     ? `${n} WITNESS${n === 1 ? '' : 'ES'} IN RANGE. STATEMENTS REQUESTED.`
     : 'NO WITNESS STATEMENTS. FOOTAGE UNDER REVIEW.',
   incidentPerson: 'PUBLIC ORDER — PROJECTILE, PERSON',
+  /*
+   * Disturbance: the system noticing a place rather than a person.
+   *
+   * These never name the player, because the system does not know who it is
+   * looking for — only that something keeps happening here. The player is
+   * meant to read them as "I have been making too much noise on this street".
+   */
+  areaNoticed: (where: string) => `RECURRING ACTIVITY — ${where}`,
+  areaPattern: (where: string) => `PATTERN DETECTED — ${where}`,
+  areaReview: (where: string) => `AREA UNDER REVIEW — ${where} — COVERAGE INCREASED`,
+  areaCleared: (where: string) => `AREA REVIEW CLOSED — ${where}`,
+  /** A noise in a place that has had too many: it looks back up the throw instead. */
+  noiseDiscounted: 'REPEAT ACOUSTIC EVENT — ORIGIN REVIEW',
+  /** A broken node gets a visit. */
+  nodeInspect: (id: string) => `NODE ${id} DOWN — UNIT INSPECTING`,
+  /** Heavy physical evidence nobody could be linked to: it is still an incident. */
+  incidentVandalism: 'DEVICE DAMAGE — PERSON UNKNOWN',
   /** The player spoke up at the stop, and is now part of the record of it. */
   partyPresent: 'PARTY PRESENT LOGGED — SUBJECT 4417 — INC-4100',
   /** The one line the system has about how the afternoon ended. */
@@ -271,6 +288,40 @@ export const PLAN = {
   markMouse: 'CLICK THE MAP TO MARK WHERE YOU ARE GOING',
   moveTouch: 'DRAG TO LOOK AROUND · PLAN TO CLOSE',
   moveMouse: 'DRAG TO LOOK AROUND · SCROLL TO ZOOM · Q TO CLOSE',
+};
+
+/**
+ * What the plan says about the surveillance, in the player's voice before
+ * VISION and the machine's after it. These are readings, not instructions:
+ * they say what the town will do, and leave what to do about it to the player.
+ */
+export const PLAN_READ = {
+  inView: 'A CAMERA HAS YOU IN VIEW',
+  seenBy: (ids: string[]) => `IN VIEW — ${ids.slice(0, 3).join(', ')}`,
+  area: (level: string, vision: boolean): string => {
+    if (vision) {
+      return level === 'REVIEW' ? 'THIS AREA: UNDER REVIEW — COVERAGE INCREASED'
+        : level === 'PATTERN' ? 'THIS AREA: PATTERN — NOISE NO LONGER TRUSTED'
+          : 'THIS AREA: RECURRING ACTIVITY LOGGED';
+    }
+    return level === 'REVIEW' ? 'THIS STREET IS ON EDGE'
+      : level === 'PATTERN' ? "YOU'VE MADE TOO MUCH NOISE ROUND HERE"
+        : 'PEOPLE ROUND HERE ARE STARTING TO LOOK UP';
+  },
+  earshot: (
+    e: { stone: string[]; loud: { kind: string; sensors: string[] } | null; wary: boolean },
+    vision: boolean,
+  ): string => {
+    const cams = (n: number) => `${n} CAMERA${n === 1 ? '' : 'S'}${vision ? '' : " YOU'VE SEEN"}`;
+    const thing = e.loud ? (e.loud.kind === 'car' ? 'THE CAR' : `THE ${e.loud.kind.toUpperCase()}`) : '';
+    if (e.wary && (e.stone.length || e.loud?.sensors.length)) return "NOISE BY THE PIN: THEY'D LOOK BACK UP THE THROW";
+    if (e.stone.length) {
+      const more = e.loud && e.loud.sensors.length > e.stone.length ? ` · ${thing} THERE, ${e.loud.sensors.length}` : '';
+      return `A STONE BY THE PIN TURNS ${cams(e.stone.length)}${more}`;
+    }
+    if (e.loud && e.loud.sensors.length) return `A STONE WON'T CARRY · ${thing} BY THE PIN TURNS ${cams(e.loud.sensors.length)}`;
+    return 'NOTHING NEAR THE PIN WOULD HEAR A STONE';
+  },
 };
 
 /** The first time the sling comes up on a phone, and never again after a shot. */
