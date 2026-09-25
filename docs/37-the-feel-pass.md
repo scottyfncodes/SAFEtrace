@@ -221,6 +221,21 @@ seven-centimetre stone forty metres away is otherwise a thing you hear. You
 can throw on the move — the board settles under a draw, and sway still grows
 with speed and shrinks with flow.
 
+**Noise as a tool, readable and with a cost.** A camera turned toward a
+sound now says so where the player is: its status light goes amber for as
+long as it is looking at the noise (a lens that actually has the player is
+lit, and only that lens — every camera used to light up whenever any one of
+them could see you). On the plan its cone turns amber and visibly swings off
+its sweep, and the noise itself ripples on the map. And it costs something
+to lean on: three noises within twenty-five metres inside fifty seconds is a
+pattern, and SAFEtrace sends a unit to stand exactly where it happened —
+which is the place a player using noise as cover was about to go through.
+Cameras also draw out to 120 m from the eye again; since the rig moved back
+they had been disappearing a house or two up the street.
+
+A gamepad throws the same way: the right stick points it (how far it is
+pushed is how far it goes), the right trigger draws and lets go.
+
 **A bug the rebuild found.** A mouse throw on the move never fired, before
 or after this pass: the frame the button came up said "not aiming", and the
 simulation only fires a sling that is being held. The first-person mode
@@ -268,7 +283,7 @@ off the camera line, and cameras turning toward a sound.
 
 ## What was tested
 
-463 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
+466 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
 pulled, eases in, eases off, fires with the held draw, and shakes when held
 too long; bounce by surface, rolling out, wall ricochet, a stone that keeps
 going after it first touches the road; cameras turning toward a sound and

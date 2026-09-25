@@ -655,7 +655,11 @@ class Game {
       }
     });
     // Cameras turning to a sound are heard doing it, faintly.
-    bus.on('world:attention', ({ sensors }) => { if (sensors.length) this.audio.servo(); });
+    bus.on('world:attention', ({ pos, sensors }) => {
+      if (sensors.length) this.audio.servo();
+      // On the plan, where the town is looking now.
+      this.renderer.ripple(pos, 1.6);
+    });
     bus.on('noise:event', ({ pos, label }) => {
       if (label === 'VEHICLE ALARM') this.audio.alarm(); else this.audio.noise();
       this.renderer.ripple(pos, 1.5);

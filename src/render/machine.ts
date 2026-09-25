@@ -151,7 +151,13 @@ export class MachineRenderer {
       ctx.closePath();
 
       const grad = ctx.createRadialGradient(origin.x, origin.y, 0, origin.x, origin.y, Math.max(r, 1));
-      if (live) {
+      // Turned toward a noise: the same amber as its status light in the
+      // street, so the plan says why a cone has swung off its sweep.
+      const listening = live && s.attend !== null && s.attendBlend > 0.3;
+      if (live && listening) {
+        grad.addColorStop(0, alpha('#F2B441', 0.26));
+        grad.addColorStop(1, alpha('#F2B441', 0));
+      } else if (live) {
         grad.addColorStop(0, alpha(m.data, s.state === 'LOOPED' ? 0.05 : 0.20));
         grad.addColorStop(1, alpha(m.data, 0));
       } else {
@@ -161,7 +167,8 @@ export class MachineRenderer {
       ctx.fillStyle = grad;
       ctx.fill();
 
-      ctx.strokeStyle = live ? alpha(m.coverageEdge, s.state === 'LOOPED' ? 0.25 : 0.7) : alpha('#6E7A85', 0.3);
+      ctx.strokeStyle = listening ? alpha('#F2B441', 0.8)
+        : live ? alpha(m.coverageEdge, s.state === 'LOOPED' ? 0.25 : 0.7) : alpha('#6E7A85', 0.3);
       ctx.lineWidth = 1;
       ctx.stroke();
 

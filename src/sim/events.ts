@@ -79,6 +79,8 @@ export interface SimEvents extends Record<string, unknown> {
   'projectile:settled': { pos: Vec2 };
   /** Something in the world turned toward a sound: a camera, or a person. */
   'world:attention': { pos: Vec2; sensors: string[]; people: number };
+  /** Enough noise in one place that SAFEtrace has sent somebody to look. */
+  'disturbance:flagged': { pos: Vec2 };
   /** A stone went through a tree. Leaves, and whatever was sitting in it. */
   'foliage:hit': { pos: Vec2; z: number; birds: boolean; treeId: string };
   'noise:event': { pos: Vec2; label: string };

@@ -169,6 +169,8 @@ export class InputManager {
   readonly options: InputOptions = { holdToAim: true, holdForPlanView: true, dragThrow: true };
   /** Where the left button went down, for reading a drag back as a pull. */
   private press: { x: number; y: number } | null = null;
+  /** Where the gamepad's right stick is pointing a throw, while it is. */
+  private padAim: { x: number; y: number } | null = null;
   /** The last pull, so the release frame still knows which way it was. */
   private lastThrow: { x: number; y: number } | null = null;
   private detach: Array<() => void> = [];
@@ -337,6 +339,21 @@ export class InputManager {
       }
     }
     if (!drawRaw) { if (!i.firePressed) this.lastThrow = null; if (!this.mouse.left) this.press = null; }
+
+    /*
+     * A gamepad: the right stick points the throw, the way a pull does — its
+     * direction is the direction, how far it is pushed is how far — and the
+     * right trigger draws and lets go.
+     */
+    if (gp && this.options.dragThrow) {
+      const rx = gp.axes[2] ?? 0, ry = gp.axes[3] ?? 0;
+      const mag = Math.hypot(rx, ry);
+      if (mag > 0.25) this.padAim = { x: (rx / mag) * Math.min(1, mag) * 150, y: (ry / mag) * Math.min(1, mag) * 150 };
+      else if (!drawRaw && !i.firePressed) this.padAim = null;
+      if (this.padAim && (drawRaw || i.firePressed) && !this.mouse.left && !i.throwVector) {
+        i.throwVector = { ...this.padAim };
+      }
+    }
 
     /*
      * The plan: tap to open it, tap again to close it — or hold to peek, and
