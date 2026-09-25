@@ -983,6 +983,29 @@ export class Sim {
      */
   }
 
+  /**
+   * Noises the town has heard recently, and where. One stone clattering in a
+   * street is nothing — the town turns its head and forgets. Three in the
+   * same place inside a minute is a pattern, and SAFEtrace sends somebody to
+   * stand where it happened, which is exactly the place a player using noise
+   * as cover was about to go through. Distraction works; spamming it does
+   * not, and nobody has to be told so.
+   */
+  private disturbances: Array<{ pos: Vec2; tick: number }> = [];
+  private disturbanceFlaggedAt = -Infinity;
+
+  private noteDisturbance(pos: Vec2): void {
+    const span = 60 * DISTURBANCE.windowSeconds;
+    this.disturbances = this.disturbances.filter((d) => this.tick - d.tick < span);
+    this.disturbances.push({ pos: { ...pos }, tick: this.tick });
+    const near = this.disturbances.filter((d) => dist(d.pos, pos) < DISTURBANCE.radius).length;
+    if (near < DISTURBANCE.count || this.tick - this.disturbanceFlaggedAt < span) return;
+    this.disturbanceFlaggedAt = this.tick;
+    this.dispatcher.flagAnomaly(pos, this.tick, SYSTEM.repeatedDisturbance, 60 * 25);
+    this.message('SYSTEM', [SYSTEM.repeatedDisturbance], 4.2, 'normal', 'important');
+    this.bus.emit('disturbance:flagged', { pos: { ...pos } });
+  }
+
   /** A stone has stopped. It stays where it stopped. */
   private settle(proj: Projectile): void {
     this.droppedRocks.push({ pos: { ...proj.pos }, tick: this.tick, shape: proj.shape });
@@ -1003,6 +1026,7 @@ export class Sim {
    * holds on it, and `peopleReach` scales how far away a person still hears it.
    */
   drawAttention(pos: Vec2, reach: number, seconds: number, peopleReach = 1): void {
+    this.noteDisturbance(pos);
     const turned: string[] = [];
     for (const s of this.sensors) {
       if (s.state !== 'ONLINE' && s.state !== 'DEGRADED') continue;
@@ -1939,6 +1963,9 @@ function holdStillToAim(intent: Intent): Intent {
     aim: true,
   };
 }
+
+/** How many noises, how close together and how quickly, make a pattern. */
+export const DISTURBANCE = { count: 3, radius: 25, windowSeconds: 50 };
 
 /** The least draw a pulled-back throw leaves with. */
 export const THROW_FLOOR = 0.5;

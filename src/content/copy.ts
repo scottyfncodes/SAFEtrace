@@ -47,6 +47,8 @@ export const SYSTEM = {
   integrityFail: (id: string) => `INTEGRITY CHECK FAILED — NODE ${id}`,
   tamperLogged: 'TAMPER EVENT LOGGED — RETROACTIVE REVIEW',
   noiseAnomaly: 'AUDIO ANOMALY — UNATTRIBUTED',
+  /** A few stones in the same place is a pattern, and patterns get a visit. */
+  repeatedDisturbance: 'REPEATED DISTURBANCE — UNIT ASSIGNED TO LOCATION',
   droneFault: 'UNIT FAULT — ENGINEER NOTIFIED',
   recordImmutable: 'REQUEST DECLINED — RECORD IMMUTABLE',
   retention: 'RETENTION POLICY: INDEFINITE',

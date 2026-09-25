@@ -258,3 +258,66 @@ describe('the simulation throws at the point it is given, at its height', () => 
     expect(entered).toBe(false);
   });
 });
+
+describe('noise works as cover — until it is a pattern', () => {
+  it('lets two noises in one place go, and sends somebody for the third', () => {
+    const sim = makeSim();
+    const flagged: Array<{ x: number; y: number }> = [];
+    sim.bus.on('disturbance:flagged', ({ pos }) => flagged.push(pos));
+    const spot = { x: 160, y: 250 };
+    sim.drawAttention(spot, 7, 3);
+    step(sim, 5);
+    sim.drawAttention({ x: 163, y: 252 }, 7, 3);
+    step(sim, 5);
+    expect(flagged.length).toBe(0);
+    const before = sim.dispatcher.activeAnomalies.length;
+    sim.drawAttention({ x: 158, y: 247 }, 7, 3);
+    step(sim, 0.1);
+    expect(flagged.length).toBe(1);
+    expect(sim.dispatcher.activeAnomalies.length).toBeGreaterThan(before);
+    // And a fourth straight after is the same pattern, not a new one.
+    sim.drawAttention(spot, 7, 3);
+    step(sim, 0.1);
+    expect(flagged.length).toBe(1);
+  });
+
+  it('forgets noises that are far apart or long ago', () => {
+    const sim = makeSim();
+    let flagged = 0;
+    sim.bus.on('disturbance:flagged', () => { flagged++; });
+    sim.drawAttention({ x: 100, y: 100 }, 7, 3);
+    sim.drawAttention({ x: 200, y: 300 }, 7, 3);
+    step(sim, 55);
+    sim.drawAttention({ x: 100, y: 100 }, 7, 3);
+    sim.drawAttention({ x: 102, y: 101 }, 7, 3);
+    step(sim, 0.1);
+    expect(flagged).toBe(0);
+  });
+});
+
+describe('a gamepad throws the same way', () => {
+  class FakeTarget {
+    addEventListener() {}
+    removeEventListener() {}
+  }
+  it('points with the right stick and throws on the trigger', () => {
+    const pad = { connected: true, axes: [0, 0, 0, -0.9], buttons: Array.from({ length: 12 }, () => ({ pressed: false, value: 0 })) };
+    const nav = globalThis.navigator;
+    Object.defineProperty(globalThis, 'navigator', { value: { ...(nav ?? {}), getGamepads: () => [pad] }, configurable: true });
+    try {
+      const input = new InputManager();
+      input.attach(new FakeTarget() as unknown as Window);
+      pad.buttons[7] = { pressed: true, value: 1 };
+      const held = input.sample();
+      expect(held.aim).toBe(true);
+      expect(held.throwVector!.y).toBeLessThan(-100);
+      expect(Math.abs(held.throwVector!.x)).toBeLessThan(1);
+      pad.buttons[7] = { pressed: false, value: 0 };
+      const let_go = input.sample();
+      expect(let_go.firePressed).toBe(true);
+      expect(let_go.throwVector!.y).toBeLessThan(-100);
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    }
+  });
+});

@@ -872,10 +872,14 @@ export class PerspectiveRenderer {
    * physical object you can see pointing at you.
    */
   private collectSensors(sim: Sim, cam: Cam): void {
+    // Which lenses actually have the player — each camera answers for itself.
+    const seeing = new Set(sim.sensorsSeeingPlayer().map((x) => x.data.id));
     for (const s of sim.sensors) {
       const d = s.data;
       const dist = Math.hypot(d.pos.x - cam.pos.x, d.pos.y - cam.pos.y);
-      if (dist > 58) continue;
+      // Measured from the eye, which now sits forty metres behind the rider:
+      // the old 58 m drew nothing further than a house or two up the street.
+      if (dist > 120) continue;
       const face = s.facing;
       const fx = Math.cos(face), fy = Math.sin(face);
       const rx = -fy, ry = fx;
@@ -910,13 +914,27 @@ export class PerspectiveRenderer {
 
       // The lens, on the front face. Dark, and lit when it is actually seeing.
       const lx = hx + fx * 0.35, ly = hy + fy * 0.35;
-      const watching = live && sim.playerObserved && dist < d.range;
+      const watching = live && seeing.has(d.id);
+      /*
+       * A camera turned toward a sound shows it: its status light goes amber
+       * for as long as it is looking at the noise instead of at the street.
+       * That is the whole of the slingshot's use as a tool, and it has to be
+       * visible from where the player is standing, not only on the plan.
+       */
+      const listening = live && !watching && s.attend !== null && s.attendBlend > 0.3;
       this.push(cam, [
         { x: lx - rx * 0.15, y: ly - ry * 0.15, z: z + 0.15 },
         { x: lx + rx * 0.15, y: ly + ry * 0.15, z: z + 0.15 },
         { x: lx + rx * 0.15, y: ly + ry * 0.15, z: z - 0.15 },
         { x: lx - rx * 0.15, y: ly - ry * 0.15, z: z - 0.15 },
-      ], watching ? VENEER.player : '#20272E');
+      ], watching ? VENEER.player : listening ? '#F2B441' : '#20272E');
+      // At a distance a lens is a pixel; a lit one gets a small halo so the
+      // state reads from down the street.
+      if (watching || listening) {
+        // Bigger than the lens itself: a status light is meant to be seen.
+        const r = Math.min(0.9, 0.3 + dist * 0.006);
+        this.card(cam, { x: lx, y: ly }, z, r, r, alpha(watching ? VENEER.player : '#F2B441', 0.45));
+      }
     }
   }
 
