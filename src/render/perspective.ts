@@ -337,8 +337,14 @@ export class ChaseCamera {
     this.height = damp(this.height, lerp(lerp(17.0, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
     // An upright phone has sky to spare and street to want: tip it down a touch.
-    const upright = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h)) * 0.1;
-    this.pitch = damp(this.pitch, lerp(lerp(-0.41, -0.36, t), -0.36, f) - this.crane * 0.08 - upright, 0.3, dt);
+    const tall = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h));
+    const upright = tall * 0.1;
+    // In a conversation on an upright phone the card has to sit above the
+    // thumbs, which is the middle of the glass — exactly where framing puts
+    // the two people talking. Tipping down lifts them into the top half, so
+    // you can see who you are talking to over the words they are saying.
+    const overCard = f * tall * 0.46;
+    this.pitch = damp(this.pitch, lerp(lerp(-0.41, -0.36, t), -0.36, f) - this.crane * 0.08 - upright - overCard, 0.3, dt);
 
     // The point the rig is looking at lags the rider under acceleration, and
     // slides toward whatever they are talking to.

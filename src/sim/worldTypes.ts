@@ -176,6 +176,12 @@ export interface WorldData {
   features: SkateFeature[];
   roadNodes: RoadNode[];
   roadEdges: RoadEdge[];
+  /**
+   * The streets by name, as authored. The simulation never reads these — the
+   * road graph is nodes and edges — but a map a person gives directions by has
+   * to say "Northgate Lane", because that is what the town says.
+   */
+  streets?: Array<{ name: string; pts: Vec2[] }>;
   sensors: SensorData[];
   network: NetworkData;
   spawns: { player: Vec2; devon: Vec2; dronePads: Vec2[]; patrolStarts: Vec2[] };

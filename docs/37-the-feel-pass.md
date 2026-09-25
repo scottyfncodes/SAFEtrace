@@ -170,6 +170,27 @@ control in and out, instead of a gesture nobody could find. A pull that
 starts on it is still a pull, because that corner is where a right thumb
 rests.
 
+## Playing the investigation
+
+A second session played the back half through the UI — the stop, the
+objective, the plan, CM-207, a conversation — and found three more things:
+
+- **The objective names a street the map did not.** "SOURCE NODE: CM-207 —
+  NORTHGATE" was written on the promise that the player knows what Northgate
+  Lane looks like from the map, and the map named districts, not streets.
+  Every road was already authored with its name; the builder threw it away.
+  It is kept now, as data the simulation never reads, and the plan letters
+  each street along its longest straight run, upright whichever way the
+  street goes. Finding CM-207 is now reading a map rather than guessing, and
+  there is still no marker on it. The map can also zoom out far enough to
+  see the whole town at once.
+- **On an upright phone the conversation card covered the conversation.**
+  Framing centres the two people talking, and the card has to sit above the
+  thumbs, which is the same place. While framing a conversation on a tall
+  screen the camera now tips down so the speakers sit in the top half.
+- **"Found it at the plan."** The notes now say "on the plan", or "in CM-207's
+  record".
+
 ## UI
 
 - The corner is two small buttons, `Notes` and pause, and nothing else.
@@ -191,7 +212,7 @@ off the camera line, and cameras turning toward a sound.
 
 ## What was tested
 
-443 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
+446 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
 pulled, eases in, eases off, fires with the held draw, and shakes when held
 too long; bounce by surface, rolling out, wall ricochet, a stone that keeps
 going after it first touches the road; cameras turning toward a sound and

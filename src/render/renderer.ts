@@ -230,6 +230,36 @@ export class Renderer {
       ctx.fillText(d.name.toUpperCase().split('').join(' '), c.x, c.y);
     }
 
+    // Street names, lettered along the longest straight run of each street,
+    // upright whichever way the street goes. This is what the town says when
+    // it tells you where something is: "CM-207 — Northgate Lane".
+    ctx.font = '600 10px Inter, system-ui, sans-serif';
+    for (const st of sim.world.data.streets ?? []) {
+      let best = -1, bi = 0;
+      for (let i = 1; i < st.pts.length; i++) {
+        const l = Math.hypot(st.pts[i].x - st.pts[i - 1].x, st.pts[i].y - st.pts[i - 1].y);
+        if (l > best) { best = l; bi = i; }
+      }
+      if (bi === 0) continue;
+      const pa = at(st.pts[bi - 1]), pb = at(st.pts[bi]);
+      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+      const text = st.name.toUpperCase();
+      const tw = ctx.measureText(text).width;
+      if (len < tw + 24) continue;
+      const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+      if (mx < -80 || mx > this.w + 80 || my < -40 || my > this.h + 40) continue;
+      let ang = Math.atan2(pb.y - pa.y, pb.x - pa.x);
+      if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate(ang);
+      ctx.fillStyle = alpha('#0B1117', 0.55 * a);
+      ctx.fillRect(-tw / 2 - 4, -7, tw + 8, 14);
+      ctx.fillStyle = alpha('#E9EFEC', 0.8 * a);
+      ctx.fillText(text, 0, 0.5);
+      ctx.restore();
+    }
+
     // Buildings with names.
     ctx.font = '600 10px ui-monospace, Menlo, monospace';
     for (const b of sim.world.data.buildings) {

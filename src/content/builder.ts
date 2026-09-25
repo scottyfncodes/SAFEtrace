@@ -25,6 +25,7 @@ export class TownBuilder {
   private features: SkateFeature[] = [];
   private roadNodes: RoadNode[] = [];
   private roadEdges: RoadEdge[] = [];
+  private streets: Array<{ name: string; pts: Vec2[] }> = [];
   private sensors: SensorData[] = [];
   private nodes: NetworkNodeData[] = [];
   private segments: NetworkSegmentData[] = [];
@@ -117,6 +118,7 @@ export class TownBuilder {
     const surface = opts.surface ?? 'asphalt';
     const prior = opts.prior ?? 1;
     const ids: string[] = [];
+    this.streets.push({ name, pts: pts.map((p) => ({ x: p.x, y: p.y })) });
 
     for (let i = 0; i < pts.length; i++) {
       const id = this.id('RN');
@@ -461,6 +463,7 @@ export class TownBuilder {
       features: this.features,
       roadNodes: this.roadNodes,
       roadEdges: this.roadEdges,
+      streets: this.streets,
       sensors: this.sensors,
       network: { nodes: this.nodes, segments: this.segments },
       spawns: opts.spawns,
