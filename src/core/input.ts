@@ -2,7 +2,7 @@
  * Input -> intent. The simulation only ever sees `Intent`, so remapping,
  * hold-vs-toggle, and gamepad support cost the sim nothing.
  */
-import { clamp } from './math';
+import { clamp, clamp01 } from './math';
 
 export interface Intent {
   /** -1 left .. +1 right */
@@ -55,6 +55,18 @@ export interface Intent {
    * Devices with an absolute stick supply this; a keyboard supplies `steer`.
    */
   moveVector: { x: number; y: number } | null;
+  /**
+   * A drawn sling, as a drag: screen pixels from where the pull started back
+   * to where the hand is now, *reversed* — so it points the way the stone
+   * will go. Its length is the pull. Null when nothing is being dragged back.
+   */
+  throwVector: { x: number; y: number } | null;
+  /**
+   * The height of the thing being aimed at, in world metres, when the host
+   * has cast the aim into the world and found something to aim at — a lens
+   * on a pole, a drone, a bin, the road. Null means aim at the ground.
+   */
+  aimHeight: number | null;
   /** Requests to enter or leave the stationary aiming mode. */
   aimModePressed: boolean;
   skip: boolean;
@@ -68,6 +80,7 @@ export const emptyIntent = (): Intent => ({
   planView: false, interact: false, interactPressed: false,
   pointer: { x: 0, y: 0 }, pointerActive: false,
   aimVector: null, drawAmount: null, moveVector: null,
+  throwVector: null, aimHeight: null,
   aimModePressed: false, skip: false,
 });
 
@@ -97,6 +110,8 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
   if (add.aimVector) base.aimVector = add.aimVector;
   if (add.drawAmount !== null) base.drawAmount = add.drawAmount;
   if (add.moveVector) base.moveVector = add.moveVector;
+  if (add.throwVector) base.throwVector = add.throwVector;
+  if (add.aimHeight !== null) base.aimHeight = add.aimHeight;
   base.aimModePressed ||= add.aimModePressed;
   return base;
 }
@@ -104,7 +119,17 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
 export interface InputOptions {
   holdToAim: boolean;
   holdForPlanView: boolean;
+  /**
+   * Whether a left-button drag is read as pulling a sling back. Off while the
+   * first-person view is up, where the mouse is looking rather than pulling.
+   */
+  dragThrow: boolean;
 }
+
+/** A mouse drag shorter than this is a point-and-hold, not a pull. */
+export const MOUSE_PULL_MIN = 14;
+/** A mouse pull this long is a full draw. */
+export const MOUSE_PULL_FULL = 150;
 
 const CODE = {
   left: ['KeyA', 'ArrowLeft'],
@@ -141,7 +166,11 @@ export class InputManager {
   private aimToggle = false;
   /** Whether the draw control was held last frame, so a release can be seen. */
   private wasDrawing = false;
-  readonly options: InputOptions = { holdToAim: true, holdForPlanView: true };
+  readonly options: InputOptions = { holdToAim: true, holdForPlanView: true, dragThrow: true };
+  /** Where the left button went down, for reading a drag back as a pull. */
+  private press: { x: number; y: number } | null = null;
+  /** The last pull, so the release frame still knows which way it was. */
+  private lastThrow: { x: number; y: number } | null = null;
   private detach: Array<() => void> = [];
 
   attach(target: HTMLElement | Window = window): void {
@@ -160,7 +189,7 @@ export class InputManager {
       if (Math.abs(mx) < 150 && Math.abs(my) < 150) { this.look.x += mx; this.look.y += my; }
     };
     const md = (e: MouseEvent) => {
-      if (e.button === 0) this.mouse.left = true;
+      if (e.button === 0) { this.mouse.left = true; this.press = { x: e.clientX, y: e.clientY }; }
       if (e.button === 2) this.mouse.right = true;
     };
     const mu = (e: MouseEvent) => {
@@ -200,6 +229,12 @@ export class InputManager {
     const out = { x: this.look.x, y: this.look.y };
     this.look.x = 0; this.look.y = 0;
     return out;
+  }
+
+  /** A mouse pull in progress, for drawing the band: where it began and where the cursor is. */
+  get pullLine(): { start: { x: number; y: number }; cur: { x: number; y: number } } | null {
+    if (!this.mouse.left || !this.press || !this.lastThrow) return null;
+    return { start: { ...this.press }, cur: { x: this.mouse.x, y: this.mouse.y } };
   }
 
   /** The right button: held, it turns the camera round the rider. */
@@ -267,9 +302,12 @@ export class InputManager {
     this.wasDrawing = drawRaw;
 
     if (this.options.holdToAim) {
-      // Hold to draw; the release is the shot.
+      // Hold to draw; the release is the shot. The release frame itself still
+      // describes a drawn sling — the simulation only fires while the
+      // character is holding one, and a frame that said "not aiming" at the
+      // moment of letting go meant a mouse never threw anything on the move.
       i.firePressed = wasDrawing && !drawRaw;
-      i.aim = drawRaw;
+      i.aim = drawRaw || i.firePressed;
     } else {
       // Click to draw, click again to let go — the toggle form of the same
       // one-control gesture: the second click both fires and ends the aim.
@@ -278,6 +316,27 @@ export class InputManager {
       i.aim = this.aimToggle;
     }
     i.fire = i.aim;
+
+    /*
+     * Point-and-hold, or pull back: the mouse does whichever the hand does.
+     *
+     * Held still, the stone goes where the cursor is and the draw loads on
+     * its own clock. Dragged back more than a few pixels, it is the same
+     * gesture a thumb makes on a phone: the drag reversed is the direction,
+     * and its length is the draw.
+     */
+    if (this.options.dragThrow && this.press && (drawRaw || i.firePressed)) {
+      const dx = this.press.x - this.mouse.x, dy = this.press.y - this.mouse.y;
+      const len = Math.hypot(dx, dy);
+      if (drawRaw && len > MOUSE_PULL_MIN) this.lastThrow = { x: dx, y: dy };
+      else if (drawRaw) this.lastThrow = null;
+      if (this.lastThrow) {
+        i.throwVector = { ...this.lastThrow };
+        const l = Math.hypot(this.lastThrow.x, this.lastThrow.y);
+        i.drawAmount = clamp01((l - MOUSE_PULL_MIN) / (MOUSE_PULL_FULL - MOUSE_PULL_MIN));
+      }
+    }
+    if (!drawRaw) { if (!i.firePressed) this.lastThrow = null; if (!this.mouse.left) this.press = null; }
 
     /*
      * The plan: tap to open it, tap again to close it — or hold to peek, and

@@ -190,6 +190,198 @@ export class Renderer {
   private lastEye: CamState | null = null;
   private planWasOpen = false;
 
+  /**
+   * What is under a point on the glass, in the world: the first target the
+   * sight-line passes through, the first wall it meets, or the ground. The
+   * answer a thumb gets when it points a pulled sling at something — a lens
+   * on a pole is the lens, not the pavement under it.
+   */
+  pick(screen: Vec2): { x: number; y: number; z: number; target: string | null } | null {
+    const eye = this.lastEye;
+    if (!eye || this.sim.planViewBlend > 0.5) return null;
+    const { o, d } = this.perspective.rayAt(eye, screen.x, screen.y, this.w, this.h);
+    const targets = this.sim.ballisticTargets();
+    // Near things first: the ray starts at the eye, which is well back.
+    let best: { t: number; id: string; z: number; x: number; y: number } | null = null;
+    // How far along the ray the rider is. A tree between the lens and the
+    // rider is in the way of the camera, not of the throw.
+    const r = this.sim.player.pos;
+    const riderT = (r.x - o.x) * d.x + (r.y - o.y) * d.y + (1.2 - o.z) * d.z;
+    for (const tg of targets) {
+      const px = tg.pos.x - o.x, py = tg.pos.y - o.y, pz = tg.z - o.z;
+      const t = px * d.x + py * d.y + pz * d.z;
+      if (t <= 0) continue;
+      if (tg.kind === 'foliage' && t < riderT) continue;
+      const cx = o.x + d.x * t - tg.pos.x, cy = o.y + d.y * t - tg.pos.y, cz = o.z + d.z * t - tg.z;
+      // A little generous: a thumb is not a pixel.
+      if (Math.hypot(cx, cy, cz) > tg.radius * 1.35 + 0.15) continue;
+      if (!best || t < best.t) best = { t, id: tg.id, z: tg.z, x: tg.pos.x, y: tg.pos.y };
+    }
+    // Walls and ground, by marching the ray.
+    let hit: { x: number; y: number; z: number } | null = null;
+    for (let t = 1; t < 260; t += 0.6) {
+      const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
+      if (best && t > best.t) break;
+      if (z <= 0) { hit = { x, y, z: 0 }; break; }
+      // Likewise a roof the camera looks over on its way to the rider.
+      const b = t > riderT - 25 ? this.sim.world.buildingAt({ x, y }) : null;
+      if (b && z < b.height) { hit = { x, y, z }; break; }
+    }
+    if (best && (!hit || Math.hypot(hit.x - o.x, hit.y - o.y, hit.z - o.z) > best.t)) {
+      return { x: best.x, y: best.y, z: best.z, target: best.id };
+    }
+    return hit ? { ...hit, target: null } : null;
+  }
+
+  /** The last pull's line, kept for the band's ring-down after the throw. */
+  private lastThrow: { from: Vec2; to: Vec2 } | null = null;
+
+  /**
+   * The sling, in the rider's hands, in the street.
+   *
+   * It points where the pull points and stretches back as far as it is
+   * pulled; let go and the pouch snaps through the fork and rings. Drawn in
+   * screen space at the rider's hands, at the rider's own scale, so it reads
+   * as the thing they are holding rather than a cursor.
+   */
+  private drawHeldSling(ctx: CanvasRenderingContext2D): void {
+    const sim = this.sim;
+    const drawing = sim.player.aiming && !sim.aimMode && this.throwAim;
+    if (drawing) this.lastThrow = this.throwAim;
+    const rt = this.release.t;
+    const out = !!this.controlVisual?.slingOut;
+    const ringing = rt < 0.7 && !!this.lastThrow;
+    if (!drawing && !out && !ringing) return;
+    const eye = this.lastEye;
+    if (!eye) return;
+    const p = sim.player.pos;
+    const at = this.perspective.project3(eye, p.x, p.y, 1.2 + sim.player.z, this.w, this.h);
+    if (!at) return;
+    // Out but not pulled: held up at rest, pointing the way the rider looks.
+    const aim = drawing || ringing ? this.lastThrow! : { from: { x: at.x, y: at.y }, to: { x: at.x + 0.2, y: at.y - 1 } };
+    // Larger than life, like the stone in flight: it is the thing being used.
+    const size = Math.max(19, Math.min(38, at.s * 0.95));
+    const from = { x: at.x, y: at.y };
+    let ux = aim.to.x - aim.from.x, uy = aim.to.y - aim.from.y;
+    const ul = Math.hypot(ux, uy) || 1;
+    ux /= ul; uy /= ul;
+    const px = -uy, py = ux;
+    const draw = drawing ? clamp01(sim.player.draw) : 0;
+    const spring = rt < 0.7 ? -this.release.draw * 0.5 * Math.exp(-rt * 7.5) * Math.cos(rt * 34) : 0;
+    const pull = size * (0.35 + (draw + spring) * 1.7);
+    // The fork held out toward the target, the pouch drawn back from it.
+    const fork = { x: from.x + ux * size * 0.55, y: from.y + uy * size * 0.55 };
+    const grip = { x: fork.x - ux * size * 0.45, y: fork.y - uy * size * 0.45 + size * 0.1 };
+    const flex = draw * size * 0.08;
+    const tipL = { x: fork.x + ux * size * 0.5 + px * (size * 0.42 - flex), y: fork.y + uy * size * 0.5 + py * (size * 0.42 - flex) };
+    const tipR = { x: fork.x + ux * size * 0.46 - px * (size * 0.38 - flex), y: fork.y + uy * size * 0.46 - py * (size * 0.38 - flex) };
+    const pouch = { x: fork.x - ux * pull, y: fork.y - uy * pull };
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // A dark underline so it reads on lawn and on asphalt alike.
+    ctx.strokeStyle = alpha('#12181F', 0.35);
+    ctx.lineWidth = Math.max(3, size * 0.2);
+    ctx.beginPath(); ctx.moveTo(grip.x, grip.y); ctx.lineTo(fork.x, fork.y); ctx.stroke();
+    ctx.strokeStyle = '#6E5236';
+    taperedStroke(ctx, grip, fork, size * 0.16, size * 0.13, 0);
+    taperedStroke(ctx, fork, tipL, size * 0.13, size * 0.07, -size * 0.06);
+    taperedStroke(ctx, fork, tipR, size * 0.12, size * 0.06, size * 0.06);
+    // The cords: slack when idle, taut when pulled, slapping after the throw.
+    const sag = (1 - clamp01(draw)) * size * 0.12 + (rt < 0.5 ? Math.sin(rt * 60) * size * 0.2 * Math.exp(-rt * 8) : 0);
+    ctx.strokeStyle = alpha('#E8DCC0', 0.95);
+    ctx.lineWidth = Math.max(1.2, size * 0.05);
+    for (const tip of [tipL, tipR]) {
+      ctx.beginPath();
+      ctx.moveTo(tip.x, tip.y);
+      ctx.quadraticCurveTo((tip.x + pouch.x) / 2 + px * sag * 0.2, (tip.y + pouch.y) / 2 + sag, pouch.x, pouch.y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#5A452E';
+    ctx.lineWidth = Math.max(3, size * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(pouch.x + px * size * 0.14, pouch.y + py * size * 0.14);
+    ctx.lineTo(pouch.x - px * size * 0.14, pouch.y - py * size * 0.14);
+    ctx.stroke();
+    if (rt > 0.45 || drawing) {
+      ctx.fillStyle = '#6A7178';
+      ctx.beginPath(); ctx.arc(pouch.x, pouch.y, Math.max(2, size * 0.11), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * A thin bright streak behind every stone in flight. A stone is seven
+   * centimetres across and forty metres away; without this, a throw from
+   * behind the rider is a thing you hear rather than see.
+   */
+  private drawStreaks(ctx: CanvasRenderingContext2D, eye: CamState): void {
+    if (this.sim.projectiles.length === 0) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const pr of this.sim.projectiles) {
+      const pts = pr.trail.slice(-9);
+      for (let i = 1; i < pts.length; i++) {
+        const a = this.perspective.project3(eye, pts[i - 1].x, pts[i - 1].y, Math.max(0.05, pts[i - 1].z), this.w, this.h);
+        const b = this.perspective.project3(eye, pts[i].x, pts[i].y, Math.max(0.05, pts[i].z), this.w, this.h);
+        if (!a || !b) continue;
+        const k = i / pts.length;
+        ctx.strokeStyle = alpha('#FFFFFF', 0.75 * k);
+        ctx.lineWidth = Math.max(1.2, Math.min(4, 0.09 * b.s)) * (0.4 + k * 0.6);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** A mouse pull in progress, set by the host, drawn as the same band a thumb gets. */
+  mousePull: { start: Vec2; cur: Vec2 } | null = null;
+
+  private drawMousePull(ctx: CanvasRenderingContext2D): void {
+    const m = this.mousePull;
+    if (!m || this.sim.aimMode) return;
+    const draw = clamp01(this.sim.player.draw);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = alpha('#12181F', 0.3);
+    ctx.lineWidth = 5 + draw * 2;
+    ctx.beginPath(); ctx.moveTo(m.start.x, m.start.y); ctx.lineTo(m.cur.x, m.cur.y); ctx.stroke();
+    ctx.strokeStyle = alpha(draw > 0.95 ? VENEER.player : '#F6F4EE', 0.55 + draw * 0.4);
+    ctx.lineWidth = 2 + draw * 2;
+    ctx.beginPath(); ctx.moveTo(m.start.x, m.start.y); ctx.lineTo(m.cur.x, m.cur.y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(m.start.x, m.start.y, 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** A point in the street on the glass, or null behind the eye. */
+  screenOf(p: Vec2, z: number): Vec2 | null {
+    const eye = this.lastEye;
+    if (!eye) return null;
+    const at = this.perspective.project3(eye, p.x, p.y, z, this.w, this.h);
+    return at ? { x: at.x, y: at.y } : null;
+  }
+
+  /** The ground under a point on the glass, in the street view only. */
+  screenToGround(p: Vec2): Vec2 | null {
+    return this.lastEye ? this.perspective.groundAt(this.lastEye, p.x, p.y, this.w, this.h) : null;
+  }
+
+  /** Where the rider's hands are on the glass: the place a pull is drawn from. */
+  riderScreen(): Vec2 | null {
+    const eye = this.lastEye;
+    if (!eye) return null;
+    const p = this.sim.player.pos;
+    const at = this.perspective.project3(eye, p.x, p.y, 1.2 + this.sim.player.z, this.w, this.h);
+    return at ? { x: at.x, y: at.y } : null;
+  }
+
+  /**
+   * The pull, as the host has resolved it: where on the glass it is drawn
+   * from and where it points. Set each frame while a sling is drawn; the
+   * third-person sling is drawn along it.
+   */
+  throwAim: { from: Vec2; to: Vec2 } | null = null;
+
   // ------------------------------------------------------------ the plan
 
   /** Where the player has marked on the plan, if anywhere. Set by the host. */
@@ -646,8 +838,13 @@ export class Renderer {
       this.perspective.lens = 1;
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawParticles(ctx, eye);
-      // A sling drawn on the move, with a mouse: the same arc, from behind.
-      if (sim.player.aiming && !sim.aimMode) this.drawTrajectory(ctx, eye, sim.player.pos, sim.player.draw, 0.4 + sim.player.draw * 0.6);
+      this.drawStreaks(ctx, eye);
+      // A sling being pulled back: the arc it will fly, from the rider.
+      if (sim.player.aiming && !sim.aimMode && sim.player.draw > 0.02) {
+        this.drawTrajectory(ctx, eye, sim.player.pos, sim.shotDraw(), 0.35 + sim.player.draw * 0.65);
+      }
+      this.drawHeldSling(ctx);
+      this.drawMousePull(ctx);
       this.drawSkateHud(ctx);
       this.drawSpeech(ctx, eye, dt);
       this.drawInteractPrompt(ctx, eye, dt);
@@ -655,6 +852,7 @@ export class Renderer {
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
+        this.controls.throwHint = this.touchHints && !this.shotTaken;
         this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
         this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }
@@ -735,6 +933,7 @@ export class Renderer {
     this.lastEye = eye;
     this.perspective.draw(ctx, sim, eye, this.w, this.h, true);
     this.drawParticles(ctx, eye);
+    this.drawStreaks(ctx, eye);
     // A ghost of the path while slack, confident once drawn.
     // Held back for a moment after a shot, so the stone is the thing to watch.
     const settle = clamp01((this.release.t - 0.5) / 0.5);
