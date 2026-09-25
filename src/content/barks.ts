@@ -21,6 +21,12 @@ export interface Bark {
   lines: string[];
   /** Only after this report, for the reported phase. */
   after?: 'priya' | 'mara' | 'dropped';
+  /**
+   * Said in any phase, but only in a district that has had this kind of
+   * trouble recently (see surveillance/disturbance.ts). This is one of the
+   * ways the player finds out they have been loud: the neighbours say so.
+   */
+  trouble?: 'noise' | 'broken' | 'tamper';
 }
 
 export const BARKS: Bark[] = [
@@ -51,6 +57,13 @@ export const BARKS: Bark[] = [
   { id: 'b-window-2', phase: 'reported', after: 'mara', district: 'commons', lines: ["There's a petition going round. Put the number back to 99.", "I signed the first one. I'll sign this one too."] },
   { id: 'b-review', phase: 'reported', after: 'priya', lines: ['The app says there\'s a review. About the Northgate thing.', "A review. So it's fine, then."] },
   { id: 'b-dropped', phase: 'reported', after: 'dropped', lines: ['Whatever happened with that boy?', "Nothing. It's in the past."] },
+
+  // ------------------------------------------------------------ trouble
+  { id: 'b-bangs', phase: 'before', trouble: 'noise', lines: ["That's the third bang this afternoon.", 'Kids. Or the bins. Or kids in the bins.'] },
+  { id: 'b-clatter', phase: 'before', trouble: 'noise', lines: ['Something keeps clattering out the front.', "The app says it's logged. So that's all right, then."] },
+  { id: 'b-camera-down', phase: 'before', trouble: 'broken', lines: ["The camera on the corner's gone dark.", "They'll have somebody out. They always do."] },
+  { id: 'b-two-more', phase: 'before', trouble: 'broken', lines: ['Somebody broke the one by the post box.', "Now they'll put up two."] },
+  { id: 'b-doorbell', phase: 'before', trouble: 'tamper', lines: ['My doorbell said it was offline for a minute.', 'Mine said everything was normal. Which is worse?'] },
 ];
 
 /** How long a line hangs in the air, and how long the town is quiet after. */

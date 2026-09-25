@@ -25,6 +25,8 @@ export interface SavedAfternoon {
   priorContacts: number;
   /** Whether the Community Safety Score has been found, and where. Absent in older saves. */
   scoreFoundAt?: string | null;
+  /** Cameras the player has noticed, for the plan. Absent in older saves. */
+  knownSensors?: string[];
   /** A line for the continue button: where the afternoon had got to. */
   label: string;
 }

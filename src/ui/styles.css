@@ -158,6 +158,15 @@ html, body {
   border: 1px solid rgba(79,224,196,0.4); border-radius: 4px;
   padding: 2px 7px; font-size: calc(9.5px * var(--text-scale)); color: var(--st-teal-bright);
 }
+/* A verb with a trace line under it stacks the two. */
+#inspect .verb[data-verb] { flex-direction: column; justify-content: center; line-height: 1.15; }
+#inspect .verb .trace {
+  display: block;
+  font-size: calc(8px * var(--text-scale));
+  letter-spacing: 0.06em;
+  opacity: 0.62;
+  margin-top: 1px;
+}
 #inspect .verb.busy { border-color: var(--st-warn); color: var(--st-warn); }
 
 /* ------------------------------------------------------------------ prompts */

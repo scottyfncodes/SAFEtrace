@@ -313,6 +313,7 @@ class Game {
       revealed,
       priorContacts: sim.playerSubject.priorContacts,
       scoreFoundAt: sim.scoreDiscovered ? sim.scoreFoundAt : null,
+      knownSensors: [...sim.knownSensors],
       label: this.progressLabel(),
     };
     saveAfternoon(s);
@@ -339,6 +340,7 @@ class Game {
     for (const id of save.revealed) { const n = sim.network.get(id); if (n) n.discovered = true; }
     sim.playerSubject.priorContacts = save.priorContacts;
     if (save.scoreFoundAt) { sim.scoreDiscovered = true; sim.scoreFoundAt = save.scoreFoundAt; }
+    for (const id of save.knownSensors ?? []) sim.knownSensors.add(id);
     sim.casefile.restore(save.casefile);
     this.story.restore(save.story as StorySnapshot);
     if (sim.devonFollowing && sim.devonVisible) {

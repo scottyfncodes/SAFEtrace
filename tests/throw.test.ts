@@ -260,24 +260,30 @@ describe('the simulation throws at the point it is given, at its height', () => 
 });
 
 describe('noise works as cover — until it is a pattern', () => {
-  it('lets two noises in one place go, and sends somebody for the third', () => {
+  /*
+   * Pass 38 folded the three-in-fifty-seconds rule into the disturbance
+   * ledger: the place remembers each stone, the third is noticed, and the
+   * fifth is a pattern that sends somebody to look.
+   */
+  function stone(sim: ReturnType<typeof makeSim>, at: { x: number; y: number }): void {
+    sim.disturbance.record('noise', at, sim.tick, sim.world.districtAt(at)?.id ?? 'bellhaven');
+  }
+
+  it('lets the first noises in one place go, and sends somebody once it is a pattern', () => {
     const sim = makeSim();
     const flagged: Array<{ x: number; y: number }> = [];
     sim.bus.on('disturbance:flagged', ({ pos }) => flagged.push(pos));
     const spot = { x: 160, y: 250 };
-    sim.drawAttention(spot, 7, 3);
-    step(sim, 5);
-    sim.drawAttention({ x: 163, y: 252 }, 7, 3);
-    step(sim, 5);
+    for (let i = 0; i < 4; i++) { stone(sim, { x: spot.x + i, y: spot.y }); step(sim, 1); }
     expect(flagged.length).toBe(0);
     const before = sim.dispatcher.activeAnomalies.length;
-    sim.drawAttention({ x: 158, y: 247 }, 7, 3);
-    step(sim, 0.1);
+    stone(sim, spot);
+    step(sim, 1);
     expect(flagged.length).toBe(1);
     expect(sim.dispatcher.activeAnomalies.length).toBeGreaterThan(before);
-    // And a fourth straight after is the same pattern, not a new one.
-    sim.drawAttention(spot, 7, 3);
-    step(sim, 0.1);
+    // And another straight after is the same pattern, not a new one.
+    stone(sim, spot);
+    step(sim, 1);
     expect(flagged.length).toBe(1);
   });
 
@@ -285,12 +291,12 @@ describe('noise works as cover — until it is a pattern', () => {
     const sim = makeSim();
     let flagged = 0;
     sim.bus.on('disturbance:flagged', () => { flagged++; });
-    sim.drawAttention({ x: 100, y: 100 }, 7, 3);
-    sim.drawAttention({ x: 200, y: 300 }, 7, 3);
-    step(sim, 55);
-    sim.drawAttention({ x: 100, y: 100 }, 7, 3);
-    sim.drawAttention({ x: 102, y: 101 }, 7, 3);
-    step(sim, 0.1);
+    for (let i = 0; i < 3; i++) stone(sim, { x: 100, y: 100 });
+    for (let i = 0; i < 3; i++) stone(sim, { x: 200, y: 300 });
+    step(sim, 240);
+    stone(sim, { x: 100, y: 100 });
+    stone(sim, { x: 102, y: 101 });
+    step(sim, 1);
     expect(flagged).toBe(0);
   });
 });

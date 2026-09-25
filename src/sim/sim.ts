@@ -22,12 +22,15 @@ import {
 import { type Drone, makeDrone, updateDrone, droneSees, destabilise, assignTask, DRONE } from './drone';
 import { type Patrol, makePatrol, updatePatrol, assignPatrolTask, PATROL } from './patrol';
 import { type Npc, glance, makeNpcs, startle, updateNpc } from './npc';
-import { makeSensor, observe, updateSensor, type Sensor } from './surveillance/sensors';
+import { VIGILANT, makeSensor, observe, sensorActive, updateSensor, type Sensor } from './surveillance/sensors';
 import { fuse, makeTrack } from './surveillance/fusion';
 import { classify, resetBehaviourMemory } from './surveillance/behavior';
 import { measureError, predict } from './surveillance/prediction';
 import { scoreRisk } from './surveillance/risk';
-import { analyse, makeEvidence, resetEvidenceIds } from './surveillance/evidence';
+import { analyse, makeEvidence, resetEvidenceIds, solveRange } from './surveillance/evidence';
+import {
+  Disturbance, levelRank, type DisturbanceKind, type DisturbanceLevel,
+} from './surveillance/disturbance';
 import { Network, VERBS, permits, LOOP_DURATION_TICKS, INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX, type HackVerb, type NetworkNode } from './surveillance/network';
 import { Dispatcher, resetTaskIds, type Asset } from './surveillance/dispatch';
 import { PURSUIT, type PursuitState } from './surveillance/pursuit';
@@ -85,6 +88,28 @@ const WANTED_TICKS = 60 * 120;
  * what makes noticing one a moment rather than a constant.
  */
 const SERVO_AUDIBLE_SPEED = 3.2;
+
+/**
+ * How far a sound carries, in metres, by what made it. The camera-side test
+ * lives in `wouldHear`; these are the numbers every noise uses, so the plan's
+ * preview and the real thing cannot disagree.
+ */
+export const NOISE_REACH = { ground: 7, birds: 10, prop: 18, car: 30 };
+
+/** How loud the board is, as a reach in metres. Rolling is silent. */
+export const BOARD_NOISE = { push: 2.5, pop: 4.5, land: 3, landMax: 8, flourish: 1.5, bail: 12 };
+
+/** How close a camera has to be, with a clear line, before the player knows it is there. */
+const KNOW_CAMERA_RANGE = 26;
+
+/** A broken node puts its segment on watch: this much vigilance, at this much remaining heat. */
+const SEGMENT_ALERT_MAX = 0.9;
+const SEGMENT_ALERT_FULL = 2.2;
+/** How far along its segment a broken node's alert reaches, in metres. */
+const SEGMENT_ALERT_REACH = 75;
+
+/** At full scrutiny, the fraction of a LOOP's integrity-check delay that is lost. */
+const LOOP_CHECK_HASTE = 0.5;
 
 export interface HackAction {
   verb: HackVerb;
@@ -165,6 +190,28 @@ export class Sim {
   private flushedTrees = new Set<string>();
   evidence = new Map<string, Evidence>();
   incidents: Incident[] = [];
+  /**
+   * What each place remembers of what has happened in it. See
+   * surveillance/disturbance.ts: this is the consequence model — not a meter,
+   * but the reason a camera stops falling for a stone, a fixed camera starts
+   * scanning, a drone comes to look at a street, and a neighbour looks up.
+   */
+  readonly disturbance = new Disturbance();
+  /**
+   * Incidents opened for damage nobody could be linked to. The town logs them
+   * all the same, and they close once the place has cooled — unlike the
+   * story's own incidents, which are nobody's to close.
+   */
+  private quietIncidents = new Set<string>();
+  /**
+   * Cameras the player has had a proper look at, or that have had one at
+   * them. This is what the plan draws before VISION: not the machine's map of
+   * itself, but the player's own — where they know a lens is, and roughly
+   * which way it looks.
+   */
+  readonly knownSensors = new Set<string>();
+  /** Rate limit for the system saying it has stopped falling for a noise. */
+  private lastDiscountTick = -9999;
 
   hack: HackAction | null = null;
   focusNode: NetworkNode | null = null;
@@ -420,12 +467,28 @@ export class Sim {
         && dist(n.pos, this.devonPos) < 7 && (n.glanceCooldown ?? 0) === 0) {
         glance(n, this.devonPos, 60 * 1.6);
       }
+      /*
+       * A street that has had a lot happening in it is a street where people
+       * look up. Nobody here knows who has been throwing stones at the bins;
+       * a kid on a board rolling slowly past is simply the first thing to
+       * look at. This is how "I have been making too much noise here"
+       * arrives without a meter: the neighbours start watching you too.
+       */
+      if (n.startled === 0 && n.fleeing === 0 && (n.glanceCooldown ?? 0) === 0
+        && this.player.speed < 6 && dist(n.pos, this.player.pos) < 8
+        && levelRank(this.disturbance.levelAt(n.pos, this.tick)) >= levelRank('PATTERN')
+        && !this.world.blocked(n.pos, this.player.pos, 1.5)) {
+        glance(n, this.player.pos, 60 * 1.4);
+      }
     }
     this.updatePeople(dt);
 
-    // 5. Sensors -> observations.
+    // 5. Sensors -> observations. What has happened near a camera decides how
+    // watchful it is, which decides how it sweeps.
+    this.updateDisturbance();
     for (const s of this.sensors) updateSensor(s, this.tick, this.time);
     this.gatherObservations();
+    this.updateKnownSensors();
 
     // 6-9. Fusion, behaviour, prediction, risk.
     this.updateTracking();
@@ -491,6 +554,33 @@ export class Sim {
     if (p.grabbedThisTick) this.bus.emit('player:grab', { pos: p.pos, name: p.grabbedThisTick.name });
     if (p.landedThisTick) this.bus.emit('player:land', { pos: p.pos, speed: p.speed });
     if (p.bailedThisTick) this.bus.emit('player:bail', { pos: p.pos });
+    this.boardNoise();
+  }
+
+  /**
+   * A skateboard is not quiet, and the town has ears.
+   *
+   * Wheels rolling are nothing; a foot slapping the ground is a little; the
+   * tail cracking on a pop is more; four wheels coming down together is a
+   * bang, louder the faster and the more there was to catch; and a board
+   * cartwheeling off down the pavement is the loudest thing a skater does. A
+   * camera built to turn hears it and looks — at you, because that is where
+   * the sound was. Nothing is logged against a place for skating (skating is
+   * not a disturbance), but a kickflip landed under a camera's nose is a
+   * camera now looking straight at you. Coasting past is how you stay quiet.
+   */
+  private boardNoise(): void {
+    const p = this.player;
+    const at = { x: p.pos.x, y: p.pos.y };
+    if (p.bailedThisTick) { this.drawAttention(at, BOARD_NOISE.bail, 4.5, 1); return; }
+    if (p.landedThisTick) {
+      const flourish = p.trickedThisTick || p.grabbedThisTick ? BOARD_NOISE.flourish : 0;
+      const reach = Math.min(BOARD_NOISE.landMax, BOARD_NOISE.land + p.speed * 0.45) + flourish;
+      this.drawAttention(at, reach, 3, 0.6);
+      return;
+    }
+    if (p.poppedThisTick) { this.drawAttention(at, BOARD_NOISE.pop, 2.5, 0.5); return; }
+    if (p.pushedThisTick) this.drawAttention(at, BOARD_NOISE.push, 1.5, 0.35);
   }
 
   private updatePeople(dt: number): void {
@@ -933,7 +1023,8 @@ export class Sim {
           this.bus.emit('projectile:impact', {
             kind: impact.kind, pos: { ...impact.pos }, z: impact.z, speed, surface, vel: { ...impact.vel },
           });
-          this.drawAttention(impact.pos, 7, 4.5, 0.9);
+          this.makeNoise('noise', impact.pos, NOISE_REACH.ground, 4.5, 0.9,
+            { vel: impact.vel, vz: impact.vz, z: impact.z });
         }
         const r = rebound(impact, surface, solidAt, heightAt);
         if (r === 'bounce' || r === 'roll') {
@@ -983,29 +1074,6 @@ export class Sim {
      */
   }
 
-  /**
-   * Noises the town has heard recently, and where. One stone clattering in a
-   * street is nothing — the town turns its head and forgets. Three in the
-   * same place inside a minute is a pattern, and SAFEtrace sends somebody to
-   * stand where it happened, which is exactly the place a player using noise
-   * as cover was about to go through. Distraction works; spamming it does
-   * not, and nobody has to be told so.
-   */
-  private disturbances: Array<{ pos: Vec2; tick: number }> = [];
-  private disturbanceFlaggedAt = -Infinity;
-
-  private noteDisturbance(pos: Vec2): void {
-    const span = 60 * DISTURBANCE.windowSeconds;
-    this.disturbances = this.disturbances.filter((d) => this.tick - d.tick < span);
-    this.disturbances.push({ pos: { ...pos }, tick: this.tick });
-    const near = this.disturbances.filter((d) => dist(d.pos, pos) < DISTURBANCE.radius).length;
-    if (near < DISTURBANCE.count || this.tick - this.disturbanceFlaggedAt < span) return;
-    this.disturbanceFlaggedAt = this.tick;
-    this.dispatcher.flagAnomaly(pos, this.tick, SYSTEM.repeatedDisturbance, 60 * 25);
-    this.message('SYSTEM', [SYSTEM.repeatedDisturbance], 4.2, 'normal', 'important');
-    this.bus.emit('disturbance:flagged', { pos: { ...pos } });
-  }
-
   /** A stone has stopped. It stays where it stopped. */
   private settle(proj: Projectile): void {
     this.droppedRocks.push({ pos: { ...proj.pos }, tick: this.tick, shape: proj.shape });
@@ -1025,18 +1093,15 @@ export class Sim {
    * `reach` is how far the sound carries in metres, `seconds` how long a camera
    * holds on it, and `peopleReach` scales how far away a person still hears it.
    */
-  drawAttention(pos: Vec2, reach: number, seconds: number, peopleReach = 1): void {
-    this.noteDisturbance(pos);
-    const turned: string[] = [];
-    for (const s of this.sensors) {
-      if (s.state !== 'ONLINE' && s.state !== 'DEGRADED') continue;
-      if (s.data.sweep <= 0) continue;
-      const d = dist(s.data.pos, pos);
-      if (d > Math.max(reach, s.data.range * 0.9) || d > reach * 2.2) continue;
-      if (this.world.blocked(s.data.pos, pos, s.data.height)) continue;
-      s.attend = { x: pos.x, y: pos.y };
+  drawAttention(pos: Vec2, reach: number, seconds: number, peopleReach = 1, lookAt: Vec2 | null = null): string[] {
+    const turned = this.wouldHear(pos, reach);
+    // Where they look: at the sound — or, somewhere that has stopped falling
+    // for sounds, back along where the thing that made it came from.
+    const look = lookAt ?? pos;
+    for (const id of turned) {
+      const s = this.sensorById.get(id)!;
+      s.attend = { x: look.x, y: look.y };
       s.attendUntil = this.tick + Math.round(60 * seconds);
-      turned.push(s.data.id);
     }
     let people = 0;
     for (const n of this.npcs) {
@@ -1045,7 +1110,193 @@ export class Sim {
       glance(n, pos, Math.round(60 * 2.2));
       people++;
     }
-    if (turned.length || people) this.bus.emit('world:attention', { pos: { ...pos }, sensors: turned, people });
+    if (turned.length || people) {
+      this.bus.emit('world:attention', { pos: { ...pos }, sensors: turned, people, discounted: lookAt !== null });
+    }
+    return turned;
+  }
+
+  /**
+   * Which cameras would turn toward a sound here, without turning them.
+   *
+   * The pan-and-tilt cameras (the ones on a sweep) within earshot and with a
+   * clear line to it. A camera that has been made watchful by what has been
+   * happening near it hears further. Pure: the plan asks this to show where a
+   * stone would send attention before one is thrown.
+   */
+  wouldHear(pos: Vec2, reach: number): string[] {
+    const out: string[] = [];
+    for (const s of this.sensors) {
+      if (s.state !== 'ONLINE' && s.state !== 'DEGRADED') continue;
+      if (s.data.sweep <= 0) continue;
+      const r = reach * (1 + VIGILANT.hearingGain * s.vigilance);
+      const d = dist(s.data.pos, pos);
+      if (d > Math.max(r, s.data.range * 0.9) || d > r * 2.2) continue;
+      if (this.world.blocked(s.data.pos, pos, s.data.height)) continue;
+      out.push(s.data.id);
+    }
+    return out;
+  }
+
+  /**
+   * What the plan shows about a spot: which cameras a stone landing there
+   * would turn, which a louder thing close by would, and whether the place
+   * has stopped believing in noises.
+   */
+  earshot(pos: Vec2): {
+    stone: string[];
+    loud: { propId: string; kind: string; pos: Vec2; sensors: string[] } | null;
+    wary: boolean;
+    level: DisturbanceLevel;
+  } {
+    const stone = this.wouldHear(pos, NOISE_REACH.ground);
+    let loud: { propId: string; kind: string; pos: Vec2; sensors: string[] } | null = null;
+    let bd = 8;
+    for (const p of this.world.propsNear(pos, 8)) {
+      if (!p.hittable || p.knocked || p.kind === 'tree') continue;
+      const d = dist(p.pos, pos);
+      if (d >= bd) continue;
+      bd = d;
+      loud = {
+        propId: p.id, kind: p.kind, pos: { ...p.pos },
+        sensors: this.wouldHear(p.pos, p.kind === 'car' ? NOISE_REACH.car : NOISE_REACH.prop),
+      };
+    }
+    const level = this.disturbance.levelAt(pos, this.tick);
+    return { stone, loud, wary: levelRank(level) >= levelRank('PATTERN'), level };
+  }
+
+  /**
+   * A noise the player made on purpose, somewhere they are not.
+   *
+   * The first few in a place work: cameras look at the sound. But a place
+   * remembers, and one that has heard enough of them (PATTERN or worse) no
+   * longer turns to the noise — it turns along the line the stone arrived on,
+   * back toward where the system estimates it was thrown from, with exactly
+   * the same arithmetic trajectory analysis uses. The distraction becomes a
+   * spotlight on the thrower. That is the cost of a distraction: not a
+   * penalty, a town that learns.
+   */
+  private makeNoise(
+    kind: DisturbanceKind, pos: Vec2, reach: number, seconds: number, peopleReach: number,
+    ballistics: { vel: Vec2; vz: number; z: number } | null, label = '',
+  ): void {
+    const wary = levelRank(this.disturbance.levelAt(pos, this.tick)) >= levelRank('PATTERN');
+    const origin = wary && ballistics ? this.backProject(pos, ballistics) : null;
+    const turned = this.drawAttention(pos, reach, seconds, peopleReach, origin);
+    if (origin && turned.length && this.tick - this.lastDiscountTick > 60 * 8) {
+      this.lastDiscountTick = this.tick;
+      this.message('SYSTEM', [SYSTEM.noiseDiscounted], 3.2, 'normal', 'important');
+    }
+    this.disturb(kind, pos, label);
+  }
+
+  /** Where the system reckons a stone came from: the impact, run backwards. */
+  private backProject(pos: Vec2, b: { vel: Vec2; vz: number; z: number }): Vec2 | null {
+    const vh = Math.hypot(b.vel.x, b.vel.y);
+    if (vh < 0.5) return null;
+    const range = solveRange({ impactVel: b.vel, impactVz: b.vz, impactZ: b.z } as Evidence);
+    return { x: pos.x - (b.vel.x / vh) * range, y: pos.y - (b.vel.y / vh) * range };
+  }
+
+  /** Leave something behind in a place. */
+  private disturb(kind: DisturbanceKind, pos: Vec2, label = ''): void {
+    this.disturbance.record(kind, pos, this.tick, this.world.districtAt(pos)?.id ?? 'bellhaven', label);
+  }
+
+  /**
+   * What the town does about what it remembers.
+   *
+   * Every few frames each camera eases toward how watchful its surroundings
+   * warrant. Once a second, districts that have crossed a line are told so,
+   * in the system's voice, and the ones that have become a pattern get
+   * somebody sent to look. Incidents opened for damage nobody could be
+   * linked to close when the place they are in goes quiet again.
+   */
+  private updateDisturbance(): void {
+    if (this.tick % 10 === 0) {
+      /*
+       * A network knows when one of its own goes dark. Every camera on the
+       * same segment as a broken, faulting or tampered node is put on watch,
+       * however far along the street it is — so the answer to a camera in
+       * the way is never simply "break it", because its neighbours are the
+       * next problem.
+       */
+      const alerts: Array<{ segment: string; pos: Vec2; v: number }> = [];
+      for (const e of this.disturbance.events) {
+        if (e.kind !== 'sabotage' && e.kind !== 'fault' && e.kind !== 'tamper') continue;
+        const node = this.network.get(this.sensorById.get(e.label)?.data.nodeId ?? e.label);
+        if (!node) continue;
+        const v = Math.min(1, this.disturbance.remaining(e, this.tick) / SEGMENT_ALERT_FULL) * SEGMENT_ALERT_MAX;
+        alerts.push({ segment: node.segmentId, pos: e.pos, v });
+      }
+      for (const s of this.sensors) {
+        // A camera that is not working is not watching anything.
+        if (!sensorActive(s)) { s.vigilance = 0; continue; }
+        const seg = this.network.get(s.data.nodeId)?.segmentId;
+        let alert = 0;
+        for (const a of alerts) {
+          // The same segment, and near enough to be the same street: a
+          // segment can run across half the town, and one dead lens should
+          // make its neighbours wary, not every porch on the circuit.
+          if (a.segment !== seg) continue;
+          alert = Math.max(alert, a.v * Math.max(0, 1 - dist(a.pos, s.data.pos) / SEGMENT_ALERT_REACH));
+        }
+        const target = this.disturbance.events.length
+          ? Math.max(this.disturbance.scrutinyAt(s.data.pos, this.tick), alert)
+          : 0;
+        const d = target - s.vigilance;
+        // Rises over about three seconds, relaxes over about eight.
+        s.vigilance = Math.max(0, Math.min(1, s.vigilance + (d > 0 ? Math.min(d, 0.055) : Math.max(d, -0.02))));
+      }
+    }
+    if (this.tick % 30 !== 0) return;
+    for (const ch of this.disturbance.update(this.tick)) {
+      const where = (this.world.data.districts.find((d) => d.id === ch.district)?.name ?? ch.district).toUpperCase();
+      const up = levelRank(ch.to) > levelRank(ch.from);
+      this.bus.emit('disturbance:level', { district: ch.district, from: ch.from, to: ch.to, pos: { ...ch.at } });
+      if (up && ch.to === 'NOTICED') {
+        this.message('SYSTEM', [SYSTEM.areaNoticed(where)], 3.2, 'normal', 'context');
+      } else if (up && ch.to === 'PATTERN') {
+        this.message('SYSTEM', [SYSTEM.areaPattern(where)], 4.0, 'normal', 'important');
+        // Somebody goes to look — unless somebody is already on the way there.
+        if (!this.dispatcher.activeAnomalies.some((a) => dist(a.pos, ch.at) < 25)) {
+          this.dispatcher.flagAnomaly(ch.at, this.tick, SYSTEM.areaPattern(where), 60 * 20);
+        }
+        this.bus.emit('disturbance:flagged', { pos: { ...ch.at } });
+      } else if (up && ch.to === 'REVIEW') {
+        this.message('SYSTEM', [SYSTEM.areaReview(where)], 4.4, 'normal', 'important');
+        // Two looks: whatever is nearest in the air, and whatever is next.
+        this.dispatcher.flagAnomaly(ch.at, this.tick, SYSTEM.areaReview(where), 60 * 30);
+        this.dispatcher.flagAnomaly(ch.at, this.tick, SYSTEM.areaReview(where), 60 * 30);
+      } else if (ch.to === 'QUIET') {
+        this.message('SYSTEM', [SYSTEM.areaCleared(where)], 3.0, 'normal', 'context');
+      }
+    }
+    for (const inc of this.incidents) {
+      if (!inc.open || !this.quietIncidents.has(inc.id)) continue;
+      if (this.disturbance.levelAt(inc.pos, this.tick) === 'QUIET') {
+        inc.open = false;
+        this.quietIncidents.delete(inc.id);
+      }
+    }
+  }
+
+  /**
+   * The cameras the player knows about: any close enough to have had a good
+   * look at, with nothing in between, and any that have had a look at them.
+   */
+  private updateKnownSensors(): void {
+    if (this.tick % 15 !== 0) return;
+    const me = this.player.pos;
+    for (const s of this.sensors) {
+      if (this.knownSensors.has(s.data.id)) continue;
+      const d = dist(s.data.pos, me);
+      if (d > KNOW_CAMERA_RANGE) continue;
+      if (this.world.blocked(me, s.data.pos, s.data.height)) continue;
+      this.knownSensors.add(s.data.id);
+    }
+    for (const s of this.sensorsSeeingPlayer()) this.knownSensors.add(s.data.id);
   }
 
   private resolveImpact(
@@ -1067,12 +1318,22 @@ export class Sim {
         this.bus.emit('sensor:offline', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraOffline(s.data.id)], 3.4);
         this.addEvidence('NODE_OFFLINE', pos, `NODE ${s.data.id} OFFLINE`, { vel, vz, z }, observedBy);
+        /*
+         * It works: that lens is dark for six minutes. And the system knows a
+         * camera just went dark, which is a different thing from knowing who
+         * did it. Somebody is sent to look at the pole; the cameras around it
+         * close ranks (disturbance -> vigilance); and the street is now
+         * somewhere things happen.
+         */
+        this.disturb('sabotage', s.data.pos, s.data.id);
+        this.dispatcher.flagAnomaly(s.data.pos, this.tick, SYSTEM.nodeInspect(s.data.id), 60 * 25);
       } else if (result === 'cameraMotor') {
         s.state = 'FROZEN';
         s.stateUntil = this.tick + 60 * 90;
         this.bus.emit('sensor:misaligned', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraFault(s.data.id)], 3.0);
         this.addEvidence('PROJECTILE_IMPACT', pos, `PTZ FAULT — ${s.data.id}`, { vel, vz, z }, observedBy);
+        this.disturb('fault', s.data.pos, s.data.id);
       } else {
         s.state = 'MISALIGNED';
         s.knockOffset = this.rng.sign() * (0.7 + this.rng.next() * 1.2);
@@ -1080,6 +1341,7 @@ export class Sim {
         this.bus.emit('sensor:misaligned', { sensorId: s.data.id, label: s.data.label });
         this.message('SYSTEM', [SYSTEM.cameraFault(s.data.id)], 3.0);
         this.addEvidence('PROJECTILE_IMPACT', pos, `ALIGNMENT FAULT — ${s.data.id}`, { vel, vz, z }, observedBy);
+        this.disturb('fault', s.data.pos, s.data.id);
       }
       return;
     }
@@ -1092,6 +1354,7 @@ export class Sim {
       this.bus.emit('drone:destabilised', { droneId: d.id });
       this.message('SYSTEM', [SYSTEM.droneFault], 3.4);
       this.addEvidence('DRONE_INTERFERENCE', pos, `UNIT ${d.id} FAULT`, { vel, vz, z }, observedBy);
+      this.disturb('sabotage', pos, d.id);
       return;
     }
 
@@ -1109,6 +1372,7 @@ export class Sim {
       }
       this.message('SYSTEM', [SYSTEM.segmentDegraded(n.segmentId)], 3.6, 'normal', 'important');
       this.addEvidence('NODE_TAMPER', pos, `JUNCTION ${n.id} FAULT`, { vel, vz, z }, observedBy);
+      this.disturb('sabotage', n.pos, n.id);
       return;
     }
 
@@ -1128,7 +1392,7 @@ export class Sim {
       const birds = !this.flushedTrees.has(targetId);
       this.flushedTrees.add(targetId);
       this.bus.emit('foliage:hit', { pos: { ...pos }, z, birds, treeId: targetId });
-      if (birds) this.drawAttention(pos, 10, 3, 1.3);
+      if (birds) this.makeNoise('birds', pos, NOISE_REACH.birds, 3, 1.3, { vel, vz, z });
       return;
     }
 
@@ -1145,8 +1409,9 @@ export class Sim {
       this.bus.emit('noise:event', { pos, label });
       this.dispatcher.flagAnomaly(pos, this.tick, label, isCar ? 60 * 20 : 60 * 12);
       this.addEvidence('NOISE', pos, label, null, observedBy);
-      // And the town looks at the sound, not at you.
-      this.drawAttention(pos, isCar ? 30 : 18, isCar ? 12 : 8);
+      // And the town looks at the sound, not at you — the first few times.
+      this.makeNoise(isCar ? 'alarm' : 'clatter', pos, isCar ? NOISE_REACH.car : NOISE_REACH.prop,
+        isCar ? 12 : 8, 1, { vel, vz, z }, label);
       return;
     }
   }
@@ -1185,6 +1450,7 @@ export class Sim {
 
     // The system does not care that nobody was hurt. It cares that it happened.
     this.addEvidence('PERSON_STRUCK', pos, SYSTEM.incidentPerson, null, observedBy);
+    this.disturb('person', pos);
     this.dispatcher.flagAnomaly(pos, this.tick, SYSTEM.incidentPerson, 60 * 40);
 
     /*
@@ -1230,6 +1496,7 @@ export class Sim {
       impactVz: ballistics?.vz,
       impactZ: ballistics?.z,
       observedBy,
+      scrutiny: this.disturbance.scrutinyAt(pos, this.tick),
     });
     this.evidence.set(e.id, e);
     this.bus.emit('evidence:created', { evidence: e });
@@ -1404,8 +1671,24 @@ export class Sim {
         this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
       } else if (e.kind !== 'NOISE') {
         this.message('SYSTEM', [SYSTEM.originIndeterminate], 3.4);
+        /*
+         * "Incident logged" used to be a sentence with nothing behind it: an
+         * unattributed broken camera cost exactly nothing, so breaking things
+         * was strictly better than any subtler answer. It is logged now. An
+         * open incident makes everybody near it a little more interesting to
+         * the system (see risk.ts), and it closes once the place goes quiet.
+         */
+        if (e.kind !== 'PERSON_STRUCK') this.logQuietIncident(e.pos);
       }
     }
+  }
+
+  private logQuietIncident(pos: Vec2): void {
+    for (const inc of this.incidents) {
+      if (inc.open && this.quietIncidents.has(inc.id) && dist(inc.pos, pos) < 25) return;
+    }
+    const inc = this.openIncident('DEVICE_FAULT', pos, SYSTEM.incidentVandalism, this.world.districtAt(pos)?.id ?? 'bellhaven');
+    this.quietIncidents.add(inc.id);
   }
 
   // ---------------------------------------------------------------- dispatch
@@ -1783,7 +2066,10 @@ export class Sim {
           node.stateUntil = s.stateUntil;
           // Cheating is possible but not free: the check comes later, and the
           // evidence it creates is retroactive.
-          node.checkTick = this.tick + this.rng.int(INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX);
+          // Somewhere already under review checks its feeds sooner.
+          const hot = this.disturbance.scrutinyAt(node.pos, this.tick);
+          node.checkTick = this.tick + Math.round(
+            this.rng.int(INTEGRITY_CHECK_MIN, INTEGRITY_CHECK_MAX) * (1 - LOOP_CHECK_HASTE * hot));
           this.message('SYSTEM', [SYSTEM.loopActive(nodeId)], 3.0);
         }
         break;
@@ -1792,6 +2078,8 @@ export class Sim {
         this.playerTrack.confidence *= 0.6;
         this.playerTrack.suppressedUntil = this.tick + 60 * 6;
         this.message('SYSTEM', [SYSTEM.risk(this.playerTrack.risk.total)], 2.6);
+        // A track that went strange mid-hold is a small thing, and it is noticed.
+        this.disturb('glitch', node.pos, nodeId);
         break;
       }
       case 'REROUTE': {
@@ -1799,6 +2087,9 @@ export class Sim {
         // verbs feel powerful compared to breaking things.
         this.dispatcher.flagAnomaly(node.pos, this.tick, SYSTEM.noiseAnomaly, 60 * 16);
         this.message('SYSTEM', [SYSTEM.noiseAnomaly, SYSTEM.droneDispatch], 3.4);
+        // Somebody went and found nothing. Do it too often in one place and
+        // the place becomes a pattern like any other.
+        this.disturb('falseflag', node.pos, nodeId);
         break;
       }
       case 'MASK': {
@@ -1806,6 +2097,7 @@ export class Sim {
         this.playerTrack.attributedIdentity = 'UNKNOWN';
         this.message('SYSTEM', [SYSTEM.maskActive], 3.4, 'normal', 'important');
         this.addEvidence('NODE_TAMPER', node.pos, `IDENTITY SERVICE ANOMALY — ${nodeId}`, null, this.sensorsObserving(node.pos));
+        this.disturb('tamper', node.pos, nodeId);
         break;
       }
     }
@@ -1817,6 +2109,8 @@ export class Sim {
       // The loop is discovered after the fact, creating evidence where it happened.
       this.message('SYSTEM', [SYSTEM.integrityFail(n.id), SYSTEM.tamperLogged], 4.0, 'strong');
       this.addEvidence('NODE_TAMPER', n.pos, `TAMPER — ${n.id}`, null, []);
+      // The clean option's bill arrives: a digital trace, where it happened.
+      this.disturb('tamper', n.pos, n.id);
     }
   }
 
@@ -1963,9 +2257,6 @@ function holdStillToAim(intent: Intent): Intent {
     aim: true,
   };
 }
-
-/** How many noises, how close together and how quickly, make a pattern. */
-export const DISTURBANCE = { count: 3, radius: 25, windowSeconds: 50 };
 
 /** The least draw a pulled-back throw leaves with. */
 export const THROW_FLOOR = 0.5;
