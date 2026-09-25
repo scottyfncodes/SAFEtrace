@@ -277,6 +277,8 @@ export const PLAN = {
 export const SLING_HINT = {
   aim: 'DRAG TO AIM',
   pull: 'PULL BACK · LET GO',
+  /** The drag-back sling, the first time it comes out. */
+  throw: 'PULL BACK FROM HERE · LET GO',
 };
 
 /** What a shot did. One word, in the aiming view, then gone. */

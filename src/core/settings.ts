@@ -15,6 +15,12 @@ export interface Settings {
   skateVolume: number;
   interfaceVolume: number;
   showDebug: boolean;
+  /**
+   * The slingshot as it was: SLING stops you and raises a first-person view,
+   * the left thumb aims and the right pulls. Off by default — the sling is
+   * pulled back from where you are, in the street.
+   */
+  classicSling: boolean;
 }
 
 export const defaultSettings = (): Settings => ({
@@ -30,6 +36,7 @@ export const defaultSettings = (): Settings => ({
   skateVolume: 1,
   interfaceVolume: 1,
   showDebug: false,
+  classicSling: false,
 });
 
 const KEY = 'safetrace.settings.v1';

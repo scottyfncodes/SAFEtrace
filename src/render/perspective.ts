@@ -243,6 +243,8 @@ export class ChaseCamera {
    * put it back costs nothing.
    */
   private freeLook = 0;
+  /** How drawn the sling is, eased: the rig closes in a little with it. */
+  private drawPull = 0;
   /** Set by the host: the viewport, which decides how far back is far enough. */
   viewport = { w: 1280, h: 760 };
   /** How far over a wall the rig has had to lift, 0..1. */
@@ -293,6 +295,16 @@ export class ChaseCamera {
     // Face the way the board is pointed. Travel direction would judder every
     // time the board washed out; the nose is what the rider is looking over.
     this.freeLook = Math.max(0, this.freeLook - dt);
+    /*
+     * A sling being drawn holds the camera still. The aim is a point on the
+     * glass, so a camera that kept turning with the board would slide the
+     * world out from under a thumb that had not moved. It eases in a touch as
+     * the pull tightens — attention, the way the first-person lens used to —
+     * and lets go a moment after the throw.
+     */
+    const drawing = p.aiming && !sim.aimMode;
+    if (drawing) this.freeLook = Math.max(this.freeLook, 0.45);
+    this.drawPull = damp(this.drawPull, drawing ? p.draw : 0, 0.12, dt);
     let want = speed > 0.6 && this.freeLook <= 0 ? p.heading : this.yaw;
     if (this.focus && this.focusBlend > 0.05) {
       // Look past the rider toward the thing, from a little off their shoulder.
@@ -332,7 +344,7 @@ export class ChaseCamera {
      */
     const f = this.focusBlend;
     const k = clamp(focalFor(this.viewport.w, this.viewport.h) / 1040, 0.5, 1.15);
-    const far = lerp(lerp(36.0, 44.0, t), 20.0, f) * k;
+    const far = lerp(lerp(36.0, 44.0, t), 20.0, f) * k * (1 - this.drawPull * 0.16);
     this.dist = damp(this.dist, far, 0.3, dt);
     this.height = damp(this.height, lerp(lerp(17.0, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
@@ -466,6 +478,19 @@ export class PerspectiveRenderer {
     if (cp.z <= NEAR) return null;
     const pt = project(cam, cp);
     return { x: pt.x, y: pt.y, s: cam.f / cp.z };
+  }
+
+  /** The ray through a point on the glass: where the eye is, and which way. */
+  rayAt(state: CamState, sx: number, sy: number, w: number, h: number): { o: P3; d: P3 } {
+    const cam = this.cam(state, w, h);
+    const rx = (sx - w / 2) / cam.f, ry = -(sy - h / 2) / cam.f;
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const fwd = cp - ry * sp;
+    const dz = ry * cp + sp;
+    const cy = Math.cos(cam.yaw), sy2 = Math.sin(cam.yaw);
+    const d = { x: fwd * cy - rx * sy2, y: fwd * sy2 + rx * cy, z: dz };
+    const n = Math.hypot(d.x, d.y, d.z);
+    return { o: { ...cam.pos }, d: { x: d.x / n, y: d.y / n, z: d.z / n } };
   }
 
   /**

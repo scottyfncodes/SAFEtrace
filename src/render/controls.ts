@@ -15,6 +15,9 @@ import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
 import { taperedStroke } from './veneer';
+import { SLING_HINT } from '../content/copy';
+
+const THROW_HINT = SLING_HINT.throw;
 
 /** A tapering, slightly bent limb in the current stroke colour. */
 const taper = taperedStroke;
@@ -34,6 +37,8 @@ export class ControlsRenderer {
   private homeFade = 0;
   private buttonFade = 0;
   private pulse = 0;
+  /** Set by the host: the sling is out and has never been thrown. */
+  throwHint = false;
 
   constructor(private settings: Settings) {}
 
@@ -60,6 +65,8 @@ export class ControlsRenderer {
   ): void {
     if (v.aiming) { this.drawPutAway(ctx, v); return; }
     if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
+    if (v.pull) this.drawPull(ctx, v.pull);
+    else if (v.slingOut && this.throwHint) this.drawThrowHint(ctx, w, h);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
     if (this.planFade > 0.01) this.drawPlanFrame(ctx, w, h, safe);
@@ -276,6 +283,53 @@ export class ControlsRenderer {
     ctx.moveTo(x + q * 0.16, top); ctx.lineTo(x + q * 0.16, top + q * 1.7);
     ctx.stroke();
     label('PLAN');
+  }
+
+  /**
+   * The pull, under the thumb: a ring where it started, the band back to
+   * where the thumb is, tightening in colour as the draw comes up. It says
+   * "this is a sling you are holding" in the place the eye already is.
+   */
+  private drawPull(ctx: CanvasRenderingContext2D, pull: NonNullable<ControlVisual['pull']>): void {
+    const { start, cur, draw } = pull;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = alpha('#FFFFFF', 0.35);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(start.x, start.y, 20, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = alpha(draw > 0.95 ? VENEER.player : '#F6F4EE', 0.35 + draw * 0.5);
+    ctx.lineWidth = 2 + draw * 2;
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(cur.x, cur.y); ctx.stroke();
+    ctx.fillStyle = alpha('#F6F4EE', 0.5);
+    ctx.beginPath(); ctx.arc(cur.x, cur.y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  /** The first time the sling comes out on a phone: where and how to pull. */
+  private drawThrowHint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const breathe = this.settings.reduceMotion ? 0.5 : Math.sin(this.pulse * Math.PI * 2) * 0.5 + 0.5;
+    const x = w * 0.66, y = h * 0.42;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = alpha('#FFFFFF', 0.75);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.stroke();
+    const ty = y + 40 + breathe * 36;
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath(); ctx.moveTo(x, y + 22); ctx.lineTo(x, ty); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x - 7, ty - 8); ctx.lineTo(x, ty); ctx.lineTo(x + 7, ty - 8); ctx.stroke();
+    ctx.font = '700 11px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = THROW_HINT;
+    const tw = ctx.measureText(text).width + 16;
+    const cx = Math.min(w - tw / 2 - 8, x);
+    ctx.fillStyle = alpha('#0B1117', 0.7);
+    ctx.beginPath(); ctx.roundRect(cx - tw / 2, y - 44, tw, 20, 10); ctx.fill();
+    ctx.fillStyle = alpha('#F6F4EE', 0.95);
+    ctx.fillText(text, cx, y - 33.5);
+    ctx.restore();
   }
 
   /**

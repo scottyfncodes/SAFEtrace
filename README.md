@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 446 tests: simulation, story, the case, determinism, architecture, touch, feel
+npm test         # 463 tests: simulation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -48,9 +48,9 @@ nobody. Five endings are read off what you did and what you worked out.
 | `S` | brake / powerslide |
 | `Shift` | step off the board |
 | Right mouse, dragged | look round the rider; the camera settles back behind you |
-| `F` | take out the slingshot, and stand still to use it |
-| Mouse, or `A` `D` `W` `S` | aim the sling, while it is out |
-| Left mouse | draw the band — it tightens as you hold — and let go to throw |
+| Left mouse, dragged back | the slingshot: pull back from anywhere, let go to throw — on the move |
+| Left mouse, held still | point at a thing and hold: the draw loads, let go to throw at it |
+| `F` | steady aim: stand still and look down the sling (mouse or `A` `D` `W` `S` to aim) |
 | `E` | talk to whoever you are next to, look at what is in front of you, or reach into a node |
 | `1`–`3` | answer, in a conversation; act on a node, at a node |
 | `N` | your notes: what you know, and what goes with what |
@@ -64,8 +64,11 @@ past it.
 
 A phone gets three buttons in the bottom-right: `SLING`, `TRICK` and `PLAN`.
 Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
-round. `SLING` raises the slingshot: the left thumb drags the aim, the right
-thumb touches, pulls back and lets go — and `SLING` again puts it away.
+round. `SLING` takes the slingshot out — nothing else changes, you are still
+in the street and can keep skating — and then a pull back anywhere on the
+right of the glass is a throw: the pull points it, its length says how far,
+and letting go throws. `SLING` again puts it away. (The old first-person
+aiming is still there as "Classic slingshot" in the pause menu.)
 
 **The plan** is the town as a map: districts, streets by name, the buildings with names, the
 people you have met and the things you have looked at. You open it to work out
@@ -156,7 +159,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-446 tests, all headless, in about twenty seconds.
+463 tests, all headless, in about twenty seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
