@@ -219,7 +219,17 @@ case, the five endings, VISION as a content gate, the controls, and the art.
 
 ## What was tested
 
-470 tests (from 446). New: `tests/escalation.test.ts` covers:
+491 tests. This branch took the suite from 446 to 470. Merging in passes
+#4 (the drag-back throw) and #5 (noise with a cost) brought it to 491. #5's
+own count rule (three noises in 50 s) was folded into the ledger rather than
+kept alongside it: two systems deciding "this is a pattern" would dispatch
+twice and message twice, and #5's rule also sat inside `drawAttention`, where
+this pass puts the board's noise. It would have sent units after kids for
+skating. #5's `disturbance:flagged` event survives, fired when a district
+becomes a PATTERN, and its tests now run against the ledger's thresholds.
+A pulled-back throw is tested to leave the same trace as an aimed one.
+
+New: `tests/escalation.test.ts` covers:
 
 - the ledger ranks the ladder, fades, holds a level against flicker, and lets
   it go, and knows what kind of trouble a street has had;

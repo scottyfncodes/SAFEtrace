@@ -50,8 +50,14 @@ describe('the mouse slingshot is one control, the way the README says', () => {
 
     target.fire('mouseup', { button: 0 });
     i = input.sample();
-    // The release itself is the shot.
+    // The release itself is the shot — and that frame still describes a drawn
+    // sling, because the simulation only fires one that is being held. It used
+    // to say "not aiming" here, which is why a mouse never threw on the move.
     expect(i.firePressed).toBe(true);
+    expect(i.aim).toBe(true);
+    // And the frame after, the sling is down.
+    i = input.sample();
+    expect(i.firePressed).toBe(false);
     expect(i.aim).toBe(false);
   });
 

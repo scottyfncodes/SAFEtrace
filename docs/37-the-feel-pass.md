@@ -170,6 +170,79 @@ control in and out, instead of a gesture nobody could find. A pull that
 starts on it is still a pull, because that corner is where a right thumb
 rests.
 
+## The slingshot, rebuilt
+
+After the pass above the slingshot felt good *inside* its mode, and the mode
+was the problem: raising it stopped the board, swapped third person for a
+first-person lens, split the glass between two thumbs, and needed a hint, an
+exit button and pointer lock to be usable. Five passes of reports had all
+been about that structure. So the structure changed.
+
+**It is a gesture now, not a place.** `SLING` takes the sling out — the
+rider holds it up, the button lights, and nothing else changes: you are in
+the street, still skating. A pull back anywhere on the right of the glass is
+a throw. With a mouse, a drag back from anywhere is the same gesture, and a
+still hold is point-and-hold at whatever is under the cursor. `F` keeps the
+first-person view as a steady aim, and "Classic slingshot" in the pause menu
+brings the whole old scheme back on a phone.
+
+**What a pull means.** Its direction on the glass is a bearing on the
+ground; its length is how far along it, from a flick (three metres) to all
+the way back (ninety), finer at the short end. Whatever stands at that spot
+is what the throw is aimed at, at its own height — pull to the foot of a
+camera's pole and the arc is solved to the lens four and a half metres up.
+Only the range and height come from the thing; the bearing is exactly where
+the pull put it, so a pull a metre to the left is a miss a metre to the
+left. Nothing snaps. The arc and its landing ring show all of it before you
+let go.
+
+Two versions were thrown out by playing them:
+
+- *Aim point a fixed multiple of the pull, on the glass.* On an upright
+  phone the horizon is a couple of hundred pixels above the rider, so an
+  ordinary pull aimed at the sky and lobbed.
+- *Power tied to pull length.* The nearest things are the shortest pulls,
+  and a bin sixteen metres away was a pull too weak to fire at all. A thrown
+  shot now never leaves with less than half a draw: close things get a flat,
+  quick stone, and pulling further reaches further.
+
+**Release.** The shot uses the pull as it was 80 ms before the thumb came
+off — a lifting thumb rolls and smears a few pixels, and that smear was
+where "it went left when I let go" came from. Pulling back to where you
+started puts it down without throwing; a tap is still a tap on the world.
+
+**Feel.** While a pull is held the camera stops following the board (the
+aim is on the glass, so a turning camera would slide the world under a still
+thumb) and eases in a little as the draw tightens. The sling in the rider's
+hands points where you are pulling and stretches with it; the band shows
+under the thumb (or the cursor); release snaps the pouch through the fork
+and rings; every stone in flight leaves a thin bright streak, because a
+seven-centimetre stone forty metres away is otherwise a thing you hear. You
+can throw on the move — the board settles under a draw, and sway still grows
+with speed and shrinks with flow.
+
+**Noise as a tool, readable and with a cost.** A camera turned toward a
+sound now says so where the player is: its status light goes amber for as
+long as it is looking at the noise (a lens that actually has the player is
+lit, and only that lens — every camera used to light up whenever any one of
+them could see you). On the plan its cone turns amber and visibly swings off
+its sweep, and the noise itself ripples on the map. And it costs something
+to lean on: three noises within twenty-five metres inside fifty seconds is a
+pattern, and SAFEtrace sends a unit to stand exactly where it happened —
+which is the place a player using noise as cover was about to go through. (Superseded by pass 38: the count rule became the disturbance ledger,
+where the third noise in a place is noticed and the fifth is a pattern. See
+[`38-stealth-manipulation-and-escalation.md`](38-stealth-manipulation-and-escalation.md).)
+Cameras also draw out to 120 m from the eye again; since the rig moved back
+they had been disappearing a house or two up the street.
+
+A gamepad throws the same way: the right stick points it (how far it is
+pushed is how far it goes), the right trigger draws and lets go.
+
+**A bug the rebuild found.** A mouse throw on the move never fired, before
+or after this pass: the frame the button came up said "not aiming", and the
+simulation only fires a sling that is being held. The first-person mode
+forced aiming on, which hid it.
+
 ## Playing the investigation
 
 A second session played the back half through the UI — the stop, the
@@ -212,7 +285,7 @@ off the camera line, and cameras turning toward a sound.
 
 ## What was tested
 
-446 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
+466 tests (from 409). New: `tests/feel.test.ts` — the draw only builds while
 pulled, eases in, eases off, fires with the held draw, and shakes when held
 too long; bounce by surface, rolling out, wall ricochet, a stone that keeps
 going after it first touches the road; cameras turning toward a sound and
@@ -224,4 +297,10 @@ unchanged landscape lens; ground-under-pointer as the exact inverse of
 projection; and Devon off the camera line. `tests/touch.test.ts` now asserts
 three buttons and no `GRAB`, hold-to-grab (including a thumb that never
 moves), tap-to-flip, `PLAN` as a toggle that leaves both thumbs free, map
-dragging, and `SLING` as the way back out of aiming.
+dragging, and `SLING` as the way back out of aiming. `tests/throw.test.ts`
+covers the drag-back sling: taking it out without a mode, the classic
+scheme, the stick and buttons still working, a pull and its draw, the
+80 ms release rewind, putting a pull down, taps still being taps, the plan
+keeping its drags, the mouse's pull and point-and-hold, and the simulation
+hitting a lens on its pole, reaching a close bin with a flick, and throwing
+on the move without ever entering the aiming view.

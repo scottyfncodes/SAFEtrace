@@ -821,7 +821,27 @@ export class Sim {
      * Put it two metres to the left of one and the bearing goes two metres to
      * the left of it, at the right height, and that is the player's miss.
      */
-    const muzzle = MUZZLE_MIN + clamp01(this.player.draw) * (MUZZLE_MAX - MUZZLE_MIN);
+    this.thrown = !this.aimMode && !!pointerWorld && intent.aimHeight !== null;
+    const muzzle = MUZZLE_MIN + clamp01(this.shotDraw()) * (MUZZLE_MAX - MUZZLE_MIN);
+
+    /*
+     * A thrown point: the host cast the pull into the world and says exactly
+     * what it lands on — the ground, a wall, a bin, a lens on a pole — and how
+     * high that is. The arc is solved to that point at the draw being held,
+     * and if the draw is not enough to reach it, the stone falls short where
+     * everybody can see it fall short. Nothing is searched for or bent toward.
+     */
+    if (!this.aimMode && pointerWorld && intent.aimHeight !== null) {
+      const range = dist(this.player.pos, pointerWorld);
+      const height = intent.aimHeight;
+      this.aimTarget = null;
+      this.aimWorld = { x: pointerWorld.x, y: pointerWorld.y };
+      const solved = range > 1.5 ? solvePitch(range, height - LAUNCH_Z, muzzle) : null;
+      // Out of reach at this draw: the longest throw it has, at 45 degrees.
+      this.aimPitch = solved ?? (range > 1.5 ? Math.PI / 4 : Math.atan2(height - LAUNCH_Z, Math.max(range, 0.5)));
+      return;
+    }
+
     const dir = fromAngle(this.aimAngle);
     const slope = Math.tan(this.lookPitch);
 
@@ -868,6 +888,22 @@ export class Sim {
     const solved = range > 1.5 ? solvePitch(range, height - LAUNCH_Z, muzzle) : null;
     this.aimPitch = solved ?? Math.atan2(height - LAUNCH_Z, Math.max(range, 0.5));
     void intent;
+  }
+
+  /** Whether the current aim is a thrown point, cast into the world by the host. */
+  private thrown = false;
+
+  /**
+   * The draw a shot actually leaves with.
+   *
+   * Pulled back to a point, the length of the pull says how far to throw —
+   * and the nearest things are the shortest pulls. Tying power to that
+   * straight made a bin sixteen metres away a pull too weak to fire at all,
+   * so a thrown shot never leaves with less than a firm flick: close things
+   * get a flat, quick stone, and pulling further reaches further.
+   */
+  shotDraw(): number {
+    return this.thrown ? Math.max(this.player.draw, THROW_FLOOR) : this.player.draw;
   }
 
   get aim(): { angle: number; pitch: number; sway: number } {
@@ -930,13 +966,13 @@ export class Sim {
   }
 
   private updateProjectiles(dt: number, intent: Intent): void {
-    if (intent.firePressed && this.player.aiming && this.player.draw > 0.12) {
+    if (intent.firePressed && this.player.aiming && this.player.draw > (this.thrown ? 0.01 : 0.12)) {
       // Sway is the documented reward for skating well, and it belongs on the
       // shot rather than only on the reticle: the reticle must not promise
       // accuracy the projectile does not have.
       const sway = aimSway(this.player);
       const angle = this.aimAngle + this.rng.gauss() * sway;
-      const draw = this.player.draw;
+      const draw = this.shotDraw();
       const proj = fire(this.player.pos, angle, draw, this.aimPitch, this.rng);
       this.projectiles.push(proj);
       this.player.draw = 0;
@@ -1227,6 +1263,7 @@ export class Sim {
         if (!this.dispatcher.activeAnomalies.some((a) => dist(a.pos, ch.at) < 25)) {
           this.dispatcher.flagAnomaly(ch.at, this.tick, SYSTEM.areaPattern(where), 60 * 20);
         }
+        this.bus.emit('disturbance:flagged', { pos: { ...ch.at } });
       } else if (up && ch.to === 'REVIEW') {
         this.message('SYSTEM', [SYSTEM.areaReview(where)], 4.4, 'normal', 'important');
         // Two looks: whatever is nearest in the air, and whatever is next.
@@ -2220,6 +2257,9 @@ function holdStillToAim(intent: Intent): Intent {
     aim: true,
   };
 }
+
+/** The least draw a pulled-back throw leaves with. */
+export const THROW_FLOOR = 0.5;
 
 const COMPASS = ['EAST', 'SOUTHEAST', 'SOUTH', 'SOUTHWEST', 'WEST', 'NORTHWEST', 'NORTH', 'NORTHEAST'];
 

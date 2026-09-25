@@ -34,6 +34,13 @@ import {
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
 
+/**
+ * How far a pull reaches along the ground, from a flick to all the way back.
+ * Finer at the short end, where picking out one bin from the next matters.
+ */
+const THROW_NEAR = 3;
+const THROW_FAR = 90;
+
 /** Radians of look per pixel of mouse travel while the sling is up. */
 const MOUSE_YAW = 0.0026;
 const MOUSE_PITCH = 0.0021;
@@ -136,6 +143,7 @@ class Game {
     this.input.attach(window);
     this.input.options.holdToAim = this.settings.holdToAim;
     this.input.options.holdForPlanView = this.settings.holdForPlanView;
+    this.touch.setThrowMode(!this.settings.classicSling);
     this.touchAdapter.attach(window);
     this.syncViewport();
 
@@ -254,6 +262,7 @@ class Game {
   }
 
   private applySettings(): void {
+    this.touch.setThrowMode(!this.settings.classicSling);
     document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
     this.audio.applySettings();
     saveSettings(this.settings);
@@ -469,6 +478,7 @@ class Game {
    */
   private clearTransientState(): void {
     this.closePlan();
+    this.touch.setSlingOut(false);
     this.sim.exitAimMode();
     this.sim.dismissFocus();
     this.touch.reset();
@@ -647,7 +657,11 @@ class Game {
       }
     });
     // Cameras turning to a sound are heard doing it, faintly.
-    bus.on('world:attention', ({ sensors }) => { if (sensors.length) this.audio.servo(); });
+    bus.on('world:attention', ({ pos, sensors }) => {
+      if (sensors.length) this.audio.servo();
+      // On the plan, where the town is looking now.
+      this.renderer.ripple(pos, 1.6);
+    });
     bus.on('noise:event', ({ pos, label }) => {
       if (label === 'VEHICLE ALARM') this.audio.alarm(); else this.audio.noise();
       this.renderer.ripple(pos, 1.5);
@@ -718,6 +732,8 @@ class Game {
       this.saveDue -= dt;
       if (this.saveDue <= 0) { this.saveDue = 0; this.persist(); }
     }
+    // A mouse drag is a pull, except in the first-person view where the mouse looks.
+    this.input.options.dragThrow = !this.sim.aimMode;
     this.intent = mergeIntent(this.input.sample(), this.touch.sample());
     const tap = this.touch.takeTap();
 
@@ -837,12 +853,104 @@ class Game {
    * ballistic solver wants either way.
    */
   private aimPoint(): { x: number; y: number } | null {
+    /*
+     * A pull, from the rider's hands.
+     *
+     * The drag reversed, scaled up, from where the rider is on the glass: that
+     * is the point being aimed at, and whatever is under it in the world — a
+     * lens, a bin, a wall, the road — is where the arc is solved to. Pull
+     * further to throw further, point at a thing to throw at it.
+     */
+    const tv = this.intent.throwVector;
+    if (tv && !this.sim.aimMode) {
+      const aim = this.throwTarget(tv);
+      if (aim) {
+        this.renderer.throwAim = { from: aim.from, to: aim.to };
+        this.intent.aimHeight = aim.z;
+        return { x: aim.x, y: aim.y };
+      }
+    }
+    this.renderer.throwAim = null;
+    // Point-and-hold with a mouse: the thing under the cursor, at its height.
+    if (this.intent.aim && this.intent.pointerActive && !this.intent.aimVector && !this.sim.aimMode) {
+      const hit = this.renderer.pick(this.intent.pointer);
+      if (hit) {
+        this.intent.aimHeight = hit.z;
+        this.renderer.throwAim = { from: this.renderer.riderScreen() ?? this.intent.pointer, to: this.intent.pointer };
+        return { x: hit.x, y: hit.y };
+      }
+    }
     const v = this.intent.aimVector;
     if (v) {
       const origin = this.renderer.cam.toScreen(this.sim.player.pos, this.renderer.w, this.renderer.h);
       return this.renderer.screenToWorld({ x: origin.x + v.x * 320, y: origin.y + v.y * 320 });
     }
     return this.intent.pointerActive ? this.renderer.screenToWorld(this.intent.pointer) : null;
+  }
+
+  /**
+   * Where a pull points, in the world.
+   *
+   * The pull's direction on the glass is a bearing on the ground, and its
+   * length is a distance along it — a flick for the bin across the road, all
+   * the way back for the end of the street. That ground point is then looked
+   * at from the camera, and whatever stands in that line of sight first — a
+   * lens on its pole, a drone, a wall — is what the throw is aimed at.
+   *
+   * It used to be a point on the glass a fixed multiple of the pull away, and
+   * on an upright phone the horizon is only a couple of hundred pixels above
+   * the rider, so an ordinary pull aimed at the sky and lobbed.
+   */
+  private throwTarget(tv: { x: number; y: number }): { x: number; y: number; z: number; from: { x: number; y: number }; to: { x: number; y: number } } | null {
+    const r = this.renderer;
+    const p = this.sim.player.pos;
+    const hands = r.riderScreen();
+    const foot = r.screenOf(p, 0);
+    if (!hands || !foot) return null;
+    const len = Math.hypot(tv.x, tv.y);
+    if (len < 0.5) return null;
+    const ux = tv.x / len, uy = tv.y / len;
+    // The bearing: a short step along the pull from the rider's feet, on the ground.
+    let bearing: number | null = null;
+    for (const step of [60, 30, 12]) {
+      const g = r.screenToGround({ x: foot.x + ux * step, y: foot.y + uy * step });
+      if (g && Math.hypot(g.x - p.x, g.y - p.y) > 0.2) { bearing = Math.atan2(g.y - p.y, g.x - p.x); break; }
+    }
+    if (bearing === null) return null;
+    const full = this.touchPrimary ? 120 : 150;
+    const k = Math.min(1, len / full);
+    const reach = THROW_NEAR + (THROW_FAR - THROW_NEAR) * Math.pow(k, 1.45);
+    const ground = { x: p.x + Math.cos(bearing) * reach, y: p.y + Math.sin(bearing) * reach };
+    /*
+     * Whatever stands at that spot. A lens is on a pole four and a half
+     * metres above its own foot, so pulling to the foot of the pole *is*
+     * pointing at the camera — the spot is a place, and the things at a place
+     * are at it however tall they are. Only the range and the height come
+     * from the thing: the bearing stays exactly where the pull put it, so a
+     * pull a metre to the left is still a miss a metre to the left.
+     */
+    const dx = Math.cos(bearing), dy = Math.sin(bearing);
+    let standing: { along: number; z: number; off: number } | null = null;
+    for (const t of this.sim.ballisticTargets()) {
+      const off = Math.hypot(t.pos.x - ground.x, t.pos.y - ground.y);
+      const tol = t.radius + Math.max(1.2, reach * 0.06);
+      if (off > tol) continue;
+      const along = (t.pos.x - p.x) * dx + (t.pos.y - p.y) * dy;
+      if (along < 1.5) continue;
+      if (!standing || off < standing.off) standing = { along, z: t.z, off };
+    }
+    const hands0 = hands;
+    if (standing) {
+      const at = { x: p.x + dx * standing.along, y: p.y + dy * standing.along };
+      return { ...at, z: standing.z, from: hands0, to: r.screenOf(at, standing.z) ?? hands0 };
+    }
+    const to = r.screenOf(ground, 0);
+    if (!to) return { ...ground, z: 0, from: hands, to: hands };
+    const hit = r.pick(to);
+    // Whatever is standing in that line of sight, if it is no further than the
+    // ground point; a wall behind the point is not what was aimed at.
+    if (hit && Math.hypot(hit.x - p.x, hit.y - p.y) <= reach + 1.5) return { x: hit.x, y: hit.y, z: hit.z, from: hands, to };
+    return { ...ground, z: 0, from: hands, to };
   }
 
   /**
@@ -874,6 +982,7 @@ class Game {
     // wherever the aim thumb currently is — see drawSlingInHands for why.
     this.renderer.slingRest = this.touch.slingRestPoint();
     this.renderer.metPeople = this.metPeople;
+    this.renderer.mousePull = this.input.pullLine;
     this.renderer.scoreLine = this.sim.scoreDiscovered
       ? PHONE.plan(Math.round(100 - this.sim.playerRisk), riskLabel(this.sim.playerRisk)) : null;
     this.renderer.seenPlaces = this.seenPlaces;

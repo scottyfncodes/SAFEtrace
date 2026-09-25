@@ -85,6 +85,8 @@ export interface SimEvents extends Record<string, unknown> {
   'world:attention': { pos: Vec2; sensors: string[]; people: number; discounted?: boolean };
   /** A district crossed a disturbance level, up or down. */
   'disturbance:level': { district: string; from: string; to: string; pos: Vec2 };
+  /** A place became a pattern (see disturbance.ts), and somebody is being sent to look. */
+  'disturbance:flagged': { pos: Vec2 };
   /** A stone went through a tree. Leaves, and whatever was sitting in it. */
   'foliage:hit': { pos: Vec2; z: number; birds: boolean; treeId: string };
   'noise:event': { pos: Vec2; label: string };

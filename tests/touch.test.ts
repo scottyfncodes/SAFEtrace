@@ -399,7 +399,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     const setters = Object.getOwnPropertyNames(TouchEngine.prototype)
       .filter((k) => /^set[A-Z]/.test(k));
     // setPlanOpen closes (or opens) a view, it does not add a control.
-    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setViewport']);
+    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setSlingOut', 'setThrowMode', 'setViewport']);
   });
 
   /*

@@ -123,6 +123,18 @@ describe('distract: a stone moves attention, until a place stops believing it', 
     expect(sim.tasking.every((t) => !t.task || t.task.kind !== 'TRACK')).toBe(true);
   });
 
+  it('a pulled-back throw in the street counts the same as an aimed shot', () => {
+    const sim = makeSim();
+    place(sim, { x: 158, y: 214 });
+    const p = { x: 158, y: 240 };
+    const held = { ...emptyIntent(), aim: true, drawAmount: 0.5, aimHeight: 0, throwVector: { x: 0, y: -50 } };
+    for (let i = 0; i < 20; i++) sim.step(TICK_DT, held, p);
+    sim.step(TICK_DT, { ...held, fire: true, firePressed: true }, p);
+    for (let i = 0; i < 300 && sim.projectiles.length; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.aimMode).toBe(false);
+    expect(sim.disturbance.events.map((e) => e.kind)).toContain('noise');
+  });
+
   it('the first two stones pass unremarked; the third is noticed', () => {
     const sim = makeUnlockedSim();
     place(sim, THROW_FROM);

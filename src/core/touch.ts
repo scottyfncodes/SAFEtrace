@@ -141,11 +141,21 @@ export const TOUCH_TUNING = {
   aimPadWidth: 0.5,
   /** Pull this far back from the grab for a full draw. */
   pullFull: 112,
+  /**
+   * Throwing: how far back a thumb has to pull for a full draw, and how long
+   * before the lift the direction is read from. A thumb coming off glass rolls
+   * and slides a few pixels in its last frames — that is where "it went left
+   * when I let go" comes from — so the shot uses where the pull was a moment
+   * before the lift, not the smear of the lift itself.
+   */
+  throwFull: 120,
+  throwMin: 12,
+  releaseRewindMs: 80,
   /** Below this the band has only been touched, not pulled. Small, so a short pull still counts. */
   pullMin: 10,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'putAway' | 'look' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'putAway' | 'look' | 'throw' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -160,6 +170,8 @@ interface Track {
   moved: number;
   /** A TRICK held long enough has already become a grab. */
   grabbed?: boolean;
+  /** Recent positions, for reading a pull from just before the lift. */
+  history?: Array<{ x: number; y: number; t: number }>;
   /**
    * Frames this finger has been down. A thumb held perfectly still sends no
    * events at all, so time spent holding has to be counted here too.
@@ -193,6 +205,10 @@ export interface ControlVisual {
   };
   buttons: ControlButton[];
   aiming: boolean;
+  /** Whether the sling is out, in the drag-back scheme. */
+  slingOut: boolean;
+  /** A pull in progress: where it started, where the thumb is, and the draw. */
+  pull: { start: { x: number; y: number }; cur: { x: number; y: number }; draw: number } | null;
 }
 
 export class TouchEngine {
@@ -218,6 +234,15 @@ export class TouchEngine {
   private firedDraw = 0;
   private aiming = false;
   private canSling = true;
+  /**
+   * The drag-back scheme. With it on, SLING takes the sling out and puts it
+   * away without changing the view, and while it is out a drag on the right
+   * of the glass is a pull. With it off, SLING opens the old first-person
+   * aiming mode — kept as the classic option.
+   */
+  private throwMode = false;
+  private slingOut = false;
+  private firedVector: { x: number; y: number } | null = null;
   readonly tuning = { ...TOUCH_TUNING };
 
   /** True while any finger is on the screen; used to keep audio awake. */
@@ -238,7 +263,16 @@ export class TouchEngine {
     this.lookDrag.y = 0;
   }
 
-  setSlingAvailable(on: boolean): void { this.canSling = on; }
+  setSlingAvailable(on: boolean): void { this.canSling = on; if (!on) this.slingOut = false; }
+
+  /** Choose the drag-back scheme (true) or the classic aiming mode (false). */
+  setThrowMode(on: boolean): void { this.throwMode = on; if (!on) this.slingOut = false; }
+
+  /** Put the sling out or away from outside — a menu opening, a scene starting. */
+  setSlingOut(on: boolean): void { this.slingOut = on && this.throwMode && this.canSling; }
+
+  /** Whether the sling is out, in the drag-back scheme. */
+  get isSlingOut(): boolean { return this.slingOut; }
 
   reset(): void {
     this.tracks.clear();
@@ -392,6 +426,10 @@ export class TouchEngine {
     for (const b of this.buttonLayout()) {
       if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.hit) return b.id;
     }
+    // Sling out: anywhere on the right of the glass is somewhere to pull
+    // from, so there is always room behind the thumb to pull back into.
+    // Not over the plan, though: there a drag is moving the map.
+    if (this.slingOut && !this.planOn && x >= this.viewport.w * 0.4 && y > this.viewport.safe.top + 24) return 'throw';
     if (y < this.padTop()) return 'idle';
     return x < this.padRight() ? 'stick' : 'idle';
   }
@@ -408,7 +446,7 @@ export class TouchEngine {
     let role = this.zoneAt(s.x, s.y);
     // One of each at a time; a second thumb on the same side does nothing.
     // A stray palm must never be able to take over a job a thumb is doing.
-    if ((role === 'stick' || role === 'aim' || role === 'pull')
+    if ((role === 'stick' || role === 'aim' || role === 'pull' || role === 'throw')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
     if (role === 'sling' && !this.canSling) role = 'idle';
 
@@ -424,6 +462,10 @@ export class TouchEngine {
   private onMove(track: Track, s: PointerSample): void {
     const prev = track.cur;
     track.cur = { x: s.x, y: s.y, t: s.t };
+    if (track.role === 'throw') {
+      (track.history ??= []).push({ x: s.x, y: s.y, t: s.t });
+      if (track.history.length > 24) track.history.shift();
+    }
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
     if (track.role === 'putAway' && track.moved > this.tuning.tapSlop
@@ -503,8 +545,30 @@ export class TouchEngine {
         break;
       }
       case 'sling':
-        if (isTap) this.pendingAimMode = true;
+        if (isTap) {
+          if (this.throwMode) this.slingOut = !this.slingOut;
+          else this.pendingAimMode = true;
+        }
         break;
+      case 'throw': {
+        if (cancelled) break;
+        // Where the pull was a moment before the lift.
+        const cutoff = s.t - this.tuning.releaseRewindMs;
+        let at = { x: s.x, y: s.y };
+        for (const h of track.history ?? []) if (h.t <= cutoff) at = { x: h.x, y: h.y };
+        if (!(track.history ?? []).some((h) => h.t <= cutoff)) at = { x: track.cur.x, y: track.cur.y };
+        const v = { x: track.start.x - at.x, y: track.start.y - at.y };
+        const len = Math.hypot(v.x, v.y);
+        if (len > this.tuning.throwMin) {
+          this.firedDraw = Math.max(0.02, clamp01((len - this.tuning.throwMin) / (this.tuning.throwFull - this.tuning.throwMin)));
+          this.firedVector = v;
+          this.pendingFire = true;
+        } else if (isTap) {
+          // Not a pull at all: a tap on the world, the same as ever.
+          this.pendingTap = { x: s.x, y: s.y };
+        }
+        break;
+      }
       case 'putAway':
         if (isTap || (!cancelled && track.moved <= this.tuning.tapSlop)) this.pendingAimMode = true;
         break;
@@ -603,6 +667,28 @@ export class TouchEngine {
       if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
       if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
       return i;
+    }
+
+    // A pull in progress, in the drag-back scheme.
+    for (const tr of this.tracks.values()) {
+      if (tr.role !== 'throw') continue;
+      const v = { x: tr.start.x - tr.cur.x, y: tr.start.y - tr.cur.y };
+      const len = Math.hypot(v.x, v.y);
+      if (len > t.throwMin * 0.5) {
+        i.aim = true;
+        i.throwVector = v;
+        i.drawAmount = clamp01((len - t.throwMin) / (t.throwFull - t.throwMin));
+      }
+    }
+    if (this.pendingFire && this.firedVector) {
+      // The release frame still describes a drawn sling, pointed where it was.
+      i.aim = true;
+      i.throwVector = this.firedVector;
+      i.drawAmount = this.firedDraw;
+      i.fire = true;
+      i.firePressed = true;
+      this.pendingFire = false;
+      this.firedVector = null;
     }
 
     const stick = this.stickTrack;
@@ -719,8 +805,22 @@ export class TouchEngine {
         thumb: stick ? { x: stick.cur.x, y: stick.cur.y } : { x: 0, y: 0 },
         vector,
       },
-      buttons: this.buttonLayout().map((b) => ({ ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) })),
+      buttons: this.buttonLayout().map((b) => ({
+        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) || (b.id === 'sling' && this.slingOut),
+      })),
       aiming: this.aiming,
+      slingOut: this.slingOut,
+      pull: (() => {
+        for (const tr of this.tracks.values()) {
+          if (tr.role !== 'throw') continue;
+          const len = Math.hypot(tr.cur.x - tr.start.x, tr.cur.y - tr.start.y);
+          return {
+            start: { x: tr.start.x, y: tr.start.y }, cur: { x: tr.cur.x, y: tr.cur.y },
+            draw: clamp01((len - t.throwMin) / (t.throwFull - t.throwMin)),
+          };
+        }
+        return null;
+      })(),
     };
   }
 
