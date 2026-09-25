@@ -222,7 +222,7 @@ class Game {
       if (!inPlan()) return;
       e.preventDefault();
       const cam = this.renderer.cam;
-      cam.planZoom = Math.max(0.55, Math.min(3.2, cam.planZoom * Math.exp(-e.deltaY * 0.0015)));
+      cam.planZoom = Math.max(0.3, Math.min(3.2, cam.planZoom * Math.exp(-e.deltaY * 0.0015)));
     }, { passive: false });
   }
 

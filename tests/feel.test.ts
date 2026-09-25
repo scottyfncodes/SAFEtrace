@@ -374,3 +374,33 @@ describe('Devon rides beside you, not between you and the camera', () => {
     expect(lateral).toBeGreaterThan(1.8);
   });
 });
+
+describe('the plan names the streets the town talks about', () => {
+  it('carries every authored street name into the world, Northgate Lane included', () => {
+    const sim = makeSim();
+    const names = (sim.world.data.streets ?? []).map((s) => s.name);
+    expect(names).toContain('Northgate Lane');
+    expect(names).toContain('Bellhaven Avenue');
+    for (const st of sim.world.data.streets ?? []) expect(st.pts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('puts CM-207 — the camera the story names — within a few metres of the lane it is named for', () => {
+    const sim = makeSim();
+    const lane = sim.world.data.streets!.find((s) => s.name === 'Northgate Lane')!;
+    const cam = sim.network.get('CM-207')!;
+    const nearest = Math.min(...lane.pts.slice(1).map((b, i) => {
+      const a = lane.pts[i];
+      const t = Math.max(0, Math.min(1, ((cam.pos.x - a.x) * (b.x - a.x) + (cam.pos.y - a.y) * (b.y - a.y)) / ((b.x - a.x) ** 2 + (b.y - a.y) ** 2)));
+      return Math.hypot(cam.pos.x - (a.x + (b.x - a.x) * t), cam.pos.y - (a.y + (b.y - a.y) * t));
+    }));
+    expect(nearest).toBeLessThan(35);
+  });
+});
+
+describe('the notes say where the number was found, in English', () => {
+  it('says "on the plan" for the plan and names the camera otherwise', async () => {
+    const { PHONE } = await import('../src/content/copy');
+    expect(PHONE.notes(80, 'NOMINAL', 'the plan')).toContain('Found it on the plan.');
+    expect(PHONE.notes(80, 'NOMINAL', 'CM-207')).toContain("Found it in CM-207's record.");
+  });
+});

@@ -234,7 +234,7 @@ export const PHONE = {
   plan: (n: number, band: string) => `SAFETRACE HAS YOU AT ${n} · ${band}`,
   /** In the notes, in the player's own words. */
   notes: (n: number, band: string, where: string) =>
-    `SAFEtrace has a number on me. It calls it my "Community Safety Score". Found it at ${where}. Right now it says ${n} — ${band.toLowerCase()}. Higher is better, apparently. Nobody asked me.`,
+    `SAFEtrace has a number on me. It calls it my "Community Safety Score". Found it ${where === 'the plan' ? 'on the plan' : `in ${where}'s record`}. Right now it says ${n} — ${band.toLowerCase()}. Higher is better, apparently. Nobody asked me.`,
 };
 
 /**

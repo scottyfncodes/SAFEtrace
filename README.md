@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 443 tests: simulation, story, the case, determinism, architecture, touch, feel
+npm test         # 446 tests: simulation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -67,7 +67,7 @@ Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
 round. `SLING` raises the slingshot: the left thumb drags the aim, the right
 thumb touches, pulls back and lets go — and `SLING` again puts it away.
 
-**The plan** is the town as a map: districts, the buildings with names, the
+**The plan** is the town as a map: districts, streets by name, the buildings with names, the
 people you have met and the things you have looked at. You open it to work out
 where you are going, tap the map to pin it, and follow the pin — a column of
 light in the street, or an arrow at the edge of the screen when it is behind
@@ -156,7 +156,7 @@ because if a refactor ever made it impossible the premise would break silently.
 
 ## Testing
 
-443 tests, all headless, in about twenty seconds.
+446 tests, all headless, in about twenty seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
