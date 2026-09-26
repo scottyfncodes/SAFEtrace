@@ -406,12 +406,12 @@ export class TownBuilder {
 
   /** Somebody with a name, standing somewhere, facing a way (degrees). */
   person(id: string, name: string, role: string, pos: Vec2, facing: number, tint: string, opts: {
-    visible?: boolean; route?: Vec2[]; hood?: boolean; uniform?: boolean;
+    visible?: boolean; route?: Vec2[]; hood?: boolean; uniform?: boolean; dwell?: number;
   } = {}): PersonData {
     const p: PersonData = {
       id, name, role, pos: { ...pos }, heading: facing * DEG, tint, district: this.currentDistrict,
       visible: opts.visible ?? true, route: opts.route, hood: opts.hood, uniform: opts.uniform,
-      routeIndex: 1, waitTicks: 0,
+      routeIndex: 1, waitTicks: 0, dwell: opts.dwell,
     };
     this.people.push(p);
     return p;

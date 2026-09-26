@@ -83,6 +83,8 @@ class Game {
   private seenPlaces = new Set<string>();
   /** Desktop map dragging, in the plan. */
   private mapDrag: { x: number; y: number; moved: number } | null = null;
+  /** Whether the plan was open last tick, so the first opening can be noticed. */
+  private planWasOpen = false;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const worldData = buildBellhaven();
@@ -198,6 +200,7 @@ class Game {
     const pickUp = wp && dist(wp, world) < 34 / Math.max(1, this.renderer.cam.zoom) + 3;
     this.waypoint = pickUp ? null : { x: world.x, y: world.y };
     this.renderer.waypoint = this.waypoint;
+    this.renderer.waypointLabel = null;
     this.audio.hackTick();
   }
 
@@ -323,7 +326,7 @@ class Game {
     const st = this.story.state;
     if (st.report) return 'After the decision';
     if (st.devonReleasedAt > 0 && this.sim.tick >= st.devonReleasedAt) return `Investigating · ${this.sim.casefile.clues.size} notes`;
-    if (st.devonReleasedAt > 0) return 'Devon is being stopped';
+    if (this.sim.devonStopped || st.devonReleasedAt > 0) return 'Devon is being stopped';
     if (st.matchFiredAt > 0) return 'After the match';
     if (st.metDevonAt > 0) return 'With Devon';
     return 'Maple Court';
@@ -392,6 +395,7 @@ class Game {
       style.setProperty('--control-right', '0px');
       style.setProperty('--control-top', '0px');
       style.setProperty('--pad-right', '0px');
+      this.renderer.controlTop = Infinity;
       return;
     }
     let left = Infinity;
@@ -405,6 +409,9 @@ class Game {
     style.setProperty('--control-right', `${Math.max(0, Math.round(this.renderer.w - left)) + 10}px`);
     style.setProperty('--control-top', `${Math.max(0, Math.round(this.renderer.h - top)) + 10}px`);
     style.setProperty('--pad-right', `${Math.round(this.touch.padRight())}px`);
+    // The canvas draws the pin's edge arrow itself, and it needs to know
+    // where the thumbs are as much as the stylesheet does.
+    this.renderer.controlTop = top;
   }
 
   // ------------------------------------------------------------------ startup
@@ -803,10 +810,26 @@ class Game {
     this.sim.step(dt, this.intent, this.aimPoint());
     this.story.update();
 
+    /*
+     * The first time the plan opens, before Devon has been found, it opens
+     * with him on it: a pin on the kerb where he said he was, labelled with
+     * his name. Not an objective — the player can pick it up or put their
+     * own down — but the map's first answer to "where am I going".
+     */
+    const planOpen = this.sim.planViewActive;
+    if (planOpen && !this.planWasOpen && !this.sim.devonFollowing && !this.sim.devonStopped && !this.waypoint) {
+      this.waypoint = { x: this.sim.devonPos.x, y: this.sim.devonPos.y };
+      this.renderer.waypoint = this.waypoint;
+      this.renderer.waypointLabel = 'DEVON';
+    }
+    this.planWasOpen = planOpen;
+    if (this.renderer.waypointLabel && (this.sim.devonFollowing || !this.waypoint)) this.renderer.waypointLabel = null;
+
     // Arriving at the pin puts it away.
     if (this.waypoint && dist(this.waypoint, this.sim.player.pos) < 7) {
       this.waypoint = null;
       this.renderer.waypoint = null;
+      this.renderer.waypointLabel = null;
       this.audio.clue();
     }
   }
@@ -976,8 +999,12 @@ class Game {
   }
 
   private render(dt: number): void {
-    if (this.phase === 'ad' || this.phase === 'reprise') this.ad.update(dt);
-    this.renderer.controlVisual = this.touchPrimary || this.touch.engaged ? this.touch.visual : null;
+    const showing = this.phase === 'ad' || this.phase === 'reprise';
+    if (showing) this.ad.update(dt);
+    // The advertisement is an advertisement: no thumbs, no prompts, no pin
+    // on it. The controls are for the street, and appear with it.
+    this.renderer.controlVisual = !showing && (this.touchPrimary || this.touch.engaged) ? this.touch.visual : null;
+    this.renderer.overlaysHidden = showing;
     // The fork sits here for the whole time a shot is being lined up, not
     // wherever the aim thumb currently is — see drawSlingInHands for why.
     this.renderer.slingRest = this.touch.slingRestPoint();

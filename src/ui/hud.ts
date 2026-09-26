@@ -11,34 +11,34 @@ import type { Settings } from '../core/settings';
 import type { MessagePriority, SafetraceMessage } from '../sim/events';
 import { VERBS, verbsFor, type HackVerb, type NetworkNode } from '../sim/surveillance/network';
 
-const KEY_PROMPTS = [
-  '<span><kbd>W</kbd>push</span>',
-  '<span><kbd>A D</kbd>carve</span>',
-  '<span><kbd>Space</kbd>ollie</span>',
-  // A phone has a TRICK button in the corner; a keyboard had the same verb on
-  // an unlisted key, so half the players never found out it existed.
-  '<span><kbd>R</kbd>trick</span>',
-  '<span><kbd>G</kbd>grab</span>',
-  '<span><kbd>RMB</kbd>look</span>',
-  '<span><kbd>S</kbd>slide</span>',
-  '<span><kbd>LMB</kbd>pull back · throw</span>',
-  '<span><kbd>F</kbd>steady aim</span>',
-  '<span><kbd>Q</kbd>plan</span>',
-  '<span><kbd>E</kbd>talk / look</span>',
-  '<span><kbd>N</kbd>notes</span>',
-].join('');
-
-// Two lines, not three. The ollie, the sling and the plan view are all buttons
-// you can see, so there is nothing left to tell anybody about them.
-const TOUCH_PROMPTS = [
-  '<span>hold to roll</span>',
-  '<span>push the way you want to go</span>',
-].join('');
+/*
+ * What the bottom of the screen says, and when.
+ *
+ * It used to be a reference card: twelve keys, all at once, for the whole of
+ * the first few hundred metres. Nobody reads a reference card while learning
+ * to roll. It is three lines now, one at a time, each arriving when the last
+ * has been used — how to go, then what the board can do, then the things
+ * you do standing still — and it retires itself once the town has taught
+ * all three. The whole card is still in the menu.
+ */
+const KEY_STAGES: Array<{ until: number; html: string }> = [
+  { until: 30, html: '<span><kbd>W</kbd>push</span><span><kbd>A D</kbd>carve</span>' },
+  { until: 110, html: '<span><kbd>Space</kbd>ollie</span><span><kbd>R</kbd>trick</span><span><kbd>S</kbd>slide</span>' },
+  { until: 230, html: '<span><kbd>LMB</kbd>pull back · throw</span><span><kbd>Q</kbd>plan</span><span><kbd>E</kbd>talk / look</span>' },
+];
+const TOUCH_STAGES: Array<{ until: number; html: string }> = [
+  { until: 30, html: '<span>hold to roll</span><span>push the way you want to go</span>' },
+  { until: 110, html: '<span>TRICK: tap to flip, hold to grab</span>' },
+  { until: 230, html: '<span>SLING: pull back, let go</span><span>PLAN: tap the map to pin where you are going</span>' },
+];
 import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
 import { INSPECT, PHONE, SYSTEM } from '../content/copy';
 import type { TalkView } from '../content/story';
 
+
+/** Record lines that carry the argument, by what they talk about. */
+const KEY_RECORD = /\d+(\.\d+)?%|\bMATCH\b|THRESHOLD|SIMILARITY|ASSOCIATION|RETENTION|AMENDMENT|SUBJECTS ENTER|CONTACT RECORDED|CONTACT \d|CROSS-REFERENCE|PETITIONED|APPROVED/;
 
 export class Hud {
   private notifications: HTMLElement;
@@ -67,7 +67,13 @@ export class Hud {
 
   private queue: SafetraceMessage[] = [];
   private live = new Set<HTMLElement>();
+  /** When each headline was last put on the screen. */
+  private recent = new Map<string, number>();
+  /** A headline that has just been shown is not shown again for this long. */
+  private static readonly REPEAT_GAP_MS = 45_000;
   private promptFade = 0;
+  private stages: Array<{ until: number; html: string }> = KEY_STAGES;
+  private stage = 0;
   private dialogueTimer = 0;
 
   constructor(
@@ -100,7 +106,8 @@ export class Hud {
     this.notifications = root.querySelector('#notifications')!;
     this.inspect = root.querySelector('#inspect')!;
     this.prompts = root.querySelector('#prompts')!;
-    this.prompts.innerHTML = touch ? TOUCH_PROMPTS : KEY_PROMPTS;
+    this.stages = touch ? TOUCH_STAGES : KEY_STAGES;
+    this.prompts.innerHTML = this.stages[0].html;
     this.dialogue = root.querySelector('#dialogue')!;
     this.debug = root.querySelector('#debug')!;
     this.scoreChip = root.querySelector('#score-chip')!;
@@ -221,8 +228,14 @@ export class Hud {
       if (this.dialogueTimer <= 0) this.dialogue.classList.remove('show');
     }
 
-    // Input prompts fade out permanently once the verbs are demonstrated.
-    if (this.promptFade < 1 && this.sim.player.odometer > 140) {
+    // One line at a time, by distance travelled; and then nothing at all.
+    const odo = this.sim.player.odometer;
+    const want = this.stages.findIndex((st) => odo < st.until);
+    if (want >= 0 && want !== this.stage) {
+      this.stage = want;
+      this.prompts.innerHTML = this.stages[want].html;
+    }
+    if (want < 0 && this.promptFade < 1) {
       this.promptFade = Math.min(1, this.promptFade + dt * 0.4);
       this.prompts.style.opacity = String(1 - this.promptFade);
     }
@@ -284,12 +297,13 @@ export class Hud {
     }
 
     // Anything urgent on screen silences the flavour underneath it, rather than
-    // stacking on top of it.
+    // stacking on top of it — and holds the routine back until it has gone.
+    // The stop is one card, alone, for as long as it is on the screen.
     if (this.liveOf('critical') > 0) {
       for (const el of this.live) {
-        if (el.dataset.priority === 'ambient') this.retire(el, 0);
+        if (el.dataset.priority === 'ambient' || el.dataset.priority === 'context') this.retire(el, 0);
       }
-      this.queue = this.queue.filter((m) => m.priority !== 'ambient');
+      this.queue = this.queue.filter((m) => m.priority !== 'ambient' && m.priority !== 'context');
     }
 
     for (let guard = 0; guard < 8 && this.queue.length; guard++) {
@@ -306,9 +320,18 @@ export class Hud {
         }
       }
       const m = this.queue.shift()!;
-      // The same thing said twice in a row is said once.
-      const key = m.lines.join('|');
+      /*
+       * The same thing said twice is said once. Keyed on the headline, not the
+       * whole card: "UNUSUAL ROUTE DETECTED" with a different number under
+       * it was slipping past this every twenty seconds. And a headline that
+       * has just left the screen does not come straight back, unless it is
+       * urgent.
+       */
+      const key = m.lines[0];
       if ([...this.live].some((el) => el.dataset.key === key)) continue;
+      const lastSaid = this.recent.get(key) ?? -Infinity;
+      if (m.priority !== 'critical' && performance.now() - lastSaid < Hud.REPEAT_GAP_MS) continue;
+      this.recent.set(key, performance.now());
 
       const el = document.createElement('div');
       el.className = `note ${m.register === 'SYSTEM' ? 'system' : 'care'} p-${m.priority}${m.emphasis === 'strong' ? ' strong' : ''}`;
@@ -428,10 +451,17 @@ export class Hud {
     return `<div class="rec held">${escapeHtml(PHONE.record(who, Math.round(100 - risk), riskLabel(risk)))}</div>`;
   }
 
-  /** A node's records, whether authored as text or written at read time. */
+  /**
+   * A node's records, whether authored as text or written at read time.
+   *
+   * The lines the case turns on — a similarity, a threshold, a match, what
+   * is kept and for how long — are set a little larger and brighter than
+   * the housekeeping around them. It is still the system's own document;
+   * it is just a document you can read the important line of.
+   */
   private recordsOf(node: NetworkNode): string {
     return resolveRecords(node.records, this.sim.recordContext())
-      .map((r) => `<div class="rec">${escapeHtml(r)}</div>`).join('');
+      .map((r) => `<div class="rec${KEY_RECORD.test(r) ? ' key' : ''}">${escapeHtml(r)}</div>`).join('');
   }
 
   private updateDebug(): void {

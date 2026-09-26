@@ -396,6 +396,12 @@ export class Renderer {
 
   /** Where the player has marked on the plan, if anywhere. Set by the host. */
   waypoint: Vec2 | null = null;
+  /** A name on the pin, when the map put it there rather than the player: "DEVON". */
+  waypointLabel: string | null = null;
+  /** During the advertisement and its reprise: no prompt, no pin, no thumbs. */
+  overlaysHidden = false;
+  /** The top of the touch cluster in canvas pixels; Infinity on a desktop. */
+  controlTop = Infinity;
   /** People the player has actually spoken to, by id. Set by the host. */
   metPeople: ReadonlySet<string> = new Set();
   /** Places the player has stopped and looked at, by id. Set by the host. */
@@ -518,7 +524,7 @@ export class Renderer {
       this.drawPinGlyph(ctx, c.x, c.y, a);
       ctx.font = '700 11px ui-monospace, Menlo, monospace';
       ctx.fillStyle = alpha('#F6F4EE', a);
-      ctx.fillText(`${d} m`, c.x, c.y + 14);
+      ctx.fillText(this.waypointLabel ? `${this.waypointLabel} · ${d} m` : `${d} m`, c.x, c.y + 14);
     }
 
     // What this view is for, and how to use it — until it has been used.
@@ -709,7 +715,7 @@ export class Renderer {
    */
   private drawBeacon(ctx: CanvasRenderingContext2D, eye: CamState, a: number): void {
     const wp = this.waypoint;
-    if (!wp || a < 0.02) return;
+    if (!wp || a < 0.02 || this.overlaysHidden) return;
     const sim = this.sim;
     const d = Math.hypot(wp.x - sim.player.pos.x, wp.y - sim.player.pos.y);
     const foot = this.perspective.project3(eye, wp.x, wp.y, 0, this.w, this.h);
@@ -727,7 +733,7 @@ export class Renderer {
       ctx.font = '700 11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = alpha('#0B1117', 0.6 * a);
-      const label = `${Math.round(d)} m`;
+      const label = this.waypointLabel ? `${this.waypointLabel} · ${Math.round(d)} m` : `${Math.round(d)} m`;
       const wd = ctx.measureText(label).width + 10;
       const ly = Math.max(this.safe.top + 14, Math.min(this.h - 20, (foot.y + head.y) / 2));
       roundRect(ctx, head.x - wd / 2, ly - 8, wd, 16, 8); ctx.fill();
@@ -738,14 +744,17 @@ export class Renderer {
       const rel = Math.atan2(wp.y - eye.pos.y, wp.x - eye.pos.x) - eye.yaw;
       const sx = Math.sin(rel), sy = -Math.cos(rel);
       // An ellipse well inside the glass, clear of the thumbs' corners and
-      // of whatever the HUD has along the bottom edge.
-      const rx = this.w / 2 - 44, ry = this.h / 2 - 110;
+      // of whatever the HUD has along the bottom edge — and, on a phone,
+      // above the button cluster rather than through it.
+      const cy = this.h / 2 - 20;
+      const rx = this.w / 2 - 44;
+      const ry = Math.max(80, Math.min(this.h / 2 - 110, this.controlTop - 30 - cy));
       const k = 1 / Math.max(Math.abs(sx) / rx, Math.abs(sy) / ry);
-      const x = this.w / 2 + sx * k, y = this.h / 2 - 20 + sy * k;
+      const x = this.w / 2 + sx * k, y = cy + sy * k;
       ctx.font = '700 11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = alpha('#0B1117', 0.55 * a);
-      const label = `${Math.round(d)} m`;
+      const label = this.waypointLabel ? `${this.waypointLabel} · ${Math.round(d)} m` : `${Math.round(d)} m`;
       const wd = ctx.measureText(label).width + 10;
       roundRect(ctx, x - sx * 26 - wd / 2, y - sy * 26 - 8, wd, 16, 8); ctx.fill();
       ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
@@ -1505,7 +1514,9 @@ export class Renderer {
      */
     let target: { id: string; pos: Vec2; z: number; title: string; verb: string; mono: boolean } | null = null;
     const node = sim.interactCandidate;
-    if (node && !sim.engagedWith) {
+    if (this.overlaysHidden) {
+      // Nothing to press during the advertisement.
+    } else if (node && !sim.engagedWith) {
       target = { id: node.id, pos: node.pos, z: NODE_LABEL_Z, title: node.id, verb: this.interactVerb, mono: true };
     } else if (sim.interest && !sim.engagedWith) {
       const i = sim.interest;
@@ -1513,7 +1524,7 @@ export class Renderer {
       const z = i.kind === 'person' ? 2.25 : Math.max(0.9, (sp ? sim.sceneProp(sp)?.z ?? 0.4 : 0.4) + 0.7);
       target = {
         id: i.id, pos: i.pos, z, title: i.label,
-        verb: `${this.interactVerb} · ${i.kind === 'person' ? 'TALK' : 'LOOK'}`, mono: false,
+        verb: `${this.interactVerb} · ${i.verb ?? (i.kind === 'person' ? 'TALK' : 'LOOK')}`, mono: false,
       };
     }
     // A different target restarts the fade, so the label never appears to

@@ -46,6 +46,8 @@ export function classify(
   tick: number,
   evidence: Evidence[],
   pedestrianZone: boolean,
+  /** Stood still on purpose — reading a record, talking to somebody. Not lingering. */
+  attending = false,
 ): void {
   const m = mem(track.id);
   const flags = new Set<BehaviourFlag>();
@@ -83,10 +85,13 @@ export function classify(
   if (m.duckCount >= 2) flags.add('EVASIVE');
 
   const disp = displacement(track, THRESHOLDS.loiterWindowTicks, tick);
-  if (held && disp < THRESHOLDS.loiterDisplacement && track.history.length > 40) flags.add('LOITERING');
+  if (held && !attending && disp < THRESHOLDS.loiterDisplacement && track.history.length > 40) flags.add('LOITERING');
 
   for (const e of evidence) {
     if (tick - e.tick > THRESHOLDS.evidenceWindowTicks) continue;
+    // A noise is a thing that happened, not a thing to be near. Standing
+    // within twenty metres of a bin you knocked over is not being at a scene.
+    if (e.kind === 'NOISE') continue;
     if (dist(e.pos, subject.pos) < THRESHOLDS.evidenceProximity) {
       flags.add('PROXIMITY_TO_EVIDENCE');
       break;

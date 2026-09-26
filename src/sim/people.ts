@@ -28,16 +28,24 @@ export function updatePerson(p: PersonData, dt: number, world: World, facing: Ve
   const d = dist(p.pos, target);
   if (d < 0.6) {
     // A single point is somewhere to go and stay.
-    if (route.length === 1) return;
+    if (route.length === 1 || (p.errand && idx === route.length - 1)) {
+      // Arrived, and keeping an eye on somebody.
+      if (p.facing) {
+        const want = Math.atan2(p.facing.y - p.pos.y, p.facing.x - p.pos.x);
+        p.heading = angleToward(p.heading, want, 3.0 * dt);
+      }
+      return;
+    }
     p.routeIndex = (idx + 1) % route.length;
     // Everybody pauses at the ends of their errand, a little differently.
-    p.waitTicks = 60 * (2 + ((idx * 7 + p.id.length) % 4));
+    // Somebody on an errand does not: they are going somewhere.
+    p.waitTicks = p.errand ? 0 : 60 * (p.dwell ?? (2 + ((idx * 7 + p.id.length) % 4)));
     return;
   }
   const want = Math.atan2(target.y - p.pos.y, target.x - p.pos.x);
   p.heading = angleToward(p.heading, want, 3.0 * dt);
   const dir = fromAngle(p.heading);
-  const step = Math.min(PERSON_SPEED * dt, d);
+  const step = Math.min((p.pace ?? PERSON_SPEED) * dt, d);
   p.pos = world.resolveCollision(p.pos, { x: p.pos.x + dir.x * step, y: p.pos.y + dir.y * step }, 0.35);
 }
 
@@ -46,4 +54,26 @@ export function sendTo(p: PersonData, to: Vec2): void {
   p.route = [{ x: to.x, y: to.y }];
   p.routeIndex = 0;
   p.waitTicks = 0;
+  p.errand = true;
+}
+
+/**
+ * Send somebody somewhere by way of somewhere else: a walk with corners in
+ * it, taken at a purposeful pace, ending where it ends. This is how a person
+ * gets down an apron and along the Channel floor rather than through its wall.
+ */
+export function sendVia(p: PersonData, points: Vec2[], pace = PERSON_SPEED): void {
+  p.route = points.map((q) => ({ x: q.x, y: q.y }));
+  p.routeIndex = 0;
+  p.waitTicks = 0;
+  p.errand = true;
+  p.pace = pace;
+}
+
+/** Whether somebody on an errand has got where they were going. */
+export function arrived(p: PersonData): boolean {
+  const route = p.route;
+  if (!route || route.length === 0) return true;
+  const last = route[route.length - 1];
+  return (p.routeIndex ?? 0) >= route.length - 1 && dist(p.pos, last) < 0.8;
 }

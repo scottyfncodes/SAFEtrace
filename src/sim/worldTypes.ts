@@ -95,6 +95,18 @@ export interface PersonData {
   /** Runtime: the route leg they are on, and how long they are pausing. */
   routeIndex?: number;
   waitTicks?: number;
+  /**
+   * An errand rather than a loop: walk the route once, without pausing at
+   * the corners, and stay at the end of it. The officer coming down the
+   * apron to Devon is one; so is going back the way he came.
+   */
+  errand?: boolean;
+  /** Walking pace for this person, in m/s. Unset means the ordinary stroll. */
+  pace?: number;
+  /** How long they stand at each stop on their loop, in seconds, if not the usual. */
+  dwell?: number;
+  /** Somewhere to keep looking while standing still: the officer at a stop. */
+  facing?: Vec2 | null;
 }
 
 /** A spot worth a second look. Found by being there and being curious. */

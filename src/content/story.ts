@@ -20,8 +20,10 @@ import {
   type Conversation, type Line, type TalkContext, type TalkEffect,
 } from './talk';
 import { DEVON_HOME } from './cast';
+import { CHANNEL_APRONS, channelFloorY, inChannel } from './bellhaven';
 import { BARKS, BARK_GAP_SECONDS, BARK_LINE_SECONDS, BARK_MAX_SPEED, BARK_RANGE, type Bark, type BarkPhase } from './barks';
-import { sendTo } from '../sim/people';
+import { arrived, sendVia } from '../sim/people';
+import type { Vec2 } from '../core/math';
 import { levelRank } from '../sim/surveillance/disturbance';
 
 export interface StoryContext {
@@ -91,6 +93,26 @@ export interface StoryState {
   looked: string[];
   /** When the advertisement comes back, once there is an ending to come back to. */
   finaleAt: number;
+  /**
+   * Ticks the two of them have spent together down in the Channel. The
+   * incident waits on this: it is the afternoon's turn, and it should come
+   * after the Channel has been what it is for — speed, and nobody watching —
+   * not the instant a wheel touches the apron.
+   */
+  channelTogether: number;
+  /** The tick Devon started coming over, before the stop. -1 until he does. */
+  closingSince: number;
+  /** The tick the stop actually began — Devon stood still, somebody on the way. */
+  stopBeganAt: number;
+  /**
+   * The tick the stop's clock started: the player close enough to see it,
+   * and the officer there to be seen. Until then the stop simply waits.
+   */
+  stopClockAt: number;
+  /** The officer has asked the player, out loud, to keep back. */
+  askedBack: boolean;
+  /** Devon has seen the player keep back, and said so. */
+  keptBack: boolean;
 }
 
 export const initialStoryState = (): StoryState => ({
@@ -112,10 +134,26 @@ export const initialStoryState = (): StoryState => ({
   toldCarvalho: false,
   looked: [],
   finaleAt: -1,
+  channelTogether: 0,
+  closingSince: -1,
+  stopBeganAt: -1,
+  stopClockAt: -1,
+  askedBack: false,
+  keptBack: false,
 });
 
-/** Where the officer comes from to stop Devon: up the apron, from the street. */
+/** Where the officer goes back to after the stop, if nowhere better offers. */
 const OFFICER_FROM = { x: 196, y: 392 };
+/** How long the two of them have to have been in the Channel before the afternoon turns. */
+const CHANNEL_TOGETHER_SECONDS = 40;
+/** The east face of the footbridge: "race you to the bridge". Getting there is enough. */
+const FOOTBRIDGE = { x: 158, y: 421 };
+/** How close the player has to be for the stop to count as happening in front of them. */
+const STOP_WITNESS_RANGE = 12;
+/** How long the stop lasts once it has started in front of the player. */
+const STOP_SECONDS = 45;
+/** The officer walks with purpose. */
+const OFFICER_PACE = 2.2;
 
 /** Ticks of *play*, which is not the same as ticks of simulation. */
 const since = (c: StoryContext, s: StoryState): number => c.sim.tick - s.startedAt;
@@ -124,6 +162,40 @@ const CHANNEL_ENTRY = { x: 196, y: 428 };
 const CM207 = { x: 145, y: 88 };
 /** The rear service alley, and the break in its garages behind CM-207. */
 const SABLE_LANE = { x: 144, y: 112 };
+
+/**
+ * How the officer gets to Devon: a place to appear, and the walk from there.
+ *
+ * He used to appear sixteen metres north of wherever Devon was and walk in a
+ * straight line, which, anywhere in the Channel but the apron itself, is a
+ * straight line into a two-and-a-half-metre wall. In the Channel he now comes
+ * down the nearest apron and along the floor; anywhere else he comes from
+ * whichever direction has a clear walk in.
+ */
+function officerWay(sim: Sim, devon: Vec2): Vec2[] {
+  const end = { x: devon.x + 1.3, y: devon.y - 1.1 };
+  if (inChannel(devon)) {
+    let apron = CHANNEL_APRONS[0];
+    for (const a of CHANNEL_APRONS) if (Math.abs(a[0] - devon.x) < Math.abs(apron[0] - devon.x)) apron = a;
+    const ax = apron[0];
+    const mouth = { x: ax, y: channelFloorY(ax) };
+    // Down the apron from the street side, into the mouth, along the floor.
+    const start = { x: ax, y: mouth.y - 20 };
+    const floorY = channelFloorY(devon.x);
+    const beside = { x: devon.x + (devon.x < ax ? 3 : -3), y: floorY };
+    end.y = Math.max(floorY - 6, Math.min(floorY + 6, end.y));
+    return [start, mouth, beside, end];
+  }
+  // Eight ways in; the first with nothing standing across it.
+  const dirs = [-Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, 0, Math.PI, Math.PI / 4, 3 * Math.PI / 4, Math.PI / 2];
+  for (const a of dirs) {
+    const start = { x: devon.x + Math.cos(a) * 16, y: devon.y + Math.sin(a) * 16 };
+    if (sim.world.buildingAt(start)) continue;
+    if (sim.world.blocked(start, devon, 1.5)) continue;
+    return [start, end];
+  }
+  return [{ x: devon.x, y: devon.y - 16 }, end];
+}
 
 /**
  * The chain, in the order it makes sense in. The player may read it in any
@@ -166,8 +238,9 @@ export const BEATS: Beat[] = [
     id: 'devon-texts',
     label: 'Devon — where are you',
     // A friend who is waiting texts you. It says where he is the way a friend
-    // would, by landmarks, and it says it once.
-    when: (c, s) => s.metDevonAt < 0 && since(c, s) > 60 * 24,
+    // would, by landmarks, and it says it once — and early, because the first
+    // thing this afternoon should give the player is somewhere to go.
+    when: (c, s) => s.metDevonAt < 0 && since(c, s) > 60 * 5,
     run: (c) => c.hud.say([DIALOGUE.devonWhere], 5.5),
   },
   {
@@ -209,10 +282,17 @@ export const BEATS: Beat[] = [
      * Channel, so a player who skated straight there without ever finding him
      * got "Devon: I'm right here" from a boy eighty metres away on a lawn.
      */
+    /*
+     * And not the instant you arrive. The Channel is the first place in the
+     * game with nobody watching, and the afternoon should give it a moment
+     * to be that: the incident comes after the two of you have been down
+     * here a while, or once you have made it to the bridge Devon named.
+     */
     when: (c, s) => s.matchFiredAt < 0 && c.sim.devonFollowing
-      && dist(c.sim.player.pos, CHANNEL_ENTRY) < 40
+      && inChannel(c.sim.player.pos)
       && dist(c.sim.devonPos, c.sim.player.pos) < 30
-      && since(c, s) > 60 * 25,
+      && (s.channelTogether >= 60 * CHANNEL_TOGETHER_SECONDS
+        || (s.channelTogether >= 60 * 8 && dist(c.sim.player.pos, FOOTBRIDGE) < 14)),
     run: (c, s) => {
       // Four kilometres away, on the far side of town, while the player is
       // standing in a drainage channel with their best friend.
@@ -301,25 +381,14 @@ export const BEATS: Beat[] = [
     label: 'Devon is stopped',
     when: (c, s) => s.matchFiredAt > 0 && c.sim.tick >= s.matchFiredAt + 60 * 19,
     run: (c, s) => {
-      c.sim.devonStopped = true;
-      c.sim.devonFollowing = false;
-      // Somebody actually comes. A stop is a person standing next to you.
-      const officer = c.sim.person('officer');
-      if (officer) {
-        officer.pos = { x: c.sim.devonPos.x + (OFFICER_FROM.x - CHANNEL_ENTRY.x) * 0.5, y: c.sim.devonPos.y - 16 };
-        officer.visible = true;
-        sendTo(officer, { x: c.sim.devonPos.x + 1.3, y: c.sim.devonPos.y - 1.1 });
-      }
-      // Not arrested. Just stopped, very politely, while the system checks.
-      c.sim.message('CARE', [CARE.stopped], 6.0);
-      c.hud.say([DIALOGUE.devonStopped[0]], 3.6);
-      c.after(4.2, () => c.hud.say([DIALOGUE.devonStopped[1]], 3.4));
-      c.after(9, () => c.hud.say([DIALOGUE.playerThought[0]], 3.4));
-      s.devonReleasedAt = c.sim.tick + 60 * 45;
-      // The player can now hold VISION, because they have started to see it.
-      c.sim.unlockVision();
-      c.audio.motif(0.6);
-      c.after(12, () => c.sim.message('SYSTEM', [SYSTEM.visionAvailable, c.hint.vision], 6.0));
+      /*
+       * He comes over first. Whatever gap the last stretch of skating opened,
+       * the stop happens next to the player, not somewhere back down the
+       * Channel — and it begins (see `StoryDirector.update`) once he is
+       * there, or after a few seconds if the player is skating away from him.
+       */
+      s.closingSince = c.sim.tick;
+      c.sim.devonClosing = true;
     },
   },
 
@@ -352,7 +421,7 @@ export const BEATS: Beat[] = [
     label: 'Northgate — the street is watched',
     when: (c, s) => s.devonReleasedAt > 0 && dist(c.sim.player.pos, { x: 145, y: 60 }) < 46,
     run: (c) => {
-      c.sim.message('SYSTEM', [SYSTEM.subjectMonitoring, SYSTEM.risk(c.sim.playerRisk)], 4.5);
+      c.sim.message('SYSTEM', [SYSTEM.subjectMonitoring], 4.5);
     },
   },
   {
@@ -525,6 +594,7 @@ export class StoryDirector {
     }
 
     this.updateBarks();
+    this.updateStop();
 
     // Devon is released, eventually, and nothing is removed from the record.
     if (this.state.devonReleasedAt > 0 && sim.tick === this.state.devonReleasedAt) this.release();
@@ -589,16 +659,119 @@ export class StoryDirector {
     sim.bus.emitNow('story:overheard', { id: bark.id });
   }
 
+  /** The way the officer came in, so he can go back out the same way. */
+  private officerWay: Vec2[] = [];
+
+  /**
+   * The afternoon's turn, and the stop, as things that happen in front of
+   * the player rather than somewhere they used to be.
+   */
+  private updateStop(): void {
+    const sim = this.ctx.sim;
+    const s = this.state;
+    const p = sim.player.pos;
+
+    // Time together, down in the Channel.
+    if (s.matchFiredAt < 0 && sim.devonFollowing && inChannel(p) && dist(sim.devonPos, p) < 30) {
+      s.channelTogether++;
+    }
+
+    // Devon coming over, and then the stop.
+    if (s.closingSince >= 0 && s.stopBeganAt < 0) {
+      const near = dist(sim.devonPos, p) < 6;
+      const waited = sim.tick - s.closingSince > 60 * 5;
+      if (near || waited) this.beginStop();
+    }
+
+    if (!sim.devonStopped || s.stopBeganAt < 0) return;
+    const officer = sim.person('officer');
+    const here = officer && arrived(officer);
+
+    // The officer keeps an eye on Devon, and on anybody who comes close.
+    if (officer && here) {
+      officer.facing = dist(p, officer.pos) < 9 ? { x: p.x, y: p.y } : { x: sim.devonPos.x, y: sim.devonPos.y };
+    }
+
+    /*
+     * The clock does not start until there is somebody to watch it. Being
+     * stopped is the beat the whole afternoon turns on, and a beat that can
+     * finish while the player is a hundred metres away is not a beat.
+     */
+    if (s.stopClockAt < 0) {
+      const witnessed = dist(p, sim.devonPos) < STOP_WITNESS_RANGE && here;
+      const givenUp = sim.tick - s.stopBeganAt > 60 * 180;
+      if (witnessed || givenUp) {
+        s.stopClockAt = sim.tick;
+        s.devonReleasedAt = sim.tick + 60 * STOP_SECONDS;
+      }
+      return;
+    }
+
+    /*
+     * Where you stand says what you are doing. Come in close and the officer
+     * says so; keep your distance and Devon sees you keep it. Neither is a
+     * menu: the choice is the ground between you and them.
+     */
+    if (here && officer && s.intervened === null) {
+      const d = dist(p, officer.pos);
+      if (!s.askedBack && d < 9 && !sim.engagedWith) {
+        s.askedBack = true;
+        this.ctx.renderer.speak?.(() => officer.pos, DIALOGUE.officerStepBack, 3.2);
+      }
+      if (!s.keptBack && s.askedBack && d > 9 && sim.tick - s.stopClockAt > 60 * 10) {
+        s.keptBack = true;
+        this.ctx.renderer.speak?.(() => sim.devonPos, DIALOGUE.devonKeptBack, 3.0);
+      }
+    }
+  }
+
+  /** Devon stands still, and somebody comes. */
+  private beginStop(): void {
+    const c = this.ctx;
+    const sim = c.sim;
+    const s = this.state;
+    s.stopBeganAt = sim.tick;
+    sim.devonClosing = false;
+    sim.devonStopped = true;
+    sim.devonFollowing = false;
+    // Somebody actually comes. A stop is a person standing next to you.
+    const officer = sim.person('officer');
+    if (officer) {
+      const way = officerWay(sim, sim.devonPos);
+      officer.pos = { ...way[0] };
+      officer.visible = true;
+      officer.facing = { x: sim.devonPos.x, y: sim.devonPos.y };
+      this.officerWay = way;
+      sendVia(officer, way.slice(1), OFFICER_PACE);
+    }
+    // Not arrested. Just stopped, very politely, while the system checks.
+    sim.message('CARE', [CARE.stopped], 6.0, 'normal', 'critical');
+    c.hud.say([DIALOGUE.devonStopped[0]], 3.6);
+    c.after(4.2, () => c.hud.say([DIALOGUE.devonStopped[1]], 3.4));
+    c.after(9, () => c.hud.say([DIALOGUE.playerThought[0]], 3.4));
+    // The player can now hold VISION, because they have started to see it.
+    sim.unlockVision();
+    c.audio.motif(0.6);
+    c.after(12, () => sim.message('SYSTEM', [SYSTEM.visionAvailable, c.hint.vision], 6.0));
+  }
+
   private release(): void {
     const sim = this.ctx.sim;
     sim.devonStopped = false;
     sim.devonFollowing = false;
+    // The machine's judgements about you resume a little after, not on the
+    // same frame as "Devon is on their way home".
+    sim.holdJudgements(20);
     // Whatever the player did not do at the stop, they did not do.
     if (this.state.intervened === null) this.state.intervened = false;
     if (sim.engagedWith?.id === 'officer' || sim.engagedWith?.id === 'devon') sim.disengage();
     const officer = sim.person('officer');
-    if (officer) sendTo(officer, OFFICER_FROM);
-    this.ctx.after(10, () => { if (officer) officer.visible = false; });
+    if (officer) {
+      officer.facing = null;
+      const back = this.officerWay.length > 1 ? [...this.officerWay].reverse().slice(1) : [OFFICER_FROM];
+      sendVia(officer, back, OFFICER_PACE);
+    }
+    this.ctx.after(30, () => { if (officer) officer.visible = false; });
     sim.devonVisible = false;
     sim.message('CARE', [CARE.devonHome], 6.0);
     // Somebody from SAFEtrace is out talking to residents this evening.
@@ -802,7 +975,13 @@ export class StoryDirector {
     st.matchFiredAt = rebase(st.matchFiredAt);
     st.visionUnlockedAt = rebase(st.visionUnlockedAt);
     st.devonHomeAt = rebase(st.devonHomeAt);
-    if (st.devonReleasedAt > 0) st.devonReleasedAt = tick - 1;
+    // A stop that was under way when the afternoon was put down is over by
+    // the time it is picked up again: nobody stands in a road for that long.
+    if (st.devonReleasedAt > 0 || snap.fired.includes('devon-stopped')) st.devonReleasedAt = tick - 1;
+    st.closingSince = -1;
+    st.stopBeganAt = st.stopBeganAt >= 0 ? tick - 1 : -1;
+    st.stopClockAt = st.stopClockAt >= 0 ? tick - 1 : -1;
+    sim.devonClosing = false;
     // An ending already seen is not seen again on the way back in; one that was
     // decided but not yet shown still plays.
     st.repriseShown = !!snap.state.repriseShown;

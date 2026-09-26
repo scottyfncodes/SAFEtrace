@@ -54,6 +54,8 @@ export interface Interest {
   pos: Vec2;
   /** What the prompt says: a name, or what the thing is. */
   label: string;
+  /** What pressing the button will do, when it is not simply talking or looking. */
+  verb?: string;
 }
 
 /** How close you must be to talk to somebody. */
@@ -67,6 +69,10 @@ const NOTICE_SPEED = 4.5;
 
 /** How far the player can reach into the network without walking to it. */
 export const SELECT_RANGE = 16;
+/** How long the system waits before repeating a judgement about behaviour. */
+const FLAG_ANNOUNCE_GAP = 60 * 150;
+/** And between any two of them. */
+const FLAG_ANNOUNCE_SPACING = 60 * 30;
 
 /**
  * How far out the reticle sits when it is on nothing at all — sky, or a
@@ -151,6 +157,14 @@ export class Sim {
   devonFollowing = false;
   devonStopped = false;
   /**
+   * Devon is coming to the player rather than riding at their shoulder.
+   *
+   * Set by the story for the few seconds before the stop: whatever gap the
+   * last stretch of skating opened, he closes it, so that when he is stopped
+   * he is stopped next to you and not somewhere back down the Channel.
+   */
+  devonClosing = false;
+  /**
    * Whether Devon is anywhere the player can see him. He goes home after the
    * stop, and for a while he is simply not in the town.
    */
@@ -210,6 +224,10 @@ export class Sim {
    * which way it looks.
    */
   readonly knownSensors = new Set<string>();
+  /** Hold the machine's judgements about behaviour for a few seconds. */
+  holdJudgements(seconds: number): void {
+    this.lastFlagAnnounce.set('*', Math.max(this.lastFlagAnnounce.get('*') ?? -9999, this.tick + Math.round(60 * seconds) - FLAG_ANNOUNCE_SPACING));
+  }
   /** Rate limit for the system saying it has stopped falling for a noise. */
   private lastDiscountTick = -9999;
 
@@ -283,6 +301,8 @@ export class Sim {
     return this.assets;
   }
   private lastEscalation: EscalationLevel = 'PASSIVE';
+  /** "SUBJECT MONITORING INITIATED" is said once an afternoon, and not before it means anything. */
+  private saidMonitoring = false;
   private aimAngle = 0;
   private aimPitch = 0.18;
 
@@ -639,17 +659,29 @@ export class Sim {
     const here = this.player.pos;
     let best: Interest | null = null;
     let bestD = Infinity;
-    const consider = (i: Interest, reach: number) => {
+    let bestRank = -1;
+    /*
+     * A thing you have walked up to beats the friend who walked up with you.
+     * Devon rides at your shoulder with a generous talk range, and he was
+     * winning the button over a doorstep the player had stopped at on
+     * purpose. Places and the town's people take it if they are in reach;
+     * Devon takes it when nothing else is.
+     */
+    const consider = (i: Interest, reach: number, rank = 1) => {
       const d = dist(i.pos, here);
-      if (d <= reach && d < bestD) { best = i; bestD = d; }
+      if (d > reach) return;
+      if (rank > bestRank || (rank === bestRank && d < bestD)) { best = i; bestD = d; bestRank = rank; }
     };
     for (const p of this.people) {
       if (!p.visible) continue;
-      consider({ kind: 'person', id: p.id, pos: p.pos, label: p.name }, TALK_RANGE);
+      // During the stop, walking up to the officer is a thing you do on
+      // purpose, and the prompt says which thing.
+      const verb = p.id === 'officer' && this.devonStopped ? 'SPEAK UP' : undefined;
+      consider({ kind: 'person', id: p.id, pos: p.pos, label: p.name, verb }, TALK_RANGE);
     }
     if (this.devonVisible && this.devonFollowing !== undefined) {
       consider({ kind: 'person', id: 'devon', pos: this.devonPos, label: 'Devon' },
-        this.devonFollowing || this.devonStopped ? DEVON_TALK_RANGE : TALK_RANGE);
+        this.devonFollowing || this.devonStopped ? DEVON_TALK_RANGE : TALK_RANGE, 0);
     }
     for (const pl of this.places) {
       if (!pl.visible) continue;
@@ -700,7 +732,7 @@ export class Sim {
      * simply where a mate rides: next to you and a bit back, not in your
      * slipstream.
      */
-    const back = 4.8, side = 2.6;
+    const back = this.devonClosing ? 1.6 : 4.8, side = this.devonClosing ? 2.0 : 2.6;
     const hx = Math.cos(this.player.heading), hy = Math.sin(this.player.heading);
     const target = {
       x: this.player.pos.x - hx * back - hy * side,
@@ -727,7 +759,8 @@ export class Sim {
      * unchanged at any speed anybody skates at and goes to zero when they
      * stop. Stand still, and Devon stands still too.
      */
-    const floor = Math.min(1.2, this.player.speed);
+    // Coming over to you is the one time he moves at somebody who is standing still.
+    const floor = this.devonClosing ? 4.5 : Math.min(1.2, this.player.speed);
     const speed = Math.min(this.player.speed * 1.05 + floor, Math.max(0, d) * 2.2);
     if (d > 0.4) {
       const dir = norm({ x: target.x - this.devonPos.x, y: target.y - this.devonPos.y });
@@ -1407,7 +1440,15 @@ export class Sim {
       if (isCar) prop.alarmUntil = this.tick + 60 * 30;
       // The most powerful use of the slingshot: making a sound somewhere you are not.
       this.bus.emit('noise:event', { pos, label });
-      this.dispatcher.flagAnomaly(pos, this.tick, label, isCar ? 60 * 20 : 60 * 12);
+      /*
+       * A bin going over is a noise: cameras turn to it, people look up, and
+       * it is written down. It does not, on its own, bring a unit — that was
+       * the bottom rung of the ladder priced like the top, and a player who
+       * got a drone for one stone learned nothing about distraction except
+       * not to. A car alarm does bring one; so does a street that has heard
+       * enough (PATTERN, in disturbance.ts), which is where the pool moves.
+       */
+      if (isCar) this.dispatcher.flagAnomaly(pos, this.tick, label, 60 * 20);
       this.addEvidence('NOISE', pos, label, null, observedBy);
       // And the town looks at the sound, not at you — the first few times.
       this.makeNoise(isCar ? 'alarm' : 'clatter', pos, isCar ? NOISE_REACH.car : NOISE_REACH.prop,
@@ -1593,7 +1634,10 @@ export class Sim {
 
       const pedestrian = this.world.districtAt(subject.pos)?.id === 'commons'
         || this.world.districtAt(subject.pos)?.id === 'ridgeline';
-      classify(track, subject, this.world, this.tick, openEvidence, pedestrian);
+      // Standing at a node reading its record, or talking to somebody, is
+      // standing still on purpose. The system does not get to call it lingering.
+      const attending = track === this.playerTrack && (this.focusNode !== null || this.engagedWith !== null);
+      classify(track, subject, this.world, this.tick, openEvidence, pedestrian, attending);
 
       // Prediction only for tracks the system is actually holding.
       if (track.confidence > 0.2 || track === this.playerTrack) {
@@ -1619,20 +1663,35 @@ export class Sim {
 
   private lastFlagAnnounce = new Map<string, number>();
 
+  /**
+   * What the system says about how you are behaving.
+   *
+   * Only once it has something to say it to. Before Devon is stopped, the
+   * machine's voice is CARE — the weather, a friend at school — and the
+   * first thing SAFEtrace CITY ever says to the player is the match. After
+   * that, a judgement is a card: said once, not again for a good while, and
+   * never with a number on it. The number is something you find.
+   */
   private announceBehaviour(): void {
+    if (!this.visionUnlocked || this.devonStopped) return;
+    // One judgement at a time, with air between them: two flags that came
+    // true together arrive as two cards half a minute apart, not a stack.
+    const anyLast = this.lastFlagAnnounce.get('*') ?? -9999;
+    if (this.tick - anyLast < FLAG_ANNOUNCE_SPACING) return;
     const t = this.playerTrack;
     for (const f of t.flags) {
       if (f === 'NORMAL_TRANSIT') continue;
       const last = this.lastFlagAnnounce.get(f) ?? -9999;
-      if (this.tick - last < 60 * 20) continue;
+      if (this.tick - last < FLAG_ANNOUNCE_GAP) continue;
       this.lastFlagAnnounce.set(f, this.tick);
+      this.lastFlagAnnounce.set('*', this.tick);
       const line =
         f === 'UNUSUAL_ROUTE' ? SYSTEM.unusualRoute
         : f === 'EVASIVE' ? SYSTEM.evasive
         : f === 'LOITERING' ? SYSTEM.loitering
         : f === 'RECKLESS_VELOCITY' ? SYSTEM.reckless
         : SYSTEM.proximity;
-      this.message('SYSTEM', [line, SYSTEM.risk(t.risk.total)], 3.6, 'normal', 'important');
+      this.message('SYSTEM', [line], 3.6, 'normal', 'context');
     }
   }
 
@@ -1668,7 +1727,10 @@ export class Sim {
         if (t && PURSUABLE_EVIDENCE.has(e.kind)) {
           this.reportOffence(t, e.pos, e.label);
         }
-        this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
+        // A stone traced back to you is a line in a file, not an alarm: the
+        // system notes it, quietly, and only once it is talking to you at all.
+        if (e.kind === 'NOISE') this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.0, 'normal', 'context');
+        else this.message('SYSTEM', [SYSTEM.subjectLinked(t?.attributedIdentity ?? 'UNKNOWN')], 3.4, 'strong');
       } else if (e.kind !== 'NOISE') {
         this.message('SYSTEM', [SYSTEM.originIndeterminate], 3.4);
         /*
@@ -1749,13 +1811,22 @@ export class Sim {
 
     this.announcePursuit();
 
-    this.escalation = result.level;
+    /*
+     * The level the player is shown is the player's own. The dispatcher's
+     * headline is the town's — the highest of every track it holds — and
+     * after the match that is Devon's, so a kid reading a record at nine
+     * percent was looking at DRONE_DISPATCH with nothing in the sky. What
+     * the town does about Devon is Devon's story; the dial is about you.
+     */
+    this.escalation = levelFor(this.playerTrack.risk.total);
     if (this.escalation !== this.lastEscalation) {
       this.bus.emit('escalation:changed', {
         from: this.lastEscalation, to: this.escalation, risk: this.playerTrack.risk.total,
       });
-      if (this.escalation === 'MONITORING' && this.lastEscalation === 'PASSIVE') {
-        this.message('SYSTEM', [SYSTEM.subjectMonitoring, SYSTEM.risk(this.playerTrack.risk.total)], 3.8, 'normal', 'important');
+      if (this.escalation === 'MONITORING' && this.lastEscalation === 'PASSIVE'
+        && this.visionUnlocked && !this.devonStopped && !this.saidMonitoring) {
+        this.saidMonitoring = true;
+        this.message('SYSTEM', [SYSTEM.subjectMonitoring], 3.8, 'normal', 'important');
       }
       this.lastEscalation = this.escalation;
     }
@@ -2027,7 +2098,11 @@ export class Sim {
     // The cost of interfering is time standing still, in a town full of cameras.
     if (this.player.speed > 1.4 || intent.toggleStance) { this.cancelHack(); return; }
     const node = this.network.get(this.hack.nodeId);
-    if (!node || dist(node.pos, this.player.pos) > 16) { this.cancelHack(); return; }
+    if (!node) { this.cancelHack(); return; }
+    // A record has no place to stand next to: once you have followed an edge
+    // to it, it is read — and traced onward — from wherever you are. Only a
+    // thing on a wall needs you at the wall.
+    if (node.kind !== 'SERVICE' && dist(node.pos, this.player.pos) > 16) { this.cancelHack(); return; }
 
     this.hack.ticksRemaining--;
     if (this.hack.ticksRemaining > 0) return;
@@ -2077,7 +2152,7 @@ export class Sim {
       case 'SUPPRESS': {
         this.playerTrack.confidence *= 0.6;
         this.playerTrack.suppressedUntil = this.tick + 60 * 6;
-        this.message('SYSTEM', [SYSTEM.risk(this.playerTrack.risk.total)], 2.6);
+        this.message('SYSTEM', [SYSTEM.trackSuppressed], 2.6);
         // A track that went strange mid-hold is a small thing, and it is noticed.
         this.disturb('glitch', node.pos, nodeId);
         break;

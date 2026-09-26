@@ -139,13 +139,13 @@ html, body {
 #inspect.hidden { opacity: 0; pointer-events: none; }
 #inspect {
   position: absolute; bottom: 24px; left: 24px;
-  width: calc(300px * var(--text-scale));
+  width: calc(340px * var(--text-scale));
   background: rgba(10, 20, 28, 0.90);
   border: 1px solid rgba(79, 224, 196, 0.35);
   border-radius: 10px; padding: 12px 14px;
   color: #DCEFEA;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: calc(10.5px * var(--text-scale));
+  font-size: calc(11px * var(--text-scale));
   letter-spacing: 0.05em; line-height: 1.6;
   opacity: 0; transform: translateY(8px);
   transition: opacity 200ms var(--ease), transform 200ms var(--ease);
@@ -153,6 +153,8 @@ html, body {
 #inspect.show { opacity: 1; transform: translateY(0); }
 #inspect .node-id { color: var(--st-teal-bright); font-size: calc(12px * var(--text-scale)); letter-spacing: 0.1em; }
 #inspect .rec { color: #8FB0AC; }
+/* The line the case turns on: the same document, in a hand you can read. */
+#inspect .rec.key { color: #E6F4F0; font-size: calc(12.5px * var(--text-scale)); font-weight: 600; letter-spacing: 0.04em; }
 #inspect .verbs { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 #inspect .verb {
   border: 1px solid rgba(79,224,196,0.4); border-radius: 4px;
