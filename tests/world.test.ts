@@ -88,7 +88,8 @@ describe('Bellhaven content validation', () => {
     // The intended descents: paved the whole way, so they are skateable.
     const routes: Array<Array<[number, number]>> = [
       [[60, 290], [60, 320], [60, 360], [62, 392]],
-      [[196, 290], [196, 330], [196, 380], [196, 414]],
+      // Round the west end of the community hall, not through it.
+      [[196, 290], [196, 330], [171, 360], [171, 388], [196, 400], [196, 414]],
       [[472, 305], [472, 350], [472, 392], [470, 438]],
     ];
     for (const route of routes) {
@@ -98,7 +99,7 @@ describe('Bellhaven content validation', () => {
     }
     // And the descents are genuinely off the modelled network: the forecast
     // cannot follow the player down them.
-    expect(world.distanceToRoad({ x: 196, y: 380 })).toBeGreaterThan(60);
+    expect(world.distanceToRoad({ x: 196, y: 404 })).toBeGreaterThan(60);
   });
 
   it('lets a skater reach the Channel from the spawn without crossing a lawn', () => {

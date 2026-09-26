@@ -36,9 +36,12 @@ export function authorCast(b: TownBuilder): void {
 
   b.person('carvalho', 'Mrs. Carvalho', '14 Northgate Lane', pt(134.2, 43.2), 90, '#3F7C8C', { visible: false });
   b.person('brennan', 'Mr. Brennan', '12 Northgate Lane', pt(89, 43.8), 120, '#8C7A5B', { visible: false });
+  // He works the Lane door to door, and a courier stands at a door for a
+  // moment — which is when a kid on a board can catch him.
   b.person('courier', 'Courier', 'Parcels', pt(214, 65.5), 180, '#E6C229', {
     visible: false, hood: true,
-    route: [pt(214, 65.5), pt(176, 65.5), pt(118, 65.5), pt(176, 65.5)],
+    route: [pt(214, 65.5), pt(175, 61), pt(176, 65.5), pt(130, 61), pt(118, 65.5), pt(85, 61), pt(130, 65.5), pt(176, 65.5)],
+    dwell: 6,
   });
   // The officer who stops Devon. Placed by the story when he is needed.
   b.person('officer', 'Officer', 'SAFEtrace CITY Partner', pt(196, 400), 90, '#28374D', { visible: false, uniform: true });

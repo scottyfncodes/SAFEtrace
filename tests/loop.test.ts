@@ -135,7 +135,7 @@ describe('the slingshot loop', () => {
     expect(linked(false)).toBe(false);
   });
 
-  it('turns a knocked-over bin into an anomaly that moves the asset pool', () => {
+  it('a knocked-over bin turns heads and is written down, and nobody is sent for it', () => {
     const sim = makeUnlockedSim();
     // A bin with clear ground south of it, so the shot is about the bin rather
     // than about whatever happens to be authored behind it. Picking "the first
@@ -154,6 +154,24 @@ describe('the slingshot loop', () => {
     shoot(sim, bin.pos);
 
     expect(bin.knocked).toBe(true);
+    // It is a noise: on the record, heard by the cameras, and that is all.
+    // The bottom rung of the ladder does not bring a unit; a car alarm or a
+    // street that has heard enough does.
+    expect([...sim.evidence.values()].some((e) => e.kind === 'NOISE')).toBe(true);
+    expect(sim.dispatcher.activeAnomalies.length).toBe(0);
+    step(sim, 2);
+    const tasked = sim.drones.some((d) => d.state === 'INVESTIGATE')
+      || sim.patrols.some((p) => p.state === 'RESPONDING');
+    expect(tasked).toBe(false);
+  });
+
+  it('a car alarm is an anomaly that moves the asset pool', () => {
+    const sim = makeUnlockedSim();
+    const car = sim.world.data.props.find((p) => p.kind === 'car' && p.district === 'northgate')!;
+    expect(car).toBeDefined();
+    place(sim, { x: car.pos.x, y: car.pos.y + 12 });
+    shoot(sim, car.pos, 0.8);
+    expect(car.knocked).toBe(true);
     expect(sim.dispatcher.activeAnomalies.length).toBeGreaterThan(0);
     // Something is now on its way to a place the player is not.
     step(sim, 2);

@@ -19,6 +19,33 @@ const WALL_WARM = '#F0E3D0';
 const WALL_COOL = '#DCE4E8';
 const WALL_CREAM = '#EDE0C8';
 
+/**
+ * The Channel's centreline, its four aprons, and its half-width. Exported
+ * because the story has to walk a person *into* the Channel — down an apron
+ * and along the floor — and the only way to do that reliably is to know
+ * where the floor is.
+ */
+export const CHANNEL_LINE: Array<[number, number]> = [[20, 400], [150, 420], [280, 440], [400, 450], [545, 456]];
+export const CHANNEL_APRONS: Array<[number, number, number]> = [[62, 406, 90], [196, 428, 90], [330, 444, 270], [470, 452, 270]];
+export const CHANNEL_HALF = 9;
+
+/** The y of the Channel floor's centreline at a given x. */
+export function channelFloorY(x: number): number {
+  const pts = CHANNEL_LINE;
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    if (x <= x1) return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return pts[pts.length - 1][1];
+}
+
+/** Whether a point is down on the Channel floor, between its walls. */
+export function inChannel(p: { x: number; y: number }): boolean {
+  if (p.x < CHANNEL_LINE[0][0] || p.x > CHANNEL_LINE[CHANNEL_LINE.length - 1][0]) return false;
+  return Math.abs(p.y - channelFloorY(p.x)) <= CHANNEL_HALF;
+}
+
 export function buildBellhaven(): WorldData {
   const b = new TownBuilder();
 
@@ -302,7 +329,19 @@ export function buildBellhaven(): WorldData {
   b.prop('hoop', pt(196, 300), 0);
   b.kicker(pt(126, 252), 7, 5, 90, 3.6);
   b.ledge(pt(140, 200), pt(140, 226));
-  b.ledge(pt(170, 274), pt(170, 298));
+  // On the verge south of Ridgeline Road, not across it: it used to run from
+  // the north pavement to the lawn, a knee-high bar across the whole road at
+  // exactly the place Devon waits.
+  b.ledge(pt(170, 289), pt(170, 313));
+  // The bottom of the close, where Devon waits: a bench on the verge, the
+  // post box the street uses, and hedging along the greenway so the path
+  // south reads as a path from the kerb. None of it sits on the route.
+  b.prop('bench', pt(150, 289), Math.PI);
+  b.prop('mailbox', pt(189, 289));
+  b.prop('bush', pt(191, 330), 0, { scale: 1.1 });
+  b.prop('bush', pt(201, 318), 0, { scale: 0.9 });
+  b.prop('bush', pt(166, 372), 0, { scale: 1.2 });
+  b.prop('bush', pt(176, 386), 0, { scale: 0.8 });
 
   // ---------------------------------------------------------------- ridgeline
   b.in('ridgeline').useSegment('S-R1');
@@ -389,7 +428,13 @@ export function buildBellhaven(): WorldData {
   // The four ways down to the water. Paved, obvious on the ground, and
   // invisible to a model that only knows about streets.
   b.path([pt(60, 286), pt(60, 340), pt(62, 396)], 3.6);
-  b.path([pt(196, 286), pt(196, 350), pt(196, 418)], 3.6);
+  /*
+   * Round the hall, not through it. The straight run from Ridgeline Road to
+   * the apron used to go clean through the community hall, so the route
+   * Devon describes — "past the greenway, down the apron" — dead-ended in a
+   * building. It steps west round the hall's end and comes back to the apron.
+   */
+  b.path([pt(196, 286), pt(196, 348), pt(171, 352), pt(171, 392), pt(196, 396), pt(196, 418)], 3.6);
   b.path([pt(330, 396), pt(330, 436)], 3.6);
   b.path([pt(455, 286), pt(472, 300), pt(472, 396), pt(470, 442)], 3.6);
   // A cross-path linking the court, the playground and the hall.
@@ -405,9 +450,9 @@ export function buildBellhaven(): WorldData {
    * only ways in or out are the four aprons.
    */
   b.in('channel').useSegment('S-CH');
-  const chanPts: Array<[number, number]> = [[20, 400], [150, 420], [280, 440], [400, 450], [545, 456]];
-  const aprons: Array<[number, number, number]> = [[62, 406, 90], [196, 428, 90], [330, 444, 270], [470, 452, 270]];
-  const HALF = 9;
+  const chanPts = CHANNEL_LINE;
+  const aprons = CHANNEL_APRONS;
+  const HALF = CHANNEL_HALF;
 
   for (let i = 1; i < chanPts.length; i++) {
     const [x0, y0] = chanPts[i - 1];
@@ -480,6 +525,19 @@ export function buildBellhaven(): WorldData {
   b.link('JX-CH', 'TX-2');
   b.prop('cone', pt(212, 424)); b.prop('cone', pt(182, 424));
   b.prop('bin', pt(268, 434));
+  // The apron head is signed and lit, because somebody once specified it;
+  // the floor is not. Weeds through the joints along the walls, a lamp at
+  // each end of the footbridge, a bench on the south bank where the path
+  // from Maple Court comes out.
+  b.prop('sign', pt(207, 409), Math.PI / 2, { tint: 'FLOOD ACCESS' });
+  b.prop('pole', pt(184, 408));
+  b.prop('pole', pt(150, 403));
+  b.prop('pole', pt(150, 437));
+  b.prop('bench', pt(208, 449), 0);
+  b.prop('bush', pt(120, 408.5), 0, { scale: 0.6 });
+  b.prop('bush', pt(230, 439.5), 0, { scale: 0.55 });
+  b.prop('bush', pt(300, 434), 0, { scale: 0.5 });
+  b.prop('bush', pt(372, 455), 0, { scale: 0.6 });
   b.trees([pt(90, 384), pt(240, 412), pt(360, 428), pt(500, 438), pt(140, 462), pt(300, 470)]);
 
   // ---------------------------------------------------------------- relay 12
@@ -581,11 +639,13 @@ export function buildBellhaven(): WorldData {
        * away and follow from the first tick, so the session opened with a
        * companion already attached rather than a kid alone on a board — and
        * every fix to how he looked or moved was still a fix to a friend who
-       * was already there. He waits here instead, on the grass past the
-       * cul-de-sac, and stays put (`Sim.devonFollowing` starts `false`) until
-       * the player actually skates down and finds him.
+       * was already there. He waits here instead — on the kerb at the bottom
+       * of Maple Court, straight down the street the player is facing, where
+       * a text saying "by the close" is enough to find him — and stays put
+       * (`Sim.devonFollowing` starts `false`) until the player actually
+       * skates down and finds him.
        */
-      devon: pt(150, 296),
+      devon: pt(160, 286),
       dronePads: [pt(120, 90), pt(392, 88), pt(440, 320)],
       patrolStarts: [pt(70, 150), pt(300, 280)],
     },

@@ -20,6 +20,8 @@ export const WEIGHTS = {
 };
 
 export const EVIDENCE_DECAY_TICKS = 3600; // 60 s to fully shed one piece of evidence
+/** The most that behaviour and prediction error alone can score: just under DRONE_DISPATCH. */
+export const BEHAVIOUR_CEILING = 44;
 
 export function scoreRisk(
   track: Track,
@@ -52,7 +54,19 @@ export function scoreRisk(
   const anomaly = track.predictionError * WEIGHTS.anomaly * (1 - subject.familiarity);
   const history = subject.priorContacts * WEIGHTS.history;
 
-  const raw = behaviour + ev + inc + anomaly + history;
+  /*
+   * Watched is not hunted, and the dial says so.
+   *
+   * Behaviour and the forecast being wrong about you are things an ordinary
+   * afternoon produces — the alley, the Channel, standing still in view — and
+   * on their own they used to carry the score past the line where the
+   * headline reads DRONE_DISPATCH, with no drone. Nothing you can do by
+   * moving gets there now. The rest of the ladder is reached the way the
+   * dispatcher already required: evidence with your name on it, an incident,
+   * a contact on your record.
+   */
+  const conduct = Math.min(behaviour + anomaly, BEHAVIOUR_CEILING);
+  const raw = conduct + ev + inc + history;
 
   // Decay: being unobserved and behaving normally lowers the score.
   const unobservedS = Math.max(0, tick - track.lastObservedTick) / 60;

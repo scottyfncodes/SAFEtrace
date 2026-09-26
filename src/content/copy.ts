@@ -56,6 +56,8 @@ export const SYSTEM = {
   matchSubject: (name: string) => `SUBJECT: ${name}`,
   incidentReported: (kind: string, where: string) => `${kind} REPORTED — ${where}`,
   maskActive: 'IDENTITY UNRESOLVED — SUBJECT UNKNOWN',
+  /** SUPPRESS ran: the track it was holding went soft. */
+  trackSuppressed: 'TRACK CONFIDENCE DEGRADED — REACQUIRING',
   identityUnresolved: 'IDENTITY UNRESOLVED',
   holdStill: 'COME TO A STOP TO INTERFERE',
   /**
@@ -208,6 +210,10 @@ export const DIALOGUE = {
     "Devon: it's fine. it's fine, they just want to check.",
     "Devon: don't do anything. seriously.",
   ],
+  /** Said over his shoulder, to a player who has come in close during the stop. */
+  officerStepBack: 'Step back for me, please.',
+  /** Said quietly, to a player who has kept their distance. */
+  devonKeptBack: 'yeah. there. stay there.',
   playerThought: [
     "It was 98.7% sure.",
     "It wasn't lying. It was just sure.",
@@ -215,7 +221,7 @@ export const DIALOGUE = {
     "Somebody's mum asked for this. And they were right.",
     "Somebody has to see all of this at once. The question is who.",
   ],
-  devonWhere: "Devon (text): where are you. i'm on the grass at the bottom of maple court, by the close.",
+  devonWhere: "Devon (text): where are you. i'm at the bottom of maple court, on the kerb by the close.",
   devonNudge: "Devon: you coming or what? channel's south. past the greenway, down the apron.",
   devonAtStop: "Devon: you didn't have to— ...the camera on the apron. the light came on when we went down. it saw us. remember that.",
   maraText: 'Mara (text): heard about Devon. come by the shop if you want to know how it works. — M',

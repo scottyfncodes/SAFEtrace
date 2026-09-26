@@ -350,7 +350,9 @@ export class ChaseCamera {
     // Slightly flatter at speed, so a little more of the road ahead is in shot.
     // An upright phone has sky to spare and street to want: tip it down a touch.
     const tall = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h));
-    const upright = tall * 0.1;
+    // Less sky than it had: a quarter of an upright screen was horizon, and
+    // the rider sat in the bottom half under it.
+    const upright = tall * 0.24;
     // In a conversation on an upright phone the card has to sit above the
     // thumbs, which is the middle of the glass — exactly where framing puts
     // the two people talking. Tipping down lifts them into the top half, so
@@ -373,13 +375,20 @@ export class ChaseCamera {
     // point, quickly, and drifts back out slowly once the wall has passed.
     const back = { x: -Math.cos(this.yaw), y: -Math.sin(this.yaw) };
     let clear = 1;
-    for (let i = 1; i <= 8; i++) {
-      const k = i / 8;
+    /*
+     * Sampled finely near the rider, because that is where the things that
+     * actually hide them are. The line from the eye down to the board passes
+     * a garage roof four metres behind the rider at head height, and eight
+     * evenly spaced probes never landed on it — so a row of lock-ups, or a
+     * hall the rider had stopped against, sat solidly in front of them.
+     */
+    const ks = [0.04, 0.08, 0.13, 0.19, 0.26, 0.34, 0.43, 0.53, 0.64, 0.76, 0.88, 1];
+    for (const k of ks) {
       const probe = { x: p.pos.x + back.x * this.dist * k, y: p.pos.y + back.y * this.dist * k };
       const b = sim.world.buildingAt(probe);
-      // The sight line rises from the rider toward the eye; a wall lower than
+      // The sight line rises from the board toward the eye; a wall lower than
       // the line at that point does not block anything.
-      if (b && b.height > 1.2 + this.height * k) { clear = Math.max(0.28, k - 0.14); break; }
+      if (b && b.height > 0.6 + this.height * k) { clear = Math.max(0.28, k - 0.1); break; }
     }
     /*
      * Walls: lift over them rather than push through them.
@@ -392,7 +401,9 @@ export class ChaseCamera {
      */
     const blocked = 1 - clear;
     this.crane = blocked > this.crane ? damp(this.crane, blocked, 0.12, dt) : damp(this.crane, blocked, 0.6, dt);
-    const wantReach = 1 - blocked * 0.5;
+    // Close in more than it used to when rising is not enough: a rider you
+    // cannot see is worse than a street you cannot see all of.
+    const wantReach = 1 - blocked * 0.62;
     this.reach = wantReach < this.reach ? damp(this.reach, wantReach, 0.1, dt) : damp(this.reach, wantReach, 0.5, dt);
   }
 

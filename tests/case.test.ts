@@ -75,7 +75,8 @@ function throughTheStop(seed = 0x5afe7ace) {
   expect(sim.devonFollowing).toBe(true);
   place(sim, { x: 196, y: 428 });
   sim.devonPos = { x: 191, y: 426 };
-  run(sim, d.director, 60);
+  // Forty seconds together down here, then the match, then the stop.
+  run(sim, d.director, 100);
   expect(d.director.progress).toContain('devon-stopped');
   return { sim, ...d };
 }
