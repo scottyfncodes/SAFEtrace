@@ -18,7 +18,7 @@ import { TICK_DT } from '../src/core/loop';
 const VIEWPORT = { w: 390, h: 844, safe: { top: 47, right: 0, bottom: 34, left: 0 } };
 
 const STICK = { x: 90, y: 700 };
-const WORLD = { x: 195, y: 240 };
+const WORLD = { x: 120, y: 240 };
 
 let engine: TouchEngine;
 let clock = 1000;
@@ -47,7 +47,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'trick' | 'plan') =>
+const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
 beforeEach(() => { engine = make(); clock = 1000; });
@@ -374,7 +374,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
 
     fresh.setSlingAvailable(false);
     fresh.setAiming(true);
@@ -382,8 +382,8 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     fresh.setSlingAvailable(true);
     fresh.setPlanOpen(true);
     fresh.setPlanOpen(false);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'trick']);
-    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
   });
 
   /*
@@ -483,13 +483,14 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     const ids = engine.buttonLayout().map((b) => b.id);
     expect(ids).not.toContain('ollie');
     expect(ids).not.toContain('pop');
-    // One primary: TRICK is the only control an unlooked-for press should
-    // ever reach at full size.
-    expect(engine.buttonLayout().filter((b) => b.weight === 'primary').length).toBe(1);
+    // Two primaries, the two things pressed mid-run: TRICK and SLING.
+    expect(engine.buttonLayout().filter((b) => b.weight === 'primary').length).toBe(2);
   });
 
-  it('has no SLING button: the sling is a gesture on the left thumb', () => {
-    expect(engine.buttonLayout().map((b) => b.id)).not.toContain('sling');
+  it('puts SLING straight above TRICK', () => {
+    const sling = button(engine, 'sling'), trick = button(engine, 'trick');
+    expect(sling.x).toBe(trick.x);
+    expect(sling.y).toBeLessThan(trick.y);
   });
 
   /*
@@ -499,7 +500,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
    */
   it('has no GRAB button any more', () => {
     expect(engine.buttonLayout().map((b) => b.id)).not.toContain('grab');
-    expect(engine.buttonLayout().length).toBe(2);
+    expect(engine.buttonLayout().length).toBe(3);
   });
 
   it('grabs on a hold of TRICK, once, and does not also flip on the release', () => {
@@ -537,68 +538,77 @@ describe('the buttons are the whole rest of the vocabulary', () => {
 
 });
 
-describe('the sling lives on the left thumb: hold still, pull back, let go', () => {
-  /** Put a thumb down on the stick and hold it still for `ms`, frame by frame. */
-  const rest = (e: TouchEngine, p: { x: number; y: number }, ms: number, id = 1) => {
-    e.handle('down', at(p, id, clock));
-    for (let f = 0; f < Math.ceil(ms / 16); f++) { clock += 16; e.sample(); }
-  };
+describe('SLING: press, slide down, let go', () => {
   const pullTo = (e: TouchEngine, from: { x: number; y: number }, to: { x: number; y: number }, id = 1) => {
+    e.handle('down', at(from, id, clock));
     for (let k = 1; k <= 8; k++) {
       clock += 16;
       e.handle('move', at({ x: from.x + (to.x - from.x) * (k / 8), y: from.y + (to.y - from.y) * (k / 8) }, id, clock));
     }
   };
 
-  it('arms after a still hold, shows a ring there, and throws forward on a pull back', () => {
-    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
-    rest(engine, STICK, 300);
-    const armed = engine.visual.arming!;
-    expect(armed.k).toBe(1);
-    expect(armed.x).toBe(STICK.x);
-    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+  it('throws forward from a slide down off the button, and lights it while pulling', () => {
+    const s0 = button(engine, 'sling');
+    const end = { x: s0.x, y: s0.y + 120 };
+    pullTo(engine, s0, end);
     const mid = engine.sample();
     expect(mid.aim).toBe(true);
-    expect(mid.throwVector!.y).toBeLessThan(0);         // pulled down, thrown up the glass
-    expect(mid.moveVector).toBeNull();                  // and the stick let go of the board
-    expect(engine.visual.pull).not.toBeNull();
+    expect(mid.throwVector!.y).toBeLessThan(0);
+    expect(engine.visual.buttons.find((b) => b.id === 'sling')!.pressed).toBe(true);
     clock += 120;
-    engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
+    engine.handle('up', at(end, 1, clock));
     const shot = engine.sample();
     expect(shot.fire).toBe(true);
-    expect(shot.drawAmount!).toBeGreaterThan(0.5);
+    expect(shot.drawAmount!).toBeGreaterThan(0.6);
   });
 
-  it('steers, and never throws, when the thumb pushes straight away', () => {
-    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y + 90 }]);
-    const i = engine.sample();
-    expect(i.throwVector).toBeNull();
-    expect(i.moveVector!.y).toBeGreaterThan(0);
-    engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
-    expect(engine.sample().fire).toBe(false);
+  it('slides straight over TRICK without pressing it', () => {
+    const s0 = button(engine, 'sling'), trick = button(engine, 'trick');
+    pullTo(engine, s0, trick);
+    for (let f = 0; f < 30; f++) {
+      clock += 16;
+      const i = engine.sample();
+      expect(i.trickPressed).toBe(false);
+      expect(i.grabPressed).toBe(false);
+    }
+    engine.handle('up', at(trick, 1, clock));
+    const last = engine.sample();
+    expect(last.trickPressed).toBe(false);
+    expect(last.fire).toBe(true);
   });
 
-  it('steers after a rest when the thumb goes anywhere but back', () => {
-    rest(engine, STICK, 300);
-    pullTo(engine, STICK, { x: STICK.x + 10, y: STICK.y - 80 });
+  it('slides over PLAN without opening it', () => {
+    const s0 = button(engine, 'sling'), plan = button(engine, 'plan');
+    pullTo(engine, s0, plan);
+    engine.handle('up', at(plan, 1, clock));
+    expect(engine.sample().planView).toBe(false);
+  });
+
+  it('throws nothing from a tap', () => {
+    tap(engine, button(engine, 'sling'));
     const i = engine.sample();
-    expect(i.throwVector).toBeNull();
+    expect(i.fire).toBe(false);
+    expect(i.aimModePressed).toBe(false);
+  });
+
+  it('steers and slings at once, one thumb each', () => {
+    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 60 }]);
+    const s0 = button(engine, 'sling');
+    pullTo(engine, s0, { x: s0.x, y: s0.y + 80 }, 2);
+    const i = engine.sample();
     expect(i.moveVector!.y).toBeLessThan(0);
-    expect(engine.visual.arming).toBeNull();
+    expect(i.throwVector).not.toBeNull();
   });
 
-  it('does not arm a thumb that has already been steering', () => {
-    drag(engine, 1, [STICK, { x: STICK.x + 40, y: STICK.y }]);
-    for (let f = 0; f < 30; f++) { clock += 16; engine.sample(); }
-    pullTo(engine, { x: STICK.x + 40, y: STICK.y }, { x: STICK.x + 40, y: STICK.y + 90 });
-    expect(engine.sample().throwVector).toBeNull();
+  it('leaves open glass on the right to looking and tapping', () => {
+    expect(engine.zoneAt(300, 450)).toBe('idle');
   });
 
-  it('refuses the sling when there is nothing to shoot with', () => {
+  it('dims and refuses the sling when there is nothing to shoot with', () => {
     engine.setSlingAvailable(false);
-    rest(engine, STICK, 300);
-    expect(engine.visual.arming).toBeNull();
-    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+    expect(engine.buttonLayout().find((b) => b.id === 'sling')!.enabled).toBe(false);
+    const s0 = button(engine, 'sling');
+    pullTo(engine, s0, { x: s0.x, y: s0.y + 90 });
     expect(engine.sample().throwVector).toBeNull();
   });
 });

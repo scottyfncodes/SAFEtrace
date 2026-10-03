@@ -28,7 +28,7 @@ const KEYS: Array<[string, string]> = [
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
   ['TRICK', 'tap to flip the board, hold to grab it'],
-  ['Sling', 'left thumb: hold still a moment, pull back, let go'],
+  ['SLING', 'press it, slide down to pull back, let go to throw'],
   ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];
