@@ -58,7 +58,6 @@ export class ControlsRenderer {
     if (v.aiming) return;
     if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
     if (v.pull) this.drawPull(ctx, v.pull);
-    else if (v.arming) this.drawArming(ctx, v.arming);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
     if (this.planFade > 0.01) this.drawPlanFrame(ctx, w, h, safe);
@@ -248,33 +247,6 @@ export class ControlsRenderer {
     ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(cur.x, cur.y); ctx.stroke();
     ctx.fillStyle = alpha('#F6F4EE', 0.5);
     ctx.beginPath(); ctx.arc(cur.x, cur.y, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  /**
-   * The sling arming under a resting left thumb: a ring that closes as the
-   * hold comes up, and then sits there, lit, saying "pull back from here".
-   */
-  private drawArming(ctx: CanvasRenderingContext2D, a: NonNullable<ControlVisual['arming']>): void {
-    // Nothing for the first moment of a touch: most touches are steering.
-    const k = clamp01((a.k - 0.3) / 0.7);
-    if (k <= 0) return;
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = alpha('#FFFFFF', 0.25 * k);
-    ctx.beginPath(); ctx.arc(a.x, a.y, 30, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = alpha(a.k >= 1 ? VENEER.player : '#F6F4EE', 0.85);
-    ctx.lineWidth = a.k >= 1 ? 2.6 : 2;
-    ctx.beginPath(); ctx.arc(a.x, a.y, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
-    if (a.k >= 1) {
-      // Which way is back: a short chevron under the ring.
-      ctx.strokeStyle = alpha('#F6F4EE', 0.7);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(a.x - 7, a.y + 40); ctx.lineTo(a.x, a.y + 47); ctx.lineTo(a.x + 7, a.y + 40);
-      ctx.stroke();
-    }
     ctx.restore();
   }
 

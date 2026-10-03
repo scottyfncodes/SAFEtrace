@@ -18,7 +18,7 @@ import { TICK_DT } from '../src/core/loop';
 const VIEWPORT = { w: 390, h: 844, safe: { top: 47, right: 0, bottom: 34, left: 0 } };
 
 const STICK = { x: 90, y: 700 };
-const WORLD = { x: 195, y: 240 };
+const WORLD = { x: 120, y: 240 };
 
 let engine: TouchEngine;
 let clock = 1000;
@@ -537,68 +537,59 @@ describe('the buttons are the whole rest of the vocabulary', () => {
 
 });
 
-describe('the sling lives on the left thumb: hold still, pull back, let go', () => {
-  /** Put a thumb down on the stick and hold it still for `ms`, frame by frame. */
-  const rest = (e: TouchEngine, p: { x: number; y: number }, ms: number, id = 1) => {
-    e.handle('down', at(p, id, clock));
-    for (let f = 0; f < Math.ceil(ms / 16); f++) { clock += 16; e.sample(); }
-  };
+describe('the sling is the right thumb: touch open glass, pull back, let go', () => {
+  const RIGHT = { x: 300, y: 450 };
   const pullTo = (e: TouchEngine, from: { x: number; y: number }, to: { x: number; y: number }, id = 1) => {
+    e.handle('down', at(from, id, clock));
     for (let k = 1; k <= 8; k++) {
       clock += 16;
       e.handle('move', at({ x: from.x + (to.x - from.x) * (k / 8), y: from.y + (to.y - from.y) * (k / 8) }, id, clock));
     }
   };
 
-  it('arms after a still hold, shows a ring there, and throws forward on a pull back', () => {
-    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
-    rest(engine, STICK, 300);
-    const armed = engine.visual.arming!;
-    expect(armed.k).toBe(1);
-    expect(armed.x).toBe(STICK.x);
-    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+  it('throws forward from a pull back anywhere on the right half', () => {
+    expect(engine.zoneAt(RIGHT.x, RIGHT.y)).toBe('throw');
+    pullTo(engine, RIGHT, { x: RIGHT.x, y: RIGHT.y + 110 });
     const mid = engine.sample();
     expect(mid.aim).toBe(true);
     expect(mid.throwVector!.y).toBeLessThan(0);         // pulled down, thrown up the glass
-    expect(mid.moveVector).toBeNull();                  // and the stick let go of the board
     expect(engine.visual.pull).not.toBeNull();
     clock += 120;
-    engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
+    engine.handle('up', at({ x: RIGHT.x, y: RIGHT.y + 110 }, 1, clock));
     const shot = engine.sample();
     expect(shot.fire).toBe(true);
     expect(shot.drawAmount!).toBeGreaterThan(0.5);
   });
 
-  it('steers, and never throws, when the thumb pushes straight away', () => {
-    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y + 90 }]);
+  it('steers and throws at once, one thumb each', () => {
+    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y - 60 }]);
+    pullTo(engine, RIGHT, { x: RIGHT.x, y: RIGHT.y + 80 }, 2);
     const i = engine.sample();
-    expect(i.throwVector).toBeNull();
-    expect(i.moveVector!.y).toBeGreaterThan(0);
+    expect(i.moveVector!.y).toBeLessThan(0);
+    expect(i.throwVector).not.toBeNull();
+  });
+
+  it('never throws from the left thumb, however it moves', () => {
+    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+    expect(engine.sample().throwVector).toBeNull();
     engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
     expect(engine.sample().fire).toBe(false);
   });
 
-  it('steers after a rest when the thumb goes anywhere but back', () => {
-    rest(engine, STICK, 300);
-    pullTo(engine, STICK, { x: STICK.x + 10, y: STICK.y - 80 });
-    const i = engine.sample();
-    expect(i.throwVector).toBeNull();
-    expect(i.moveVector!.y).toBeLessThan(0);
-    expect(engine.visual.arming).toBeNull();
+  it('still taps the world, and skips, on the right half', () => {
+    tap(engine, RIGHT);
+    expect(engine.sample().skip).toBe(true);
+    expect(engine.takeTap()).toEqual(RIGHT);
   });
 
-  it('does not arm a thumb that has already been steering', () => {
-    drag(engine, 1, [STICK, { x: STICK.x + 40, y: STICK.y }]);
-    for (let f = 0; f < 30; f++) { clock += 16; engine.sample(); }
-    pullTo(engine, { x: STICK.x + 40, y: STICK.y }, { x: STICK.x + 40, y: STICK.y + 90 });
-    expect(engine.sample().throwVector).toBeNull();
+  it('leaves the buttons to the buttons', () => {
+    for (const b of engine.buttonLayout()) expect(engine.zoneAt(b.pos.x, b.pos.y)).toBe(b.id);
   });
 
   it('refuses the sling when there is nothing to shoot with', () => {
     engine.setSlingAvailable(false);
-    rest(engine, STICK, 300);
-    expect(engine.visual.arming).toBeNull();
-    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+    expect(engine.zoneAt(RIGHT.x, RIGHT.y)).not.toBe('throw');
+    pullTo(engine, RIGHT, { x: RIGHT.x, y: RIGHT.y + 90 });
     expect(engine.sample().throwVector).toBeNull();
   });
 });

@@ -77,7 +77,7 @@ export const TOUCH_TUNING = {
    *  - PLAN is a view, opened when the player chooses to stop and look.
    *    Small, and a short reach away.
    *
-   * There is no SLING button. The sling is a gesture on the left half.
+   * There is no SLING button. The sling is a pull on the right half.
    */
   trickRadius: 40,
   trickHit: 50,
@@ -94,21 +94,6 @@ export const TOUCH_TUNING = {
    * circle stays clear of the left-hand pad even on a 320 px phone.
    */
   planOffset: { x: -80, y: -64 },
-  /*
-   * The sling, on the left thumb: hold still, then pull back, then let go.
-   *
-   * The left half already steers, so the sling has to share it without
-   * ever firing by accident. A thumb that rests this long without moving
-   * arms the sling — a ring appears under it — and from there a pull
-   * *back* (down the glass, within the cone below) is a draw. Any other
-   * direction is steering, as it always was, and a thumb that is already
-   * moving never arms at all.
-   */
-  slingHoldMs: 250,
-  /** How far an arming thumb may wander and still count as still. */
-  slingHoldSlop: 10,
-  /** A pull counts as "back" when it is at least this steeply downward (dy / |d|). */
-  slingPullCone: 0.5,
   /**
    * Holding TRICK this long is a grab instead of a flip.
    *
@@ -185,8 +170,6 @@ interface Track {
   moved: number;
   /** A TRICK held long enough has already become a grab. */
   grabbed?: boolean;
-  /** A stick thumb held still long enough: where the sling was armed. */
-  armed?: { x: number; y: number };
   /** Recent positions, for reading a pull from just before the lift. */
   history?: Array<{ x: number; y: number; t: number }>;
   /**
@@ -224,11 +207,6 @@ export interface ControlVisual {
   aiming: boolean;
   /** Whether the sling is out, in the drag-back scheme. */
   slingOut: boolean;
-  /**
-   * A left thumb resting on the glass, on its way to arming the sling: where,
-   * and how far through the hold (1 is armed).
-   */
-  arming: { x: number; y: number; k: number } | null;
   /** A pull in progress: where it started, where the thumb is, and the draw. */
   pull: { start: { x: number; y: number }; cur: { x: number; y: number }; draw: number } | null;
 }
@@ -313,8 +291,8 @@ export class TouchEngine {
    * POP went because TRICK pops on its own. GRAB went because it is what
    * holding TRICK does. The eye went — and stays gone — because VISION is a
    * story unlock and must never grow a control. SLING went because the sling
-   * is not a mode you enter but a thing you pull: the left thumb holds still,
-   * pulls back and lets go, with half the glass to do it in.
+   * is not a mode you enter but a thing you pull: the right thumb touches
+   * open glass, pulls back and lets go, with half the screen to do it in.
    *
    * PLAN stays, from the very first frame, because the plan view is a *view*
    * and every device needs a way into it — keyboard has Q, and a phone has
@@ -422,10 +400,15 @@ export class TouchEngine {
     for (const b of this.buttonLayout()) {
       if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.hit) return b.id;
     }
-    // Sling out: anywhere on the right of the glass is somewhere to pull
-    // from, so there is always room behind the thumb to pull back into.
-    // Not over the plan, though: there a drag is moving the map.
-    if (this.slingOut && !this.planOn && x >= this.viewport.w * 0.4 && y > this.viewport.safe.top + 24) return 'throw';
+    /*
+     * The sling is the right thumb's: touch anywhere on the right half that
+     * is not a button, pull back, let go. No mode to enter and no hold to
+     * wait out — the left thumb steers, the right one throws, and neither
+     * gesture can be mistaken for the other. A tap there is still a tap on
+     * the world. Not over the plan, though: there a drag is moving the map.
+     */
+    if (this.canSling && !this.planOn && x >= this.viewport.w * this.tuning.aimPadWidth
+      && y > this.viewport.safe.top + 24) return 'throw';
     if (y < this.padTop()) return 'idle';
     return x < this.padRight() ? 'stick' : 'idle';
   }
@@ -486,27 +469,6 @@ export class TouchEngine {
       this.aimDrag.x += s.x - prev.x;
       this.aimDrag.y += s.y - prev.y;
       return;
-    }
-
-    if (track.role === 'stick' && track.armed) {
-      /*
-       * An armed thumb that pulls back is drawing the sling from where it was
-       * armed. One that goes anywhere else is steering after a rest, and the
-       * sling disarms so a pause on the stick can never turn into a shot.
-       */
-      const dx = s.x - track.armed.x, dy = s.y - track.armed.y;
-      const d = Math.hypot(dx, dy);
-      if (d > this.tuning.throwMin * 0.5) {
-        if (dy / d >= this.tuning.slingPullCone && this.canSling
-          && ![...this.tracks.values()].some((t) => t.role === 'throw')) {
-          track.role = 'throw';
-          track.start = { x: track.armed.x, y: track.armed.y, t: s.t };
-          track.history = [{ x: s.x, y: s.y, t: s.t }];
-          track.armed = undefined;
-          return;
-        }
-        track.armed = undefined;
-      }
     }
 
     if (track.role === 'stick') {
@@ -570,8 +532,10 @@ export class TouchEngine {
           this.firedVector = v;
           this.pendingFire = true;
         } else if (isTap) {
-          // Not a pull at all: a tap on the world, the same as ever.
+          // Not a pull at all: a tap on the world, the same as ever — and,
+          // like any tap on open glass, it skips a scene or a line.
           this.pendingTap = { x: s.x, y: s.y };
+          this.pendingSkip = true;
         }
         break;
       }
@@ -615,15 +579,6 @@ export class TouchEngine {
   private planOn = false;
   /** The host closes the plan when something else takes over (a menu, a scene). */
   setPlanOpen(on: boolean): void { this.planOn = on; }
-
-  /**
-   * A stick thumb that has not travelled since it landed. Only a thumb that
-   * came down and rested arms the sling: one that has been steering and
-   * happens to pause mid-run is still steering.
-   */
-  private stillFor(tr: Track): boolean {
-    return tr.moved <= this.tuning.slingHoldSlop;
-  }
 
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
   sample(): Intent {
@@ -725,10 +680,6 @@ export class TouchEngine {
     for (const tr of this.tracks.values()) {
       tr.frames = (tr.frames ?? 0) + 1;
       const heldMs = Math.max(tr.cur.t - tr.start.t, tr.frames * (1000 / 60));
-      if (tr.role === 'stick' && !tr.armed && this.canSling && !this.planOn
-        && heldMs >= t.slingHoldMs && this.stillFor(tr)) {
-        tr.armed = { x: tr.cur.x, y: tr.cur.y };
-      }
       if (tr.role === 'trick' && !tr.grabbed && heldMs >= t.grabHoldMs && tr.moved <= t.tapSlop * 2) {
         tr.grabbed = true;
         this.pendingGrab = true;
@@ -826,13 +777,6 @@ export class TouchEngine {
       })),
       aiming: this.aiming,
       slingOut: this.slingOut,
-      arming: (() => {
-        if (!stick || !this.canSling || this.planOn || this.aiming) return null;
-        if (stick.armed) return { x: stick.armed.x, y: stick.armed.y, k: 1 };
-        if (!this.stillFor(stick)) return null;
-        const heldMs = Math.max(stick.cur.t - stick.start.t, (stick.frames ?? 0) * (1000 / 60));
-        return { x: stick.cur.x, y: stick.cur.y, k: clamp01(heldMs / t.slingHoldMs) };
-      })(),
       pull: (() => {
         for (const tr of this.tracks.values()) {
           if (tr.role !== 'throw') continue;
