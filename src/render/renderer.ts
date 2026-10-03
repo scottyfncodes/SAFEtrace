@@ -247,60 +247,83 @@ export class Renderer {
   private lastThrow: { from: Vec2; to: Vec2 } | null = null;
 
   /**
-   * The sling, in the rider's hands, in the street.
+   * The sling, in the rider's hand, in the street.
    *
-   * It points where the pull points and stretches back as far as it is
-   * pulled; let go and the pouch snaps through the fork and rings. Drawn in
-   * screen space at the rider's hands, at the rider's own scale, so it reads
-   * as the thing they are holding rather than a cursor.
+   * It used to be drawn at the rider's middle at most of a metre tall —
+   * "larger than life", so it read — and it read as a thing floating next to
+   * him rather than a thing he was holding. It is now drawn at the hand the
+   * 3D pass actually posed around it, at the size a hedge-branch slingshot is:
+   * about twenty centimetres from grip to tips. Pulled, the pouch sits in the
+   * drawing hand and the fork points away from it, because that is what a
+   * band under tension does; let go and the pouch snaps through and rings.
    */
-  private drawHeldSling(ctx: CanvasRenderingContext2D): void {
+  private slingPose(): { held: boolean; drawing: boolean; draw: number } {
     const sim = this.sim;
-    const drawing = sim.player.aiming && !sim.aimMode && this.throwAim;
-    if (drawing) this.lastThrow = this.throwAim;
+    const drawing = sim.player.aiming && !sim.aimMode && !!this.throwAim;
+    const ringing = this.release.t < 0.7 && !!this.lastThrow;
+    const held = drawing || ringing || !!this.controlVisual?.slingOut;
+    return { held, drawing, draw: drawing ? clamp01(sim.player.draw) : 0 };
+  }
+
+  /** The way the fork last pointed on the glass, kept for the ring-down. */
+  private slingDir: Vec2 = { x: 0, y: -1 };
+
+  private drawHeldSling(ctx: CanvasRenderingContext2D): void {
+    const pose = this.perspective.slingPose;
+    if (pose.drawing && this.throwAim) this.lastThrow = this.throwAim;
+    const hands = this.perspective.slingHands;
+    if (!pose.held || !hands) return;
     const rt = this.release.t;
-    const out = !!this.controlVisual?.slingOut;
-    const ringing = rt < 0.7 && !!this.lastThrow;
-    if (!drawing && !out && !ringing) return;
-    const eye = this.lastEye;
-    if (!eye) return;
-    const p = sim.player.pos;
-    const at = this.perspective.project3(eye, p.x, p.y, 1.2 + sim.player.z, this.w, this.h);
-    if (!at) return;
-    // Out but not pulled: held up at rest, pointing the way the rider looks.
-    const aim = drawing || ringing ? this.lastThrow! : { from: { x: at.x, y: at.y }, to: { x: at.x + 0.2, y: at.y - 1 } };
-    // Larger than life, like the stone in flight: it is the thing being used.
-    const size = Math.max(19, Math.min(38, at.s * 0.95));
-    const from = { x: at.x, y: at.y };
-    let ux = aim.to.x - aim.from.x, uy = aim.to.y - aim.from.y;
-    const ul = Math.hypot(ux, uy) || 1;
-    ux /= ul; uy /= ul;
+    const g = hands.fork;
+    // A real slingshot, about 0.2 m grip to tips, with a floor so a rider far
+    // down the street is still holding *something*.
+    const size = Math.max(8, g.s * 0.21);
+
+    // Which way the fork faces: away from the drawing hand while pulled,
+    // upright while carried, and wherever it last was while it rings.
+    let ux = 0, uy = -1;
+    if (pose.drawing) {
+      const dx = g.x - hands.pull.x, dy = g.y - hands.pull.y;
+      const l = Math.hypot(dx, dy);
+      if (l > size * 0.4) { ux = dx / l; uy = dy / l; }
+      else if (this.throwAim) {
+        const tx = this.throwAim.to.x - this.throwAim.from.x, ty = this.throwAim.to.y - this.throwAim.from.y;
+        const tl = Math.hypot(tx, ty) || 1;
+        ux = tx / tl; uy = ty / tl;
+      }
+      // Never let the fork hang below the hand: the grip is held upright-ish.
+      if (uy > -0.25) { uy = -0.25; const n = Math.hypot(ux, uy); ux /= n; uy /= n; }
+      this.slingDir = { x: ux, y: uy };
+    } else if (rt < 0.7) {
+      ux = this.slingDir.x; uy = this.slingDir.y;
+    }
     const px = -uy, py = ux;
-    const draw = drawing ? clamp01(sim.player.draw) : 0;
+    const grip = { x: g.x, y: g.y };
+    const fork = { x: grip.x + ux * size * 0.45, y: grip.y + uy * size * 0.45 };
+    const flex = pose.draw * size * 0.06;
+    const tipL = { x: fork.x + ux * size * 0.5 + px * (size * 0.36 - flex), y: fork.y + uy * size * 0.5 + py * (size * 0.36 - flex) };
+    const tipR = { x: fork.x + ux * size * 0.47 - px * (size * 0.33 - flex), y: fork.y + uy * size * 0.47 - py * (size * 0.33 - flex) };
     const spring = rt < 0.7 ? -this.release.draw * 0.5 * Math.exp(-rt * 7.5) * Math.cos(rt * 34) : 0;
-    const pull = size * (0.35 + (draw + spring) * 1.7);
-    // The fork held out toward the target, the pouch drawn back from it.
-    const fork = { x: from.x + ux * size * 0.55, y: from.y + uy * size * 0.55 };
-    const grip = { x: fork.x - ux * size * 0.45, y: fork.y - uy * size * 0.45 + size * 0.1 };
-    const flex = draw * size * 0.08;
-    const tipL = { x: fork.x + ux * size * 0.5 + px * (size * 0.42 - flex), y: fork.y + uy * size * 0.5 + py * (size * 0.42 - flex) };
-    const tipR = { x: fork.x + ux * size * 0.46 - px * (size * 0.38 - flex), y: fork.y + uy * size * 0.46 - py * (size * 0.38 - flex) };
-    const pouch = { x: fork.x - ux * pull, y: fork.y - uy * pull };
+    // Pulled: in the drawing hand. Otherwise hanging just behind the fork.
+    const pouch = pose.drawing
+      ? { x: hands.pull.x, y: hands.pull.y }
+      : { x: fork.x + ux * size * 0.2 - ux * size * spring * 1.7, y: fork.y + uy * size * 0.2 - uy * size * spring * 1.7 + size * 0.12 };
+
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     // A dark underline so it reads on lawn and on asphalt alike.
     ctx.strokeStyle = alpha('#12181F', 0.35);
-    ctx.lineWidth = Math.max(3, size * 0.2);
+    ctx.lineWidth = Math.max(2.5, size * 0.24);
     ctx.beginPath(); ctx.moveTo(grip.x, grip.y); ctx.lineTo(fork.x, fork.y); ctx.stroke();
     ctx.strokeStyle = '#6E5236';
-    taperedStroke(ctx, grip, fork, size * 0.16, size * 0.13, 0);
-    taperedStroke(ctx, fork, tipL, size * 0.13, size * 0.07, -size * 0.06);
-    taperedStroke(ctx, fork, tipR, size * 0.12, size * 0.06, size * 0.06);
-    // The cords: slack when idle, taut when pulled, slapping after the throw.
-    const sag = (1 - clamp01(draw)) * size * 0.12 + (rt < 0.5 ? Math.sin(rt * 60) * size * 0.2 * Math.exp(-rt * 8) : 0);
+    taperedStroke(ctx, grip, fork, Math.max(1.6, size * 0.15), Math.max(1.4, size * 0.13), 0);
+    taperedStroke(ctx, fork, tipL, Math.max(1.4, size * 0.12), Math.max(0.9, size * 0.07), -size * 0.05);
+    taperedStroke(ctx, fork, tipR, Math.max(1.3, size * 0.11), Math.max(0.9, size * 0.06), size * 0.05);
+    // The cords: slack when carried, taut when pulled, slapping after the throw.
+    const sag = (1 - pose.draw) * size * 0.1 + (rt < 0.5 ? Math.sin(rt * 60) * size * 0.2 * Math.exp(-rt * 8) : 0);
     ctx.strokeStyle = alpha('#E8DCC0', 0.95);
-    ctx.lineWidth = Math.max(1.2, size * 0.05);
+    ctx.lineWidth = Math.max(1, size * 0.045);
     for (const tip of [tipL, tipR]) {
       ctx.beginPath();
       ctx.moveTo(tip.x, tip.y);
@@ -308,14 +331,14 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.strokeStyle = '#5A452E';
-    ctx.lineWidth = Math.max(3, size * 0.2);
+    ctx.lineWidth = Math.max(2, size * 0.16);
     ctx.beginPath();
-    ctx.moveTo(pouch.x + px * size * 0.14, pouch.y + py * size * 0.14);
-    ctx.lineTo(pouch.x - px * size * 0.14, pouch.y - py * size * 0.14);
+    ctx.moveTo(pouch.x + px * size * 0.1, pouch.y + py * size * 0.1);
+    ctx.lineTo(pouch.x - px * size * 0.1, pouch.y - py * size * 0.1);
     ctx.stroke();
-    if (rt > 0.45 || drawing) {
+    if (pose.drawing || rt > 0.45) {
       ctx.fillStyle = '#6A7178';
-      ctx.beginPath(); ctx.arc(pouch.x, pouch.y, Math.max(2, size * 0.11), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(pouch.x, pouch.y, Math.max(1.5, size * 0.08), 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
@@ -1003,6 +1026,7 @@ export class Renderer {
       const eye = this.chase.state(sim);
       this.lastEye = eye;
       this.perspective.lens = 1;
+      this.perspective.slingPose = this.slingPose();
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawParticles(ctx, eye);
       this.drawStreaks(ctx, eye);
@@ -1019,7 +1043,6 @@ export class Renderer {
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
-        this.controls.throwHint = this.touchHints && !this.shotTaken;
         this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
         this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }

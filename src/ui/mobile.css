@@ -78,26 +78,41 @@ html, body {
   }
   #inspect.show { transform: translateY(0); }
 
-  /* One line, small, and gone within the first minute. It sits low because the
-     thumbs are already there, and it stops short of the button cluster instead
-     of running underneath it. */
+  /* One line, a toast at the top. The bottom of the glass is the thumbs':
+     the left half is where the sling is pulled, so a hint living there sat
+     exactly under the gesture it was describing. */
   #prompts {
-    left: calc(var(--safe-left) + 10px);
-    right: max(calc(var(--safe-right) + 10px), var(--control-right));
-    transform: none;
-    justify-content: flex-start;
-    bottom: calc(var(--safe-bottom) + 6px);
-    padding: 5px 11px;
-    font-size: calc(9px * var(--text-scale));
-    letter-spacing: 0.05em;
+    top: calc(var(--safe-top) + 62px);
+    bottom: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    justify-content: center;
+    padding: 7px 14px;
+    font-size: calc(11px * var(--text-scale));
+    letter-spacing: 0.02em;
     gap: 4px 9px;
-    /* It stops at the control cluster, so it wraps rather than running its
-       last words underneath a button and clipping them. */
-    white-space: normal;
-    flex-wrap: wrap;
-    max-width: none;
-    background: rgba(16, 23, 31, 0.38);
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    max-width: calc(100vw - 24px);
+    background: rgba(16, 23, 31, 0.62);
+    transition: opacity 400ms var(--ease);
   }
+  #prompts.behind-toast { opacity: 0 !important; }
+
+  /* Pause on its own, top right: not paired with Notes, and not somewhere a
+     thumb reaching for anything else will land. */
+  #pause-corner {
+    position: absolute;
+    top: calc(10px + var(--safe-top));
+    right: calc(10px + var(--safe-right));
+  }
+  #pause-corner .hud-button {
+    width: 44px; height: 44px; min-width: 44px; padding: 0;
+    justify-content: center; border-radius: 999px;
+    font-size: calc(13px * var(--text-scale)); font-weight: 700;
+  }
+  /* Notifications start under it rather than on top of it. */
+  #ui.touch-hud #notifications { top: calc(62px + var(--safe-top)); }
 
   #dialogue {
     bottom: max(calc(var(--safe-bottom) + 84px), calc(var(--control-top) + 76px));

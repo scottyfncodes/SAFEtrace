@@ -28,7 +28,7 @@ const KEYS: Array<[string, string]> = [
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
   ['TRICK', 'tap to flip the board, hold to grab it'],
-  ['SLING', 'takes the sling out; then pull back anywhere on the right and let go. SLING again puts it away'],
+  ['Sling', 'left thumb: hold still a moment, pull back, let go'],
   ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];
@@ -123,7 +123,6 @@ export class Menu {
             <label><input type="checkbox" data-set="colour" ${s.colourSafeMachine ? 'checked' : ''}> Colour-blind safe palette</label>
             <label><input type="checkbox" data-set="text" ${s.textScale > 1 ? 'checked' : ''}> Larger text</label>
             <label><input type="checkbox" data-set="shake" ${s.cameraShake > 0 ? 'checked' : ''}> Camera shake</label>
-            ${this.touch ? `<label><input type="checkbox" data-set="classic" ${s.classicSling ? 'checked' : ''}> Classic slingshot (stop, and aim from the eyes)</label>` : ''}
             <label class="range">Volume <input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-set="volume"></label>
           </section>
           <section>

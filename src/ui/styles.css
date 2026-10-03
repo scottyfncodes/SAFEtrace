@@ -527,5 +527,5 @@ button.nb-entry:hover { border-color: rgba(35, 48, 58, 0.3); }
   #ui.talking #dialogue { bottom: max(calc(var(--safe-bottom) + 220px), calc(var(--control-top) + 200px)); }
 }
 /* While somebody is talking to you, the machine's panels step back. */
-#corner, #notifications { transition: opacity 260ms var(--ease); }
-#ui.talking #corner, #ui.talking #notifications { opacity: 0.28; }
+#corner, #notifications, #pause-corner { transition: opacity 260ms var(--ease); }
+#ui.talking #corner, #ui.talking #notifications, #ui.talking #pause-corner { opacity: 0.28; }
