@@ -26,10 +26,15 @@ const KEY_STAGES: Array<{ until: number; html: string }> = [
   { until: 110, html: '<span><kbd>Space</kbd>ollie</span><span><kbd>R</kbd>trick</span><span><kbd>S</kbd>slide</span>' },
   { until: 230, html: '<span><kbd>LMB</kbd>pull back · throw</span><span><kbd>Q</kbd>plan</span><span><kbd>E</kbd>talk / look</span>' },
 ];
+/*
+ * On a phone the hint is one line at the top, out from under the thumbs, and
+ * the last one — the sling — stays until the first stone has actually been
+ * thrown, because that is the one gesture nothing on the glass advertises.
+ */
 const TOUCH_STAGES: Array<{ until: number; html: string }> = [
-  { until: 30, html: '<span>hold to roll</span><span>push the way you want to go</span>' },
+  { until: 30, html: '<span>Left thumb: hold to roll, push to steer</span>' },
   { until: 110, html: '<span>TRICK: tap to flip, hold to grab</span>' },
-  { until: 230, html: '<span>SLING: pull back, let go</span><span>PLAN: tap the map to pin where you are going</span>' },
+  { until: Infinity, html: '<span>Sling: hold left side, pull back, let go</span>' },
 ];
 import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
@@ -89,12 +94,15 @@ export class Hud {
         <button class="hud-button" data-act="notes" aria-label="Notes">
           <span class="hb-label">Notes</span><span class="hb-key">${touch ? '' : 'N'}</span><span class="badge" id="notes-badge"></span>
         </button>
-        <button class="hud-button" data-act="menu" aria-label="Pause">
-          <span class="hb-label">${touch ? 'II' : 'Menu'}</span><span class="hb-key">${touch ? '' : 'Esc'}</span>
-        </button>
+        ${touch ? '' : `<button class="hud-button" data-act="menu" aria-label="Pause">
+          <span class="hb-label">Menu</span><span class="hb-key">Esc</span>
+        </button>`}
       </div>
       <div id="score-chip" aria-live="polite"></div>
       </div>
+      ${touch ? `<div id="pause-corner">
+        <button class="hud-button" data-act="menu" aria-label="Pause"><span class="hb-label">II</span></button>
+      </div>` : ''}
       <div id="notifications"></div>
       <div id="inspect"></div>
       <div id="prompts"></div>
@@ -116,14 +124,18 @@ export class Hud {
     this.notesBadge = root.querySelector('#notes-badge')!;
     this.buttons = root.querySelector('#hud-buttons')!;
 
-    this.buttons.addEventListener('pointerup', (e) => {
-      const b = (e.target as HTMLElement).closest('.hud-button') as HTMLElement | null;
-      if (!b) return;
-      e.preventDefault(); e.stopPropagation();
-      if (b.dataset.act === 'notes') this.onButton('notes');
-      else this.onButton('menu');
-    });
-    this.buttons.addEventListener('pointerdown', (e) => e.stopPropagation());
+    root.classList.toggle('touch-hud', touch);
+    for (const box of [this.buttons, root.querySelector('#pause-corner') as HTMLElement | null]) {
+      if (!box) continue;
+      box.addEventListener('pointerup', (e) => {
+        const b = (e.target as HTMLElement).closest('.hud-button') as HTMLElement | null;
+        if (!b) return;
+        e.preventDefault(); e.stopPropagation();
+        if (b.dataset.act === 'notes') this.onButton('notes');
+        else this.onButton('menu');
+      });
+      box.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
 
     // A conversation: tap the card to hear the next line, tap an answer to say it.
     this.talk.addEventListener('pointerup', (e) => {
@@ -213,6 +225,11 @@ export class Hud {
     this.dialogueTimer = 0;
   }
 
+  /** Set once a stone has left the sling: the hint has done its job. */
+  private slung = false;
+  /** The first throw retires the hints on a phone. */
+  slingThrown(): void { if (this.touch) this.slung = true; }
+
   setVisible(v: boolean): void {
     this.root.style.opacity = v ? '1' : '0';
     this.root.style.transition = 'opacity 500ms cubic-bezier(.16,1,.3,1)';
@@ -235,7 +252,7 @@ export class Hud {
       this.stage = want;
       this.prompts.innerHTML = this.stages[want].html;
     }
-    if (want < 0 && this.promptFade < 1) {
+    if ((want < 0 || this.slung) && this.promptFade < 1) {
       this.promptFade = Math.min(1, this.promptFade + dt * 0.4);
       this.prompts.style.opacity = String(1 - this.promptFade);
     }
@@ -243,6 +260,9 @@ export class Hud {
     // Aiming is one job. The phone stays — SAFEtrace does not stop watching
     // because you stood still — but nothing else competes with the reticle.
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
+    // On a phone the hint and the toasts share the top of the glass; a toast
+    // is news, so the hint steps aside for it.
+    if (this.touch) this.prompts.classList.toggle('behind-toast', this.toasts.childElementCount > 0);
     // Nor does a node panel sit over the plan: the plan cannot reach into
     // anything, so a panel full of verbs on top of it is only in the way.
     this.inspect.classList.toggle('hidden', this.sim.aimMode || this.sim.planViewActive);

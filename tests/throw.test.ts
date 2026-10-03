@@ -24,7 +24,6 @@ function engine(): TouchEngine {
   e.setThrowMode(true);
   return e;
 }
-const sling = (e: TouchEngine) => e.buttonLayout().find((b) => b.id === 'sling')!.pos;
 function tap(e: TouchEngine, x: number, y: number, id = 1): void {
   e.handle('down', at(x, y, id)); clock += 80; e.handle('up', at(x, y, id));
 }
@@ -39,31 +38,9 @@ function pull(e: TouchEngine, from: { x: number; y: number }, by: { x: number; y
 beforeEach(() => { clock = 1000; });
 
 describe('taking the sling out is not a mode', () => {
-  it('takes it out and puts it away with SLING, and never asks for the aiming view', () => {
-    const e = engine();
-    const s = sling(e);
-    tap(e, s.x, s.y);
-    const i = e.sample();
-    expect(e.isSlingOut).toBe(true);
-    expect(i.aimModePressed).toBe(false);
-    expect(e.visual.buttons.find((b) => b.id === 'sling')!.pressed).toBe(true);
-    tap(e, s.x, s.y);
-    expect(e.isSlingOut).toBe(false);
-  });
-
-  it('still opens the old aiming view in the classic scheme', () => {
-    const e = engine();
-    e.setThrowMode(false);
-    const s = sling(e);
-    tap(e, s.x, s.y);
-    expect(e.sample().aimModePressed).toBe(true);
-    expect(e.isSlingOut).toBe(false);
-  });
-
   it('keeps the stick and the other buttons working with the sling out', () => {
     const e = engine();
-    const s = sling(e);
-    tap(e, s.x, s.y);
+    e.setSlingOut(true);
     e.sample();
     e.handle('down', at(90, 700, 2));
     clock += 16;

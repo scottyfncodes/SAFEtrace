@@ -69,20 +69,18 @@ export const TOUCH_TUNING = {
   padClearance: 20,
 
   /**
-   * Drawn radius, and the radius that actually accepts a thumb — one pair per
-   * control, sized by how often it is pressed and how blind the press is.
+   * Drawn radius, and the radius that actually accepts a thumb, sized by how
+   * often each control is pressed and how blind the press is.
    *
-   *  - TRICK is pressed constantly, mid-run, without looking: it is the
-   *    biggest thing on the glass and sits where the thumb already rests.
-   *  - SLING is pressed a few times a minute, deliberately, to take the sling
-   *    out or put it away. Medium, one short reach up the arc.
+   *  - TRICK is mashed and held mid-run, eyes on the road: it is the biggest
+   *    thing on the glass and sits where the right thumb already rests.
    *  - PLAN is a view, opened when the player chooses to stop and look.
-   *    Small and quiet, at the top of the column.
+   *    Small, and a short reach away.
+   *
+   * There is no SLING button. The sling is a gesture on the left half.
    */
-  trickRadius: 38,
-  trickHit: 48,
-  slingRadius: 30,
-  slingHit: 40,
+  trickRadius: 40,
+  trickHit: 50,
   secondaryRadius: 22,
   secondaryHit: 34,
 
@@ -91,17 +89,26 @@ export const TOUCH_TUNING = {
   /** Minimum gap between any two hit circles. */
   separation: 16,
   /**
-   * Where SLING and PLAN sit relative to TRICK, which is in the corner under
-   * the resting thumb.
-   *
-   * SLING is up *and* left — the direction the thumb sweeps anyway — so it is
-   * a short flick away rather than a stretch, and the vertical component is
-   * what buys clearance from the movement pad on a 320 px phone. PLAN is
-   * straight up the column above TRICK, far enough that reaching it is a
-   * deliberate extension rather than something a thumb brushes.
+   * PLAN sits up and to the left of TRICK — the direction a right thumb
+   * sweeps anyway — so it is one short, deliberate flick away and its hit
+   * circle stays clear of the left-hand pad even on a 320 px phone.
    */
-  slingOffset: { x: -82, y: -68 },
-  planOffset: { x: 0, y: -132 },
+  planOffset: { x: -80, y: -64 },
+  /*
+   * The sling, on the left thumb: hold still, then pull back, then let go.
+   *
+   * The left half already steers, so the sling has to share it without
+   * ever firing by accident. A thumb that rests this long without moving
+   * arms the sling — a ring appears under it — and from there a pull
+   * *back* (down the glass, within the cone below) is a draw. Any other
+   * direction is steering, as it always was, and a thumb that is already
+   * moving never arms at all.
+   */
+  slingHoldMs: 250,
+  /** How far an arming thumb may wander and still count as still. */
+  slingHoldSlop: 10,
+  /** A pull counts as "back" when it is at least this steeply downward (dy / |d|). */
+  slingPullCone: 0.5,
   /**
    * Holding TRICK this long is a grab instead of a flip.
    *
@@ -163,7 +170,7 @@ export const TOUCH_TUNING = {
   pullMin: 10,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'putAway' | 'look' | 'throw' | 'idle';
+export type TouchRole = 'stick' | 'trick' | 'plan' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -178,6 +185,8 @@ interface Track {
   moved: number;
   /** A TRICK held long enough has already become a grab. */
   grabbed?: boolean;
+  /** A stick thumb held still long enough: where the sling was armed. */
+  armed?: { x: number; y: number };
   /** Recent positions, for reading a pull from just before the lift. */
   history?: Array<{ x: number; y: number; t: number }>;
   /**
@@ -188,7 +197,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick' | 'plan';
+  id: 'trick' | 'plan';
   pos: { x: number; y: number };
   /** What is drawn. */
   radius: number;
@@ -215,6 +224,11 @@ export interface ControlVisual {
   aiming: boolean;
   /** Whether the sling is out, in the drag-back scheme. */
   slingOut: boolean;
+  /**
+   * A left thumb resting on the glass, on its way to arming the sling: where,
+   * and how far through the hold (1 is armed).
+   */
+  arming: { x: number; y: number; k: number } | null;
   /** A pull in progress: where it started, where the thumb is, and the draw. */
   pull: { start: { x: number; y: number }; cur: { x: number; y: number }; draw: number } | null;
 }
@@ -294,39 +308,26 @@ export class TouchEngine {
   }
 
   /**
-   * Three controls, on the arc a right thumb sweeps.
+   * Two controls, under the right thumb.
    *
-   * There were four once, then three, then two, then four again — but not the
-   * same four. POP went because the TRICK button pops on its own. The eye
-   * went — and stays gone — because VISION is a story unlock and must never
-   * grow a control: a button appearing in front of somebody who was mid-push
-   * is the thing that keeps being reported. GRAB is new, and it is not that
-   * button either: it is here from the first frame, same as the other three,
-   * so there is nothing for a story beat to grow later.
+   * POP went because TRICK pops on its own. GRAB went because it is what
+   * holding TRICK does. The eye went — and stays gone — because VISION is a
+   * story unlock and must never grow a control. SLING went because the sling
+   * is not a mode you enter but a thing you pull: the left thumb holds still,
+   * pulls back and lets go, with half the glass to do it in.
    *
-   * PLAN is not that button. It is here from the very first frame, before the
-   * story has said anything, because the plan view is a *view* and every
-   * device needs a way into it — keyboard has Q, and a phone has this. What
-   * VISION later changes is what is drawn inside the view, not how it opens.
+   * PLAN stays, from the very first frame, because the plan view is a *view*
+   * and every device needs a way into it — keyboard has Q, and a phone has
+   * this. What VISION later changes is what is drawn inside the view.
    *
    * The arrangement:
    *
    *   TRICK sits in the corner where the thumb rests, and is the biggest.
-   *   It is pressed over and over mid-run, eyes on the road, so it goes
-   *   where a thumb lands without being aimed. (SLING had this spot once,
-   *   on the theory that a whole mode deserved it; but a mode is entered a
-   *   few times a minute, deliberately, and a trick a few times a block.)
+   *   It is mashed and held mid-run, eyes on the road, so it goes where a
+   *   thumb lands without being aimed.
    *
-   *   SLING sits up and to the left, along the sweep, a size down: a short,
-   *   intended flick, and its hit circle stays clear of the movement pad
-   *   even on a 320 px phone.
-   *
-   *   PLAN sits up the column above TRICK, smallest and quietest. It is a
-   *   deliberate extension of the thumb, not somewhere a thumb ends up by
-   *   accident on its way back from anything.
-   *
-   *   There is no GRAB. It was a fourth circle for a variant of TRICK, and
-   *   it is now what holding TRICK does.
+   *   PLAN sits up and to the left of it, small and quiet: occasional, a
+   *   short deliberate reach, never something a thumb brushes by accident.
    */
   buttonLayout(): ControlButton[] {
     const t = this.tuning;
@@ -337,17 +338,11 @@ export class TouchEngine {
       y: h - safe.bottom - t.edgeInset - R,
     };
     // A very short viewport (landscape, or a browser with a lot of chrome)
-    // must not push the column off the top of the screen.
+    // must not push PLAN off the top of the screen.
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
-    const slingY = Math.max(ceiling + 40, anchor.y + t.slingOffset.y);
 
     return [
-      {
-        id: 'sling', pos: { x: anchor.x + t.slingOffset.x, y: slingY },
-        radius: t.slingRadius, hit: t.slingHit, weight: 'primary',
-        pressed: false, enabled: this.canSling,
-      },
       {
         id: 'trick', pos: { ...anchor },
         radius: R, hit: t.trickHit, weight: 'primary',
@@ -411,15 +406,6 @@ export class TouchEngine {
        * promote or re-target the other, because roles are per-pointer and
        * neither reads anything but its own movement.
        */
-      /*
-       * The one exception is the SLING button itself, which stays where it
-       * was and puts the sling away when tapped — the same control in, the
-       * same control out, instead of a gesture nobody could find. Only the
-       * middle of it counts, so a thumb that lands near its edge and pulls is
-       * pulling rather than putting the sling away.
-       */
-      const sling = this.buttonLayout().find((b) => b.id === 'sling')!;
-      if (Math.hypot(x - sling.pos.x, y - sling.pos.y) <= sling.hit * 0.8) return 'putAway';
       return x < this.viewport.w * this.tuning.aimPadWidth ? 'aim' : 'pull';
     }
     /*
@@ -458,7 +444,6 @@ export class TouchEngine {
     // A stray palm must never be able to take over a job a thumb is doing.
     if ((role === 'stick' || role === 'aim' || role === 'pull' || role === 'throw')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
-    if (role === 'sling' && !this.canSling) role = 'idle';
 
     this.tracks.set(s.id, {
       id: s.id, role,
@@ -478,10 +463,6 @@ export class TouchEngine {
     }
     track.moved = Math.max(track.moved, Math.hypot(s.x - track.start.x, s.y - track.start.y));
 
-    if (track.role === 'putAway' && track.moved > this.tuning.tapSlop
-      && ![...this.tracks.values()].some((t) => t.role === 'pull')) {
-      track.role = 'pull';
-    }
     if (track.role === 'pull') return;   // read from its position on sample()
 
     // A finger on empty glass that moves is looking, not tapping: it turns
@@ -505,6 +486,27 @@ export class TouchEngine {
       this.aimDrag.x += s.x - prev.x;
       this.aimDrag.y += s.y - prev.y;
       return;
+    }
+
+    if (track.role === 'stick' && track.armed) {
+      /*
+       * An armed thumb that pulls back is drawing the sling from where it was
+       * armed. One that goes anywhere else is steering after a rest, and the
+       * sling disarms so a pause on the stick can never turn into a shot.
+       */
+      const dx = s.x - track.armed.x, dy = s.y - track.armed.y;
+      const d = Math.hypot(dx, dy);
+      if (d > this.tuning.throwMin * 0.5) {
+        if (dy / d >= this.tuning.slingPullCone && this.canSling
+          && ![...this.tracks.values()].some((t) => t.role === 'throw')) {
+          track.role = 'throw';
+          track.start = { x: track.armed.x, y: track.armed.y, t: s.t };
+          track.history = [{ x: s.x, y: s.y, t: s.t }];
+          track.armed = undefined;
+          return;
+        }
+        track.armed = undefined;
+      }
     }
 
     if (track.role === 'stick') {
@@ -554,12 +556,6 @@ export class TouchEngine {
         }
         break;
       }
-      case 'sling':
-        if (isTap) {
-          if (this.throwMode) this.slingOut = !this.slingOut;
-          else this.pendingAimMode = true;
-        }
-        break;
       case 'throw': {
         if (cancelled) break;
         // Where the pull was a moment before the lift.
@@ -579,9 +575,6 @@ export class TouchEngine {
         }
         break;
       }
-      case 'putAway':
-        if (isTap || (!cancelled && track.moved <= this.tuning.tapSlop)) this.pendingAimMode = true;
-        break;
       case 'trick':
         if (isTap && !track.grabbed) this.pendingTrick = true;
         break;
@@ -622,6 +615,15 @@ export class TouchEngine {
   private planOn = false;
   /** The host closes the plan when something else takes over (a menu, a scene). */
   setPlanOpen(on: boolean): void { this.planOn = on; }
+
+  /**
+   * A stick thumb that has not travelled since it landed. Only a thumb that
+   * came down and rested arms the sling: one that has been steering and
+   * happens to pause mid-run is still steering.
+   */
+  private stillFor(tr: Track): boolean {
+    return tr.moved <= this.tuning.slingHoldSlop;
+  }
 
   /** Consume this frame's gestures as an Intent. Clears all edge state. */
   sample(): Intent {
@@ -723,6 +725,10 @@ export class TouchEngine {
     for (const tr of this.tracks.values()) {
       tr.frames = (tr.frames ?? 0) + 1;
       const heldMs = Math.max(tr.cur.t - tr.start.t, tr.frames * (1000 / 60));
+      if (tr.role === 'stick' && !tr.armed && this.canSling && !this.planOn
+        && heldMs >= t.slingHoldMs && this.stillFor(tr)) {
+        tr.armed = { x: tr.cur.x, y: tr.cur.y };
+      }
       if (tr.role === 'trick' && !tr.grabbed && heldMs >= t.grabHoldMs && tr.moved <= t.tapSlop * 2) {
         tr.grabbed = true;
         this.pendingGrab = true;
@@ -816,10 +822,17 @@ export class TouchEngine {
         vector,
       },
       buttons: this.buttonLayout().map((b) => ({
-        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) || (b.id === 'sling' && this.slingOut),
+        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn),
       })),
       aiming: this.aiming,
       slingOut: this.slingOut,
+      arming: (() => {
+        if (!stick || !this.canSling || this.planOn || this.aiming) return null;
+        if (stick.armed) return { x: stick.armed.x, y: stick.armed.y, k: 1 };
+        if (!this.stillFor(stick)) return null;
+        const heldMs = Math.max(stick.cur.t - stick.start.t, (stick.frames ?? 0) * (1000 / 60));
+        return { x: stick.cur.x, y: stick.cur.y, k: clamp01(heldMs / t.slingHoldMs) };
+      })(),
       pull: (() => {
         for (const tr of this.tracks.values()) {
           if (tr.role !== 'throw') continue;

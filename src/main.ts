@@ -612,6 +612,7 @@ class Game {
     bus.on('player:fire', ({ draw }) => {
       this.audio.fire(draw);
       this.renderer.onRelease(draw);
+      this.hud.slingThrown();
     });
     /*
      * What a stone hitting something sounds and looks like depends on what it

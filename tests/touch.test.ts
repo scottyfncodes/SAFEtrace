@@ -47,7 +47,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') =>
+const button = (e: TouchEngine, id: 'trick' | 'plan') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
 beforeEach(() => { engine = make(); clock = 1000; });
@@ -56,7 +56,7 @@ describe('zones', () => {
   it('gives the movement thumb the bottom-left and the buttons the bottom-right', () => {
     expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
     expect(engine.zoneAt(WORLD.x, WORLD.y)).toBe('idle');
-    for (const id of ['sling', 'trick', 'plan'] as const) {
+    for (const id of ['trick', 'plan'] as const) {
       const p = button(engine, id);
       expect({ id, zone: engine.zoneAt(p.x, p.y) }).toEqual({ id, zone: id });
     }
@@ -213,24 +213,33 @@ describe('the controls are laid out for a thumb, on the phones that exist', () =
         a.setAiming(true);
         expect(a.zoneAt(v.safe.left + 10, v.h * 0.5)).toBe('aim');
         expect(a.zoneAt(v.w - v.safe.right - 10, v.h * 0.5)).toBe('pull');
-        // Nothing else is reachable except the SLING button itself, which
-        // puts the sling away: the same control in and out.
-        for (const b of a.buttonLayout()) {
-          expect(a.zoneAt(b.pos.x, b.pos.y)).toBe(b.id === 'sling' ? 'putAway' : 'pull');
-        }
+        // No button is reachable while aiming: aiming is one job.
+        for (const b of a.buttonLayout()) expect(a.zoneAt(b.pos.x, b.pos.y)).toBe('pull');
       });
     });
   }
 
-  it('draws the secondary control smaller than the primaries but not harder to hit', () => {
+  it('draws PLAN smaller than TRICK but not hard to hit', () => {
     const e = forPhone(PHONES[3]);
     const plan = e.buttonLayout().find((b) => b.id === 'plan')!;
-    const sling = e.buttonLayout().find((b) => b.id === 'sling')!;
+    const trick = e.buttonLayout().find((b) => b.id === 'trick')!;
     // Quieter on the glass...
-    expect(plan.radius).toBeLessThan(sling.radius);
+    expect(plan.radius).toBeLessThan(trick.radius);
     // ...and still a target a thumb lands on without aiming.
     expect(plan.hit).toBeGreaterThanOrEqual(34);
-    expect(plan.hit / plan.radius).toBeGreaterThan(sling.hit / sling.radius);
+    expect(plan.hit / plan.radius).toBeGreaterThan(trick.hit / trick.radius);
+  });
+
+  it('puts TRICK, the most-pressed control, in the corner and biggest', () => {
+    for (const v of PHONES) {
+      const bs = forPhone(v).buttonLayout();
+      const trick = bs.find((b) => b.id === 'trick')!;
+      for (const b of bs) {
+        expect(trick.radius).toBeGreaterThanOrEqual(b.radius);
+        expect(trick.pos.x).toBeGreaterThanOrEqual(b.pos.x);
+        expect(trick.pos.y).toBeGreaterThanOrEqual(b.pos.y);
+      }
+    }
   });
 
   it('never lets one press reach two controls, anywhere on any phone', () => {
@@ -365,7 +374,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'trick']);
 
     fresh.setSlingAvailable(false);
     fresh.setAiming(true);
@@ -373,8 +382,8 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     fresh.setSlingAvailable(true);
     fresh.setPlanOpen(true);
     fresh.setPlanOpen(false);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
-    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'trick']);
   });
 
   /*
@@ -474,15 +483,13 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     const ids = engine.buttonLayout().map((b) => b.id);
     expect(ids).not.toContain('ollie');
     expect(ids).not.toContain('pop');
-    // Two primaries, and everything added since has come in as a secondary —
-    // SLING and TRICK are the only two an unlooked-for press should ever
-    // reach at full size.
-    expect(engine.buttonLayout().filter((b) => b.weight === 'primary').length).toBe(2);
+    // One primary: TRICK is the only control an unlooked-for press should
+    // ever reach at full size.
+    expect(engine.buttonLayout().filter((b) => b.weight === 'primary').length).toBe(1);
   });
 
-  it('asks for the aiming mode on a tap of the sling', () => {
-    tap(engine, button(engine, 'sling'));
-    expect(engine.sample().aimModePressed).toBe(true);
+  it('has no SLING button: the sling is a gesture on the left thumb', () => {
+    expect(engine.buttonLayout().map((b) => b.id)).not.toContain('sling');
   });
 
   /*
@@ -492,7 +499,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
    */
   it('has no GRAB button any more', () => {
     expect(engine.buttonLayout().map((b) => b.id)).not.toContain('grab');
-    expect(engine.buttonLayout().length).toBe(3);
+    expect(engine.buttonLayout().length).toBe(2);
   });
 
   it('grabs on a hold of TRICK, once, and does not also flip on the release', () => {
@@ -528,11 +535,71 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     expect(i.grabPressed).toBe(false);
   });
 
-  it('dims and refuses the sling when there is nothing to shoot with', () => {
+});
+
+describe('the sling lives on the left thumb: hold still, pull back, let go', () => {
+  /** Put a thumb down on the stick and hold it still for `ms`, frame by frame. */
+  const rest = (e: TouchEngine, p: { x: number; y: number }, ms: number, id = 1) => {
+    e.handle('down', at(p, id, clock));
+    for (let f = 0; f < Math.ceil(ms / 16); f++) { clock += 16; e.sample(); }
+  };
+  const pullTo = (e: TouchEngine, from: { x: number; y: number }, to: { x: number; y: number }, id = 1) => {
+    for (let k = 1; k <= 8; k++) {
+      clock += 16;
+      e.handle('move', at({ x: from.x + (to.x - from.x) * (k / 8), y: from.y + (to.y - from.y) * (k / 8) }, id, clock));
+    }
+  };
+
+  it('arms after a still hold, shows a ring there, and throws forward on a pull back', () => {
+    expect(engine.zoneAt(STICK.x, STICK.y)).toBe('stick');
+    rest(engine, STICK, 300);
+    const armed = engine.visual.arming!;
+    expect(armed.k).toBe(1);
+    expect(armed.x).toBe(STICK.x);
+    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+    const mid = engine.sample();
+    expect(mid.aim).toBe(true);
+    expect(mid.throwVector!.y).toBeLessThan(0);         // pulled down, thrown up the glass
+    expect(mid.moveVector).toBeNull();                  // and the stick let go of the board
+    expect(engine.visual.pull).not.toBeNull();
+    clock += 120;
+    engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
+    const shot = engine.sample();
+    expect(shot.fire).toBe(true);
+    expect(shot.drawAmount!).toBeGreaterThan(0.5);
+  });
+
+  it('steers, and never throws, when the thumb pushes straight away', () => {
+    drag(engine, 1, [STICK, { x: STICK.x, y: STICK.y + 90 }]);
+    const i = engine.sample();
+    expect(i.throwVector).toBeNull();
+    expect(i.moveVector!.y).toBeGreaterThan(0);
+    engine.handle('up', at({ x: STICK.x, y: STICK.y + 90 }, 1, clock));
+    expect(engine.sample().fire).toBe(false);
+  });
+
+  it('steers after a rest when the thumb goes anywhere but back', () => {
+    rest(engine, STICK, 300);
+    pullTo(engine, STICK, { x: STICK.x + 10, y: STICK.y - 80 });
+    const i = engine.sample();
+    expect(i.throwVector).toBeNull();
+    expect(i.moveVector!.y).toBeLessThan(0);
+    expect(engine.visual.arming).toBeNull();
+  });
+
+  it('does not arm a thumb that has already been steering', () => {
+    drag(engine, 1, [STICK, { x: STICK.x + 40, y: STICK.y }]);
+    for (let f = 0; f < 30; f++) { clock += 16; engine.sample(); }
+    pullTo(engine, { x: STICK.x + 40, y: STICK.y }, { x: STICK.x + 40, y: STICK.y + 90 });
+    expect(engine.sample().throwVector).toBeNull();
+  });
+
+  it('refuses the sling when there is nothing to shoot with', () => {
     engine.setSlingAvailable(false);
-    expect(engine.buttonLayout().find((b) => b.id === 'sling')!.enabled).toBe(false);
-    tap(engine, button(engine, 'sling'));
-    expect(engine.sample().aimModePressed).toBe(false);
+    rest(engine, STICK, 300);
+    expect(engine.visual.arming).toBeNull();
+    pullTo(engine, STICK, { x: STICK.x, y: STICK.y + 90 });
+    expect(engine.sample().throwVector).toBeNull();
   });
 });
 

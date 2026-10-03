@@ -1043,7 +1043,6 @@ export class Renderer {
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
-        this.controls.throwHint = this.touchHints && !this.shotTaken;
         this.controls.update(this.controlVisual, dt, this.showControlHome, this.sim.planViewActive);
         this.controls.draw(ctx, this.controlVisual, this.w, this.h, this.safe);
       }
