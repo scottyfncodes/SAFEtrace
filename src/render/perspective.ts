@@ -474,6 +474,17 @@ export class PerspectiveRenderer {
    * little as the draw comes up — attention, not a scope — and the host sets it.
    */
   lens = 1;
+  /**
+   * The sling, as the host knows it: in the rider's hand or not, whether the
+   * band is being pulled, and how far. Set each frame before `draw`.
+   */
+  slingPose = { held: false, drawing: false, draw: 0 };
+  /**
+   * Where the two hands on the sling landed on the glass this frame, with how
+   * many pixels a metre is there. The sling itself is drawn over the world at
+   * these points, so it is in the hand that is holding it, at its real size.
+   */
+  slingHands: { fork: { x: number; y: number; s: number }; pull: { x: number; y: number; s: number } } | null = null;
 
   private cam(state: CamState, w: number, h: number): Cam {
     return { ...state, f: focalFor(w, h) * this.lens, w, h };
@@ -534,6 +545,7 @@ export class PerspectiveRenderer {
     this.collectSensors(sim, cam);
     this.collectSceneProps(sim, cam);
     this.collectActors(sim, cam);
+    this.slingHands = null;
     if (!firstPerson) this.collectRider(sim, cam);
 
     this.faces.sort((a, b) => {
@@ -1494,6 +1506,31 @@ export class PerspectiveRenderer {
     const spread = 0.30 + load * 0.16 + (p.stance === 'AIR' ? 0.12 : 0);
     // Elbows fall back and down, the way an arm held out for balance hangs.
     const elbowTo = { x: back.x * 0.7 - fx * 0.3, y: back.y * 0.7 - fy * 0.3 };
+    /*
+     * The sling is in the left hand, and the right one draws it.
+     *
+     * Out and not pulled, it is carried in front of the chest, one-handed, and
+     * the right arm keeps riding. Pulled, the left arm goes out straight at
+     * whatever is being aimed at and the right hand comes back along that line
+     * toward the cheek, as far as the band is drawn — so the pouch is in a
+     * hand and the fork is in a hand, rather than floating near the rider.
+     */
+    const sp = this.slingPose;
+    const slingOn = sp.held && p.stance !== 'BAIL';
+    let ax = fx, ay = fy;
+    if (sp.drawing && sim.aimWorld) {
+      const dx = sim.aimWorld.x - p.pos.x, dy = sim.aimWorld.y - p.pos.y;
+      const l = Math.hypot(dx, dy);
+      if (l > 0.5) { ax = dx / l; ay = dy / l; }
+    }
+    const chest = at(bodyF, lean * 0.30);
+    const forkHand = sp.drawing
+      ? { x: chest.x + ax * 0.44 - rx * 0.04, y: chest.y + ay * 0.44 - ry * 0.04 }
+      : at(bodyF + 0.10, -0.26 + lean * 0.24);
+    const forkZ = sp.drawing ? shoulderZ + 0.02 : shoulderZ - 0.24;
+    const back2 = 0.10 + clamp01(sp.draw) * 0.38;
+    const pullHand = { x: forkHand.x - ax * back2 + rx * 0.05, y: forkHand.y - ay * back2 + ry * 0.05 };
+    const pullZ = forkZ + 0.02;
     for (const side of [1, -1]) {
       // The shoulder is on the torso, not floating beside it.
       const shoulder = at(bodyF, side * 0.15 + lean * 0.30);
@@ -1506,13 +1543,27 @@ export class PerspectiveRenderer {
       const grabbing = p.grab && p.grab.spec.side === side ? p.grab.spec : null;
       const grabPoint = grabbing ? onBoard(grabbing.f, grabbing.r, 0.10) : null;
       const swingF = running ? -swing(side) * 0.34 : reach * 0.16;
-      const hand = grabPoint ?? at(bodyF + swingF - side * lean * 0.10, side * spread + lean * 0.24);
-      const handZ = grabPoint
-        ? grabPoint.z
-        : shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
+      const onSling = slingOn && !grabPoint && (side < 0 || sp.drawing);
+      const hand = onSling ? (side < 0 ? forkHand : pullHand)
+        : grabPoint ?? at(bodyF + swingF - side * lean * 0.10, side * spread + lean * 0.24);
+      const handZ = onSling ? (side < 0 ? forkZ : pullZ)
+        : grabPoint
+          ? grabPoint.z
+          : shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
       this.twoBone(cam, shoulder, shoulderZ, hand, handZ, ARM_UPPER, ARM_LOWER, elbowTo, 0.048, legCol);
       // A hand, so the arm ends in something.
       this.card(cam, hand, handZ, 0.05, 0.05, '#F2D3B8');
+    }
+    if (slingOn) {
+      const onGlass = (q: Vec2, qz: number) => {
+        const cp = toCamera(cam, q.x, q.y, qz);
+        if (cp.z <= NEAR) return null;
+        const pt = project(cam, cp);
+        return { x: pt.x, y: pt.y, s: cam.f / cp.z };
+      };
+      const fork = onGlass(forkHand, forkZ);
+      const pull = onGlass(pullHand, pullZ);
+      if (fork && pull) this.slingHands = { fork, pull };
     }
     this.card(cam, bodyAt, shoulderZ + 0.16, 0.125, 0.125, '#F2D3B8');
   }
