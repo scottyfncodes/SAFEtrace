@@ -161,8 +161,8 @@ describe('the player aims, and nothing aims for them', () => {
   });
 });
 
-describe('drawing the sling settles the board', () => {
-  it('coasts a rolling player toward a stop instead of asking for three thumbs', () => {
+describe('drawing the sling does not stop the board', () => {
+  it('keeps a rolling player rolling at speed through a full draw', () => {
     const sim = makeSim();
     place(sim, { x: 145, y: 62 }, { x: 0, y: -8 });
     const before = sim.player.speed;
@@ -171,7 +171,21 @@ describe('drawing the sling settles the board', () => {
       it.aim = true; it.drawAmount = 1; it.aimVector = { x: 0, y: -1 };
       sim.step(TICK_DT, it, { x: 145, y: 30 });
     }
-    expect(sim.player.speed).toBeLessThan(before * 0.45);
+    expect(sim.player.speed).toBeGreaterThan(before * 0.85);
+  });
+
+  it('still pushes while the sling is drawn', () => {
+    const sim = makeSim();
+    place(sim, { x: 145, y: 62 }, { x: 0, y: -2 });
+    let pushed = false;
+    for (let i = 0; i < 30; i++) {
+      const it = emptyIntent();
+      it.aim = true; it.drawAmount = 1; it.aimVector = { x: 0, y: -1 };
+      it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, { x: 145, y: 30 });
+      if (sim.player.pushedThisTick) pushed = true;
+    }
+    expect(pushed).toBe(true);
   });
 
   it('does not take the board away: let go and you roll again', () => {

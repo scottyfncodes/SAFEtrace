@@ -218,11 +218,13 @@ describe('the simulation throws at the point it is given, at its height', () => 
     const sim = makeSim();
     place(sim, { x: 158, y: 214 }, { x: 0, y: 8 });
     let fired = false;
-    sim.bus.on('player:fire', () => { fired = true; });
+    let speedAtRelease = 0;
+    sim.bus.on('player:fire', () => { fired = true; speedAtRelease = sim.player.speed; });
     throwAt(sim, { x: 158, y: 260 }, 0, 0.6, { moveVector: { x: 0, y: -1 } });
     expect(fired).toBe(true);
     expect(sim.aimMode).toBe(false);
-    expect(sim.player.speed).toBeGreaterThan(0.5);
+    // Drawing and letting go cost the board almost nothing.
+    expect(speedAtRelease).toBeGreaterThan(8 * 0.85);
   });
 
   it('never goes near the aiming view to do any of it', () => {
