@@ -68,32 +68,40 @@ export const TOUCH_TUNING = {
   /** Clear air between the movement pad and the nearest button's hit circle. */
   padClearance: 20,
 
-  /** Drawn radius, and the radius that actually accepts a thumb. */
-  primaryRadius: 34,
-  primaryHit: 44,
-  secondaryRadius: 24,
+  /**
+   * Drawn radius, and the radius that actually accepts a thumb — one pair per
+   * control, sized by how often it is pressed and how blind the press is.
+   *
+   *  - TRICK is pressed constantly, mid-run, without looking: it is the
+   *    biggest thing on the glass and sits where the thumb already rests.
+   *  - SLING is pressed a few times a minute, deliberately, to take the sling
+   *    out or put it away. Medium, one short reach up the arc.
+   *  - PLAN is a view, opened when the player chooses to stop and look.
+   *    Small and quiet, at the top of the column.
+   */
+  trickRadius: 38,
+  trickHit: 48,
+  slingRadius: 30,
+  slingHit: 40,
+  secondaryRadius: 22,
   secondaryHit: 34,
 
-  /** Visible circles sit this far inside the safe area, on both axes. */
-  edgeInset: 28,
+  /** The corner control's drawn edge sits this far inside the safe area. */
+  edgeInset: 24,
   /** Minimum gap between any two hit circles. */
   separation: 16,
   /**
-   * Where the primaries and the secondaries sit relative to the anchor
-   * button, which is the one in the corner under the resting thumb.
+   * Where SLING and PLAN sit relative to TRICK, which is in the corner under
+   * the resting thumb.
    *
-   * TRICK is up *and* left rather than straight left: that is the direction the
-   * thumb sweeps anyway, and the vertical component is what buys clearance from
-   * the movement pad on a 320 px-wide phone. PLAN is straight up the column,
-   * far enough that it is a deliberate extension rather than something a thumb
-   * brushes on its way back from TRICK. GRAB carries on up the same column
-   * TRICK's x sits on, further than PLAN — going any further *left* than
-   * TRICK leaves less than the width of a fingertip before the aiming split
-   * down the middle of a 320 px phone, so the fourth circle has to find its
-   * clearance from the other three by going up, not sideways.
+   * SLING is up *and* left — the direction the thumb sweeps anyway — so it is
+   * a short flick away rather than a stretch, and the vertical component is
+   * what buys clearance from the movement pad on a 320 px phone. PLAN is
+   * straight up the column above TRICK, far enough that reaching it is a
+   * deliberate extension rather than something a thumb brushes.
    */
-  trickOffset: { x: -76, y: -84 },
-  planOffset: { x: 0, y: -158 },
+  slingOffset: { x: -82, y: -68 },
+  planOffset: { x: 0, y: -132 },
   /**
    * Holding TRICK this long is a grab instead of a flip.
    *
@@ -303,17 +311,19 @@ export class TouchEngine {
    *
    * The arrangement:
    *
-   *   SLING sits in the corner where the thumb rests, because it is the one
-   *   control that leads somewhere — a whole mode — and it should be the
-   *   easiest thing on the glass to find without looking.
+   *   TRICK sits in the corner where the thumb rests, and is the biggest.
+   *   It is pressed over and over mid-run, eyes on the road, so it goes
+   *   where a thumb lands without being aimed. (SLING had this spot once,
+   *   on the theory that a whole mode deserved it; but a mode is entered a
+   *   few times a minute, deliberately, and a trick a few times a block.)
    *
-   *   TRICK sits up and to the left, along the sweep, so reaching it is a
-   *   flick rather than a stretch and its hit circle stays clear of the
-   *   movement pad even on a 320 px phone.
+   *   SLING sits up and to the left, along the sweep, a size down: a short,
+   *   intended flick, and its hit circle stays clear of the movement pad
+   *   even on a 320 px phone.
    *
-   *   PLAN sits further up the same column, smaller and quieter. It is a
+   *   PLAN sits up the column above TRICK, smallest and quietest. It is a
    *   deliberate extension of the thumb, not somewhere a thumb ends up by
-   *   accident on its way back from TRICK.
+   *   accident on its way back from anything.
    *
    *   There is no GRAB. It was a fourth circle for a variant of TRICK, and
    *   it is now what holding TRICK does.
@@ -321,7 +331,7 @@ export class TouchEngine {
   buttonLayout(): ControlButton[] {
     const t = this.tuning;
     const { w, h, safe } = this.viewport;
-    const R = t.primaryRadius;
+    const R = t.trickRadius;
     const anchor = {
       x: w - safe.right - t.edgeInset - R,
       y: h - safe.bottom - t.edgeInset - R,
@@ -330,17 +340,17 @@ export class TouchEngine {
     // must not push the column off the top of the screen.
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
-    const trickY = Math.max(ceiling + 40, anchor.y + t.trickOffset.y);
+    const slingY = Math.max(ceiling + 40, anchor.y + t.slingOffset.y);
 
     return [
       {
-        id: 'sling', pos: { ...anchor },
-        radius: R, hit: t.primaryHit, weight: 'primary',
+        id: 'sling', pos: { x: anchor.x + t.slingOffset.x, y: slingY },
+        radius: t.slingRadius, hit: t.slingHit, weight: 'primary',
         pressed: false, enabled: this.canSling,
       },
       {
-        id: 'trick', pos: { x: anchor.x + t.trickOffset.x, y: trickY },
-        radius: R, hit: t.primaryHit, weight: 'primary',
+        id: 'trick', pos: { ...anchor },
+        radius: R, hit: t.trickHit, weight: 'primary',
         pressed: false, enabled: true,
       },
       {
@@ -404,11 +414,11 @@ export class TouchEngine {
       /*
        * The one exception is the SLING button itself, which stays where it
        * was and puts the sling away when tapped — the same control in, the
-       * same control out, instead of a gesture nobody could find. A thumb
-       * that lands on it and pulls is pulling, because that corner is where a
-       * right thumb rests.
+       * same control out, instead of a gesture nobody could find. Only the
+       * middle of it counts, so a thumb that lands near its edge and pulls is
+       * pulling rather than putting the sling away.
        */
-      const sling = this.buttonLayout()[0];
+      const sling = this.buttonLayout().find((b) => b.id === 'sling')!;
       if (Math.hypot(x - sling.pos.x, y - sling.pos.y) <= sling.hit * 0.8) return 'putAway';
       return x < this.viewport.w * this.tuning.aimPadWidth ? 'aim' : 'pull';
     }
