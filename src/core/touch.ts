@@ -74,13 +74,16 @@ export const TOUCH_TUNING = {
    *
    *  - TRICK is mashed and held mid-run, eyes on the road: it is the biggest
    *    thing on the glass and sits where the right thumb already rests.
+   *  - SLING sits straight above it: press, slide down, let go. Down is
+   *    back, so the pull runs toward the corner the thumb came from and
+   *    the whole draw has glass under it.
    *  - PLAN is a view, opened when the player chooses to stop and look.
    *    Small, and a short reach away.
-   *
-   * There is no SLING button. The sling is a pull on the right half.
    */
   trickRadius: 40,
   trickHit: 50,
+  slingRadius: 30,
+  slingHit: 40,
   secondaryRadius: 22,
   secondaryHit: 34,
 
@@ -94,6 +97,7 @@ export const TOUCH_TUNING = {
    * circle stays clear of the left-hand pad even on a 320 px phone.
    */
   planOffset: { x: -80, y: -64 },
+  slingOffset: { x: 0, y: -112 },
   /**
    * Holding TRICK this long is a grab instead of a flip.
    *
@@ -155,7 +159,7 @@ export const TOUCH_TUNING = {
   pullMin: 10,
 };
 
-export type TouchRole = 'stick' | 'trick' | 'plan' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -180,7 +184,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'trick' | 'plan';
+  id: 'sling' | 'trick' | 'plan';
   pos: { x: number; y: number };
   /** What is drawn. */
   radius: number;
@@ -286,13 +290,11 @@ export class TouchEngine {
   }
 
   /**
-   * Two controls, under the right thumb.
+   * Three controls, under the right thumb.
    *
    * POP went because TRICK pops on its own. GRAB went because it is what
    * holding TRICK does. The eye went — and stays gone — because VISION is a
-   * story unlock and must never grow a control. SLING went because the sling
-   * is not a mode you enter but a thing you pull: the right thumb touches
-   * open glass, pulls back and lets go, with half the screen to do it in.
+   * story unlock and must never grow a control.
    *
    * PLAN stays, from the very first frame, because the plan view is a *view*
    * and every device needs a way into it — keyboard has Q, and a phone has
@@ -303,6 +305,10 @@ export class TouchEngine {
    *   TRICK sits in the corner where the thumb rests, and is the biggest.
    *   It is mashed and held mid-run, eyes on the road, so it goes where a
    *   thumb lands without being aimed.
+   *
+   *   SLING sits straight above TRICK. It is not a mode and not a toggle:
+   *   press it, slide down, let go, in one motion. Down is back, so the
+   *   pull runs toward the corner and always has glass behind it.
    *
    *   PLAN sits up and to the left of it, small and quiet: occasional, a
    *   short deliberate reach, never something a thumb brushes by accident.
@@ -319,8 +325,14 @@ export class TouchEngine {
     // must not push PLAN off the top of the screen.
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
+    const slingY = Math.max(ceiling, anchor.y + t.slingOffset.y);
 
     return [
+      {
+        id: 'sling', pos: { x: anchor.x + t.slingOffset.x, y: slingY },
+        radius: t.slingRadius, hit: t.slingHit, weight: 'primary',
+        pressed: false, enabled: this.canSling,
+      },
       {
         id: 'trick', pos: { ...anchor },
         radius: R, hit: t.trickHit, weight: 'primary',
@@ -400,15 +412,9 @@ export class TouchEngine {
     for (const b of this.buttonLayout()) {
       if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.hit) return b.id;
     }
-    /*
-     * The sling is the right thumb's: touch anywhere on the right half that
-     * is not a button, pull back, let go. No mode to enter and no hold to
-     * wait out — the left thumb steers, the right one throws, and neither
-     * gesture can be mistaken for the other. A tap there is still a tap on
-     * the world. Not over the plan, though: there a drag is moving the map.
-     */
-    if (this.canSling && !this.planOn && x >= this.viewport.w * this.tuning.aimPadWidth
-      && y > this.viewport.safe.top + 24) return 'throw';
+    // Sling put out from outside (the host): anywhere on the right is
+    // somewhere to pull from. Not over the plan: there a drag moves the map.
+    if (this.slingOut && !this.planOn && x >= this.viewport.w * 0.4 && y > this.viewport.safe.top + 24) return 'throw';
     if (y < this.padTop()) return 'idle';
     return x < this.padRight() ? 'stick' : 'idle';
   }
@@ -425,6 +431,13 @@ export class TouchEngine {
     let role = this.zoneAt(s.x, s.y);
     // One of each at a time; a second thumb on the same side does nothing.
     // A stray palm must never be able to take over a job a thumb is doing.
+    /*
+     * SLING is not a button you tap, it is the pouch: the finger that lands
+     * on it is pulling from that moment, and it stays a pull wherever it
+     * slides — over TRICK, over PLAN, off the bottom of the glass — until it
+     * lifts. Roles belong to the finger, so nothing it passes over is pressed.
+     */
+    if (role === 'sling') role = this.canSling ? 'throw' : 'idle';
     if ((role === 'stick' || role === 'aim' || role === 'pull' || role === 'throw')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
 
@@ -773,7 +786,7 @@ export class TouchEngine {
         vector,
       },
       buttons: this.buttonLayout().map((b) => ({
-        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn),
+        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) || (b.id === 'sling' && held.has('throw')),
       })),
       aiming: this.aiming,
       slingOut: this.slingOut,

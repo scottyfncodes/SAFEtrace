@@ -14,6 +14,7 @@ import { clamp01, smoothstep } from '../core/math';
 import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
+import { taperedStroke as taper } from './veneer';
 
 
 export class ControlsRenderer {
@@ -170,7 +171,7 @@ export class ControlsRenderer {
 
   private glyph(ctx: CanvasRenderingContext2D, id: ControlButton['id'], x: number, y: number, r: number): void {
     /*
-     * One typographic system for both controls.
+     * One typographic system for all three controls.
      *
      * Each button is a mark over its own name, in the same face at the same
      * size relative to the button, on the same baseline. Words because an
@@ -202,6 +203,59 @@ export class ControlsRenderer {
       ctx.font = `600 ${Math.round(r * 0.2)}px ui-monospace, Menlo, monospace`;
       ctx.fillText('hold: grab', x, y + r * 0.38);
       ctx.globalAlpha = was;
+      return;
+    }
+
+    if (id === 'sling') {
+      /*
+       * A forked stick with string across it and a stone in the pouch.
+       *
+       * Two earlier attempts failed at the size a button actually is. A
+       * machined fork with one wide band folded through a point collapsed into
+       * a letter Y. Drawing the pouch back *below* the crotch — which is what
+       * the in-hand view does, correctly, with a whole screen to do it in —
+       * put the cords, the pouch and the handle all in the same forty pixels
+       * and fused them into a blob.
+       *
+       * What reads is the object at rest: the string spans the two tips and
+       * dips into the mouth of the fork, where there is nothing else, with the
+       * pouch and its stone at the bottom of that dip. Every element has clear
+       * air around it, the silhouette is unmistakable at a glance, and it is
+       * still honestly a stick with string tied across it — the limbs taper
+       * and bend, because a branch cut out of a hedge is not a rule.
+       */
+      const px = s * 0.70;              // prong half-width
+      const py = s * 0.86;              // prong tip height above the crotch
+      const crotch = y + s * 0.10;
+      const w = Math.max(1.7, r * 0.075);
+      const tipL = { x: x - px, y: crotch - py };
+      // Shorter, and a shade lower. A branch that forks evenly is a drawing.
+      const tipR = { x: x + px * 0.95, y: crotch - py * 0.92 };
+
+      taper(ctx, { x, y: crotch + s * 0.62 }, { x, y: crotch }, w * 1.15, w, -1.1);
+      taper(ctx, { x, y: crotch }, tipL, w, w * 0.5, -py * 0.2);
+      taper(ctx, { x, y: crotch }, tipR, w * 0.95, w * 0.48, py * 0.18);
+
+      // The string, tied tip to tip and sagging into the mouth of the fork,
+      // which is the one piece of clear space the mark has.
+      const dip = crotch - py * 0.40;
+      ctx.lineWidth = Math.max(1, r * 0.035);
+      ctx.beginPath();
+      ctx.moveTo(tipL.x, tipL.y);
+      ctx.quadraticCurveTo(x, dip + s * 0.16, tipR.x, tipR.y);
+      ctx.stroke();
+
+      // The pouch, and the stone sitting in it. The leather is drawn wider
+      // than the stone and the stone rides a little above it, so at button
+      // size the two still read as two things rather than one lump.
+      ctx.lineWidth = Math.max(1.8, r * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(x - s * 0.26, dip + s * 0.06); ctx.lineTo(x + s * 0.26, dip + s * 0.06);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      label('SLING');
       return;
     }
 
