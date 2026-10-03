@@ -118,17 +118,15 @@ export const TUNE = {
   drawStiffen: 0.55,
   /** Held at full draw past this many seconds, the arm starts to shake. */
   drawHoldSteady: 1.4,
-  carveAimPenalty: 0.65,
-  /**
-   * Drawing the sling settles the board.
+  /*
+   * Drawing the sling costs the board nothing.
    *
-   * The first human to play could partly see what the slingshot was for but
-   * could not land a shot, because aiming, steering and pushing were all being
-   * asked of two thumbs at once. Pulling the pouch back now coasts you to a
-   * stop over about a second, which separates EXPLORE from AIM without a mode
-   * switch, a menu, or taking the board away.
+   * It used to coast you to a stop over about a second, refuse pushes and
+   * dull the carve, back when aiming and steering were asked of the same
+   * thumbs. They are not any more — the left thumb steers, the right one
+   * slides SLING back — so a shot is taken at speed, mid-line, and the only
+   * price of throwing on the move is that the board is still moving.
    */
-  aimSettleDecel: 7.0,
   /**
    * How fast sideways speed is scrubbed off, per frame at 60 Hz.
    *
@@ -428,7 +426,6 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   // Mid-push, the foot on the ground can point the board somewhere new. It is
   // the only way to turn sharply at walking pace, and you can see it happen.
   if (p.pushTimer > 0) carveRate *= TUNE.pushSteerBoost;
-  if (p.aiming) carveRate *= TUNE.carveAimPenalty;
   if (p.stance === 'AIR') carveRate *= 0.28;
   if (p.stance === 'SLIDE') carveRate = TUNE.slideSteer;
 
@@ -447,16 +444,6 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   const wantSlide = intent.brake && speed > 3.2 && p.stance !== 'AIR';
   if (wantSlide && p.stance !== 'SLIDE') p.stance = 'SLIDE';
   else if (!wantSlide && p.stance === 'SLIDE') p.stance = 'ROLL';
-
-  // --- the board settles under a draw ------------------------------------
-  if (p.aiming && p.stance !== 'AIR') {
-    const sp = len(p.vel);
-    if (sp > 0.01) {
-      const drop = Math.min(sp, TUNE.aimSettleDecel * clamp01(p.draw + 0.35) * dt);
-      p.vel.x -= (p.vel.x / sp) * drop;
-      p.vel.y -= (p.vel.y / sp) * drop;
-    }
-  }
 
   // --- push -------------------------------------------------------------
   p.pushCooldown = Math.max(0, p.pushCooldown - dt);
@@ -477,7 +464,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   p.crouch = damp(p.crouch, wantCrouch, 0.045, dt);
   p.landTimer = Math.max(0, p.landTimer - dt);
   p.pushBuffer = intent.pushPressed ? TUNE.inputBuffer : Math.max(0, p.pushBuffer - dt);
-  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL' && !p.aiming) {
+  if (p.pushBuffer > 0 && p.pushCooldown <= 0 && p.stance === 'ROLL') {
     // Cannot push past the cap: pushing is rhythm, not a throttle.
     const room = clamp01((cap - speed) / cap);
     const imp = TUNE.pushImpulse * room;
