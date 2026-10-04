@@ -281,7 +281,7 @@ export class JobHud {
     this.el.innerHTML = `
       <div class="jh-top"><span class="jh-job">JOB ${pad2(d.number)} · ${d.kind}</span>
         <span class="jh-time${over ? ' over' : ''}">${fmtClock(run.elapsed)} <small>/ ${fmtClock(d.target)}</small></span></div>
-      <div class="jh-obj">${objective}</div>
+      <div class="jh-obj">${objective}<span class="jh-obj-time${over ? ' over' : ''}">${fmtClock(run.elapsed)}</span></div>
       <div class="jh-exp">
         <span class="jh-level">${JOB.level[level]}</span>
         <span class="jh-bar"><i style="width:${Math.round(e.value)}%"></i></span>

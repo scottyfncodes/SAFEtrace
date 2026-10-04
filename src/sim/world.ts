@@ -144,9 +144,34 @@ export class World {
       }
       if (!moved) break;
     }
-    // Never let a resolve teleport the player far.
-    if (dist2(p, from) > 36) return { x: from.x, y: from.y };
-    return p;
+    // Never let a resolve teleport the player far — unless the place they
+    // came from is itself inside something solid. Then holding them there is
+    // holding them in a wall forever, and the nearest way out is the answer.
+    if (dist2(p, from) > 36 && !this.insideSolid(from, clearHeight)) return { x: from.x, y: from.y };
+    return this.insideSolid(p, clearHeight) ? this.ejectFromSolid(p, clearHeight, radius) : p;
+  }
+
+  /** Is `p` inside the footprint of a building taller than `clearHeight`? */
+  insideSolid(p: Vec2, clearHeight = 0): Building | null {
+    for (const b of unique(this.buildingHash.queryRadius(p, 0.1, this.scratch as Building[]))) {
+      if (b.height > clearHeight && pointInPoly(b.poly, p)) return b;
+    }
+    return null;
+  }
+
+  /**
+   * Out of whatever solid `p` is inside, by the shortest way, however far
+   * that is. Repeated in case the way out of one building is into another
+   * (a terrace, a lock-up row).
+   */
+  ejectFromSolid(p: Vec2, clearHeight = 0, radius = 0.45): Vec2 {
+    let q = { x: p.x, y: p.y };
+    for (let i = 0; i < 4; i++) {
+      const b = this.insideSolid(q, clearHeight);
+      if (!b) return q;
+      q = this.pushOutOfPoly(b.poly, q, radius + 0.15) ?? q;
+    }
+    return q;
   }
 
   private nearPoly(poly: Vec2[], p: Vec2, r: number): boolean {

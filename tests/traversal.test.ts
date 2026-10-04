@@ -308,3 +308,39 @@ function area(poly: Array<{ x: number; y: number }>) {
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
   return Math.abs(a / 2);
 }
+
+describe('nobody is ever stuck inside a building', () => {
+  it('pushes a rider found deep inside a building out to the nearest edge', () => {
+    // The reported bug: a launch came down through a house roof, the wall
+    // refused to move the rider more than six metres, and they stayed in it.
+    const sim = makeSim();
+    const big = sim.world.data.buildings
+      .filter((b) => b.height > 3 && b.kind !== 'house')
+      .sort((a, b) => area(b.poly) - area(a.poly))[0];
+    place(sim, centroid(big.poly), { x: 0, y: 0 });
+    sim.player.z = 0;
+    step(sim, 0.1);
+    expect(sim.world.insideSolid(sim.player.pos, sim.player.z + 0.14)).toBeNull();
+  });
+
+  it('survives a spread of random launches without leaving anyone in a wall', () => {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+    const anchors = makeSim().anchors;
+    for (let k = 0; k < 60; k++) {
+      const sim = makeSim();
+      const a = anchors[Math.floor(rnd() * anchors.length)];
+      const ang = rnd() * Math.PI * 2, r = 8 + rnd() * 10;
+      const start = { x: a.pos.x + Math.cos(ang) * r, y: a.pos.y + Math.sin(ang) * r };
+      if (sim.world.buildingAt(start)) continue;
+      const t = ang + (Math.PI / 2) * (rnd() < 0.5 ? 1 : -1);
+      place(sim, start, { x: Math.cos(t) * 10, y: Math.sin(t) * 10 });
+      const hold = 10 + Math.floor(rnd() * 120);
+      for (let i = 0; i < 240; i++) {
+        const it = emptyIntent(); it.hook = i < hold; it.hookPressed = i === 0;
+        sim.step(TICK_DT, it, null);
+        expect(sim.world.insideSolid(sim.player.pos, sim.player.z + 0.2)).toBeNull();
+      }
+    }
+  });
+});
