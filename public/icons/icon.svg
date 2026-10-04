@@ -1,43 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1C1F25"/>
-      <stop offset="1" stop-color="#0E1013"/>
-    </linearGradient>
-    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#D7D0C0" stop-opacity="0.34"/>
-      <stop offset="1" stop-color="#D7D0C0" stop-opacity="0.08"/>
-    </linearGradient>
-    <radialGradient id="glow">
-      <stop offset="0" stop-color="#2FE3F2" stop-opacity="0.6"/>
-      <stop offset="1" stop-color="#2FE3F2" stop-opacity="0"/>
-    </radialGradient>
-    <clipPath id="cone"><path d="M226 170 H286 L440 430 H72 Z"/></clipPath>
-  </defs>
-  <g clip-path="url(#tile)">
-    <rect width="512" height="512" fill="url(#bg)"/>
-    <!-- What the camera sees: a cold pool of paper-white light, ruled like a print. -->
-    <path d="M226 170 H286 L440 430 H72 Z" fill="url(#light)"/>
-    <g clip-path="url(#cone)" stroke="#D7D0C0" stroke-opacity="0.15" stroke-width="3"><line x1="110" y1="170" x2="-170" y2="450"/><line x1="125" y1="170" x2="-155" y2="450"/><line x1="140" y1="170" x2="-140" y2="450"/><line x1="155" y1="170" x2="-125" y2="450"/><line x1="170" y1="170" x2="-110" y2="450"/><line x1="185" y1="170" x2="-95" y2="450"/><line x1="200" y1="170" x2="-80" y2="450"/><line x1="215" y1="170" x2="-65" y2="450"/><line x1="230" y1="170" x2="-50" y2="450"/><line x1="245" y1="170" x2="-35" y2="450"/><line x1="260" y1="170" x2="-20" y2="450"/><line x1="275" y1="170" x2="-5" y2="450"/><line x1="290" y1="170" x2="10" y2="450"/><line x1="305" y1="170" x2="25" y2="450"/><line x1="320" y1="170" x2="40" y2="450"/><line x1="335" y1="170" x2="55" y2="450"/><line x1="350" y1="170" x2="70" y2="450"/><line x1="365" y1="170" x2="85" y2="450"/><line x1="380" y1="170" x2="100" y2="450"/><line x1="395" y1="170" x2="115" y2="450"/><line x1="410" y1="170" x2="130" y2="450"/><line x1="425" y1="170" x2="145" y2="450"/><line x1="440" y1="170" x2="160" y2="450"/><line x1="455" y1="170" x2="175" y2="450"/><line x1="470" y1="170" x2="190" y2="450"/><line x1="485" y1="170" x2="205" y2="450"/><line x1="500" y1="170" x2="220" y2="450"/><line x1="515" y1="170" x2="235" y2="450"/><line x1="530" y1="170" x2="250" y2="450"/><line x1="545" y1="170" x2="265" y2="450"/><line x1="560" y1="170" x2="280" y2="450"/><line x1="575" y1="170" x2="295" y2="450"/><line x1="590" y1="170" x2="310" y2="450"/><line x1="605" y1="170" x2="325" y2="450"/><line x1="620" y1="170" x2="340" y2="450"/><line x1="635" y1="170" x2="355" y2="450"/><line x1="650" y1="170" x2="370" y2="450"/><line x1="665" y1="170" x2="385" y2="450"/><line x1="680" y1="170" x2="400" y2="450"/><line x1="695" y1="170" x2="415" y2="450"/><line x1="710" y1="170" x2="430" y2="450"/><line x1="725" y1="170" x2="445" y2="450"/></g>
-    <ellipse cx="256" cy="428" rx="184" ry="26" fill="#D7D0C0" fill-opacity="0.2"/>
-    <!-- The watcher: a dome camera hung from above, hardware white, one cyan lens. -->
-    <rect x="238" y="0" width="36" height="80" fill="#ECEAE4"/>
-    <rect x="150" y="72" width="212" height="18" rx="9" fill="#ECEAE4"/>
-    <path d="M164 90 H348 A92 92 0 0 1 164 90 Z" fill="#ECEAE4"/>
-    <path d="M164 90 H348 A92 92 0 0 1 343 120 H169 A92 92 0 0 1 164 90 Z" fill="#C4C1B9"/>
-    <circle cx="256" cy="140" r="78" fill="url(#glow)"/>
-    <circle cx="256" cy="140" r="36" fill="#0B1114" stroke="#2FE3F2" stroke-width="11"/>
-    <circle cx="267" cy="130" r="8" fill="#2FE3F2"/>
-    <!-- Under it: the kid's board, in the player's amber, mid-ollie. -->
-    <g transform="rotate(-10 256 380)">
-      <path d="M116 362 Q120 338 140 336 L158 356 H354 L372 336 Q392 338 396 362 L388 382 H124 Z" fill="#F2BE3C"/>
-      <path d="M124 382 H388 L382 394 H130 Z" fill="#B88A1C"/>
-      <path d="M176 394 h52 l-8 12 h-36 z M284 394 h52 l-8 12 h-36 z" fill="#8F959B"/>
-      <circle cx="202" cy="420" r="20" fill="#D7D0C0"/>
-      <circle cx="310" cy="420" r="20" fill="#D7D0C0"/>
-      <circle cx="202" cy="420" r="7" fill="#16181D"/>
-      <circle cx="310" cy="420" r="7" fill="#16181D"/>
+  <defs><clipPath id="t"><rect width="512" height="512" rx="112"/></clipPath></defs>
+  <g clip-path="url(#t)">
+    <rect width="512" height="512" fill="#05090D"/>
+    <g stroke="#2FE3F2" stroke-opacity="0.07" stroke-width="2">
+      <line x1="0" y1="128" x2="512" y2="128"/><line x1="0" y1="256" x2="512" y2="256"/><line x1="0" y1="384" x2="512" y2="384"/>
+      <line x1="128" y1="0" x2="128" y2="512"/><line x1="256" y1="0" x2="256" y2="512"/><line x1="384" y1="0" x2="384" y2="512"/>
     </g>
+    <!-- The subject: a kid in a hoodie, hood up, no face to read. -->
+    <path d="M86 540 Q96 410 176 384 Q150 340 156 280 Q166 166 256 164 Q346 166 356 280 Q362 340 336 384 Q416 410 426 540 Z" fill="#F2BE3C"/>
+    <ellipse cx="256" cy="294" rx="76" ry="92" fill="#C99A26"/>
+    <ellipse cx="256" cy="298" rx="62" ry="80" fill="#16181D"/>
+    <path d="M232 372 L226 420 M280 372 L286 420" stroke="#C99A26" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="226" cy="424" r="6" fill="#C99A26"/><circle cx="286" cy="424" r="6" fill="#C99A26"/>
+    <rect x="132" y="296" width="248" height="3" fill="#2FE3F2" fill-opacity="0.55"/>
+    <!-- What the system draws round him. -->
+    <path d="M120 176 V128 H168 M344 128 H392 V176 M392 368 V416 H344 M168 416 H120 V368" fill="none" stroke="#2FE3F2" stroke-width="14" stroke-linecap="square"/>
+    <!-- The match the system is sure of, in its acid green. -->
+    <rect x="120" y="62" width="153" height="55" fill="#B6F23A"/>
+    <g fill="#05090D" transform="translate(134 72)"><rect x="5" y="0" width="15" height="5"/><rect x="0" y="5" width="5" height="5"/><rect x="20" y="5" width="5" height="5"/><rect x="0" y="10" width="5" height="5"/><rect x="20" y="10" width="5" height="5"/><rect x="5" y="15" width="20" height="5"/><rect x="20" y="20" width="5" height="5"/><rect x="15" y="25" width="5" height="5"/><rect x="5" y="30" width="10" height="5"/><rect x="35" y="0" width="15" height="5"/><rect x="30" y="5" width="5" height="5"/><rect x="50" y="5" width="5" height="5"/><rect x="30" y="10" width="5" height="5"/><rect x="50" y="10" width="5" height="5"/><rect x="35" y="15" width="15" height="5"/><rect x="30" y="20" width="5" height="5"/><rect x="50" y="20" width="5" height="5"/><rect x="30" y="25" width="5" height="5"/><rect x="50" y="25" width="5" height="5"/><rect x="35" y="30" width="15" height="5"/><rect x="60" y="30" width="5" height="5"/><rect x="70" y="0" width="25" height="5"/><rect x="90" y="5" width="5" height="5"/><rect x="85" y="10" width="5" height="5"/><rect x="80" y="15" width="5" height="5"/><rect x="75" y="20" width="5" height="5"/><rect x="75" y="25" width="5" height="5"/><rect x="75" y="30" width="5" height="5"/><rect x="100" y="0" width="10" height="5"/><rect x="120" y="0" width="5" height="5"/><rect x="100" y="5" width="10" height="5"/><rect x="120" y="5" width="5" height="5"/><rect x="115" y="10" width="5" height="5"/><rect x="110" y="15" width="5" height="5"/><rect x="105" y="20" width="5" height="5"/><rect x="100" y="25" width="5" height="5"/><rect x="115" y="25" width="10" height="5"/><rect x="100" y="30" width="5" height="5"/><rect x="115" y="30" width="10" height="5"/></g>
   </g>
 </svg>

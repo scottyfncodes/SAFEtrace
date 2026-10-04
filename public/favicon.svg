@@ -1,40 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1C1F25"/>
-      <stop offset="1" stop-color="#0E1013"/>
-    </linearGradient>
-    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#D7D0C0" stop-opacity="0.42"/>
-      <stop offset="1" stop-color="#D7D0C0" stop-opacity="0.12"/>
-    </linearGradient>
-    <radialGradient id="glow">
-      <stop offset="0" stop-color="#2FE3F2" stop-opacity="0.6"/>
-      <stop offset="1" stop-color="#2FE3F2" stop-opacity="0"/>
-    </radialGradient>
-    <clipPath id="cone"><path d="M226 170 H286 L440 430 H72 Z"/></clipPath>
-  </defs>
-  <g clip-path="url(#tile)">
-    <rect width="512" height="512" fill="url(#bg)"/>
-    <!-- What the camera sees: a cold pool of paper-white light, ruled like a print. -->
-    <path d="M226 170 H286 L440 430 H72 Z" fill="url(#light)"/>
-    <ellipse cx="256" cy="428" rx="184" ry="26" fill="#D7D0C0" fill-opacity="0.2"/>
-    <!-- The watcher: a dome camera hung from above, hardware white, one cyan lens. -->
-    <path d="M164 90 H348 A92 92 0 0 1 164 90 Z" fill="#ECEAE4"/>
-    <path d="M164 90 H348 A92 92 0 0 1 343 120 H169 A92 92 0 0 1 164 90 Z" fill="#C4C1B9"/>
-    <circle cx="256" cy="140" r="78" fill="url(#glow)"/>
-    <circle cx="256" cy="140" r="36" fill="#0B1114" stroke="#2FE3F2" stroke-width="11"/>
-    <circle cx="267" cy="130" r="8" fill="#2FE3F2"/>
-    <!-- Under it: the kid's board, in the player's amber, mid-ollie. -->
-    <g transform="rotate(-10 256 380)">
-      <path d="M116 362 Q120 338 140 336 L158 356 H354 L372 336 Q392 338 396 362 L388 382 H124 Z" fill="#F2BE3C"/>
-      <path d="M124 382 H388 L382 394 H130 Z" fill="#B88A1C"/>
-      <path d="M176 394 h52 l-8 12 h-36 z M284 394 h52 l-8 12 h-36 z" fill="#8F959B"/>
-      <circle cx="202" cy="420" r="20" fill="#D7D0C0"/>
-      <circle cx="310" cy="420" r="20" fill="#D7D0C0"/>
-      <circle cx="202" cy="420" r="7" fill="#16181D"/>
-      <circle cx="310" cy="420" r="7" fill="#16181D"/>
-    </g>
+  <defs><clipPath id="t"><rect width="512" height="512" rx="112"/></clipPath></defs>
+  <g clip-path="url(#t)">
+    <rect width="512" height="512" fill="#05090D"/>
+    <!-- The subject: a kid in a hoodie, hood up, no face to read. -->
+    <path d="M86 540 Q96 410 176 384 Q150 340 156 280 Q166 166 256 164 Q346 166 356 280 Q362 340 336 384 Q416 410 426 540 Z" fill="#F2BE3C"/>
+    <ellipse cx="256" cy="294" rx="76" ry="92" fill="#C99A26"/>
+    <ellipse cx="256" cy="298" rx="62" ry="80" fill="#16181D"/>
+    <!-- What the system draws round him. -->
+    <path d="M120 176 V128 H168 M344 128 H392 V176 M392 368 V416 H344 M168 416 H120 V368" fill="none" stroke="#2FE3F2" stroke-width="22" stroke-linecap="square"/>
   </g>
 </svg>
