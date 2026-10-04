@@ -1,4 +1,4 @@
-# SAFETRACE™
+# UNDERWATCH
 
 A teenage skater in a beautiful, already-completely-surveilled suburb slowly
 learns to see the machine underneath the town, and discovers that the only way
@@ -22,7 +22,7 @@ settled.
 The slice contains the opening advertisement, a dense playable district, the
 skating and slingshot models, the full surveillance simulation, hacking, drones,
 the false-positive incident involving the player's best friend, the first crack
-in the veneer, SAFEtrace VISION, and the advertisement's reprise.
+in the veneer, UNDERWATCH VISION, and the advertisement's reprise.
 
 The session starts solo. Devon is somewhere down the street, not already
 riding beside you — you skate to him, and he starts following once you
@@ -33,7 +33,7 @@ what happened on Northgate Lane, and it is spread across records you read at
 the camera or relay that holds them, things left on doorsteps, and what the
 people of Bellhaven will tell you. You write it down, you put two things
 side by side in your notes to work something out, and then you decide who to
-show it to — Priya Venn at the SAFEtrace drop-in, Mara's shop window, or
+show it to — Priya Venn at the UNDERWATCH drop-in, Mara's shop window, or
 nobody. Five endings are read off what you did and what you worked out.
 
 ## Controls
@@ -76,11 +76,11 @@ where you are going, tap the map to pin it, and follow the pin — a column of
 light in the street, or an arrow at the edge of the screen when it is behind
 you. You can keep skating with it open. It also shows the cameras you have
 noticed, which way they swing and which one has you — and, with a pin down,
-which of them a stone there would turn. SAFEtrace VISION is a story unlock, and
+which of them a stone there would turn. UNDERWATCH VISION is a story unlock, and
 what it changes is what the plan contains — every camera, subjects, the
-forecast, and the places SAFEtrace has flagged.
+forecast, and the places UNDERWATCH has flagged.
 
-**The Community Safety Score** is not on the screen. SAFEtrace has been keeping
+**The Community Safety Score** is not on the screen. UNDERWATCH has been keeping
 it about you all along; you find out by reading a camera's record (it lists who
 it is holding, and the number beside them) or by opening the plan once VISION
 has put subjects on it. After that it is in your notes, on the plan, and it
@@ -122,7 +122,7 @@ a system this emergent.
 ```
 src/core/     engine primitives: math, seeded RNG, event bus, input intent, loop
 src/sim/      the game as pure logic, including surveillance/
-src/content/  Bellhaven, every SAFEtrace string, the story beats
+src/content/  Bellhaven, every UNDERWATCH string, the story beats
 src/render/   the veneer, the machine, and the peel between them
 src/ui/       the advertisement, the diegetic phone, notifications
 src/audio/    fully synthesised WebAudio
@@ -131,7 +131,7 @@ src/audio/    fully synthesised WebAudio
 ## The surveillance model
 
 The most important distinction in the codebase is **Subject** versus **Track**:
-a Subject is what is true, a Track is what SAFEtrace believes. The whole game
+a Subject is what is true, a Track is what UNDERWATCH believes. The whole game
 lives in the gap between those two objects.
 
 ```
@@ -191,7 +191,7 @@ pin down it shows which cameras a stone there would turn. See
   including that the game declines to let you shoot a person.
 - **Determinism** — a 60-second replay hashes identically from the same seed.
 - **Architecture** — the layering rules above, and that every player-visible
-  SAFEtrace string lives in one file, because that voice must be edited as a
+  UNDERWATCH string lives in one file, because that voice must be edited as a
   single document or it drifts.
 - **Content** — the shipped town validates: every sensor on a segment, every
   segment on an uplink, a connected road graph, and the Channel genuinely off it.

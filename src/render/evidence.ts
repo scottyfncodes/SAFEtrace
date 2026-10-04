@@ -15,7 +15,7 @@
  *   tick at the end. Cameras nobody has noticed have none. The town looks
  *   more mapped the more of it you have worked out.
  *
- * None of this is SAFEtrace's. The machine's picture is the plan, in cyan;
+ * None of this is UNDERWATCH's. The machine's picture is the plan, in cyan;
  * this is the kid's, on the street, in pencil.
  */
 import type { Vec2 } from '../core/math';

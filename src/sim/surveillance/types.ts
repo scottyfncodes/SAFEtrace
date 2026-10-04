@@ -2,7 +2,7 @@
  * The surveillance domain model.
  *
  * The single most important distinction in this file is Subject vs Track:
- * a Subject is what is true, a Track is what SAFEtrace believes.
+ * a Subject is what is true, a Track is what UNDERWATCH believes.
  * The whole game lives in the gap between them.
  */
 import type { Vec2 } from '../../core/math';
@@ -12,7 +12,7 @@ export type SubjectKind = 'player' | 'friend' | 'resident' | 'unknown';
 export interface Subject {
   id: string;
   kind: SubjectKind;
-  /** The identity SAFEtrace has on file. */
+  /** The identity UNDERWATCH has on file. */
   identity: string;
   displayName: string;
   pos: Vec2;
@@ -24,7 +24,7 @@ export interface Subject {
   /** Contacts on record; raises the risk floor. */
   priorContacts: number;
   /**
-   * How well SAFEtrace already knows this person's routine, 0..1. A resident
+   * How well UNDERWATCH already knows this person's routine, 0..1. A resident
    * who walks the same route every afternoon is legible, so their prediction
    * error is not read as anomalous. The player has almost no history, which is
    * precisely why the system finds them interesting.
@@ -69,7 +69,7 @@ export interface Track {
   id: string;
   /** The subject this track actually follows (ground truth link, for the sim). */
   subjectId: string;
-  /** The identity SAFEtrace has attributed. Can be wrong. This is the whole point. */
+  /** The identity UNDERWATCH has attributed. Can be wrong. This is the whole point. */
   attributedIdentity: string;
   attributionConfidence: number;
   /** The system's position estimate; drifts when unobserved. */

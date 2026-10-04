@@ -14,7 +14,7 @@ than a narrative one. They are:
 | Verb | Mechanic | What it produces |
 |---|---|---|
 | EXPLORE | Skating | Route knowledge, physical access |
-| OBSERVE | Looking, then SAFEtrace VISION | Coverage knowledge |
+| OBSERVE | Looking, then UNDERWATCH VISION | Coverage knowledge |
 | DISCOVER | Proximity + QUERY on nodes | Network topology, records |
 | MANIPULATE | Slingshot + hacks | Local, temporary change to the network |
 | EVADE | Skating against prediction | Track decay, dispatch failure |

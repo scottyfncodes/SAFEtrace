@@ -14,7 +14,7 @@ authoring DSL, the oblique vector renderer, and a single street.
 ## Phase 2 — Skating
 The full movement model, surfaces, features, flow, camera, and skating audio.
 **Gate:** it is fun with nothing else in the game. If it is not, stop here.
-This gate is absolute; every other system in SAFETRACE assumes the player enjoys
+This gate is absolute; every other system in UNDERWATCH assumes the player enjoys
 simply moving.
 
 ## Phase 3 — The town

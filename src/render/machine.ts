@@ -323,7 +323,7 @@ export class MachineRenderer {
    * Where the player is, on a map that is only a map.
    *
    * The plan view opens from the first frame on every device, and before
-   * SAFEtrace VISION it draws the town and nothing else: streets, buildings,
+   * UNDERWATCH VISION it draws the town and nothing else: streets, buildings,
    * the road graph. That is a plan of a suburb, which is a thing a resident is
    * entitled to have — and it is useless without a "you are here", so the
    * player gets exactly that. One dot, a heading, and the district they are
@@ -386,7 +386,7 @@ export class MachineRenderer {
     ], m.prediction, 0.68, m.confirm);
   }
 
-  /** Evidence, and the disc SAFEtrace is searching inside. */
+  /** Evidence, and the disc UNDERWATCH is searching inside. */
   drawEvidence(ctx: CanvasRenderingContext2D, cam: ViewCamera, w: number, h: number, o: MachineOptions): void {
     const m = this.M(o);
     for (const e of this.sim.evidence.values()) {

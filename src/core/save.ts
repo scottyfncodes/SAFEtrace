@@ -31,6 +31,8 @@ export interface SavedAfternoon {
   label: string;
 }
 
+// Storage keys keep the game's original name on purpose: renaming them would
+// silently lose every player's saved afternoon and endings. Never shown.
 const KEY = 'safetrace.afternoon.v1';
 const ENDINGS_KEY = 'safetrace.endings.v1';
 

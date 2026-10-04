@@ -1,5 +1,5 @@
 /**
- * SAFETRACE™ — entry point.
+ * UNDERWATCH — entry point.
  *
  * Wires the deterministic simulation to presentation. Nothing in src/sim knows
  * this file exists.
@@ -173,7 +173,7 @@ class Game {
     });
 
     if (import.meta.env.DEV) {
-      (window as unknown as Record<string, unknown>).safetrace = {
+      (window as unknown as Record<string, unknown>).underwatch = {
         sim: this.sim, renderer: this.renderer, story: this.story, settings: this.settings,
         // The touch layout is geometry, and geometry is worth being able to
         // measure on a real device rather than reasoning about from a diagram.
@@ -429,7 +429,7 @@ class Game {
     el.id = 'prefs';
     el.innerHTML = `
       <div class="card" role="dialog" aria-modal="true" aria-labelledby="pref-title">
-        <div class="st-title" aria-label="SAFETRACE"><div><b>SAFE</b><span>TRACE</span></div></div>
+        <div class="st-title" aria-label="UNDERWATCH"><div><b>UNDER</b><span>WATCH</span></div></div>
         <h2 id="pref-title">Before you begin</h2>
         <p class="muted">These can be changed at any time.</p>
         <div class="settings-group">
@@ -686,7 +686,7 @@ class Game {
       if (label === 'VEHICLE ALARM') this.audio.alarm(); else this.audio.noise();
       this.renderer.ripple(pos, 1.5);
     });
-    bus.on('safetrace:message', ({ register }) => {
+    bus.on('underwatch:message', ({ register }) => {
       // The same three notes in the advertisement and in the moment a unit is
       // routed to intercept you. It is never altered.
       this.audio.motif(register === 'SYSTEM' ? 0.5 : 0.35);
@@ -1061,9 +1061,9 @@ if (canvas && ui) {
   const game = new Game(canvas, ui);
   // A handle for the screenshot harness (scripts/shots.mjs). Dev builds only:
   // Vite strips the branch from production, so no player ever has it.
-  if (import.meta.env.DEV) (window as unknown as { __safetrace: unknown }).__safetrace = game;
+  if (import.meta.env.DEV) (window as unknown as { __underwatch: unknown }).__underwatch = game;
 } else {
-  console.error('SAFETRACE: missing #game canvas or #ui root');
+  console.error('UNDERWATCH: missing #game canvas or #ui root');
 }
 
 export { VERBS };

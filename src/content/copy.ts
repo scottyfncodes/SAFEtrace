@@ -1,5 +1,5 @@
 /**
- * Every string SAFEtrace says, in one file.
+ * Every string UNDERWATCH says, in one file.
  *
  * Not for localisation convenience — for tone control. This voice must be
  * edited as a single document or it will drift, and its consistency is the
@@ -7,15 +7,15 @@
  */
 
 export const BRAND = {
-  name: 'SAFEtrace',
-  tm: 'SAFEtrace™',
+  name: 'UNDERWATCH',
+  tm: 'UNDERWATCH™',
   products: [
-    { name: 'SAFEtrace™ HOME', line: 'Protect your family.' },
-    { name: 'SAFEtrace™ SCHOOL', line: 'Safer classrooms. Smarter communities.' },
-    { name: 'SAFEtrace™ CITY', line: 'Predict. Prevent. Protect.' },
-    { name: 'SAFEtrace™ VISION', line: 'Advanced identity recognition.' },
-    { name: 'SAFEtrace™ PREDICT', line: "Don't wait for danger." },
-    { name: 'SAFEtrace™ CARE', line: 'Someone is always looking out.' },
+    { name: 'UNDERWATCH™ HOME', line: 'Protect your family.' },
+    { name: 'UNDERWATCH™ SCHOOL', line: 'Safer classrooms. Smarter communities.' },
+    { name: 'UNDERWATCH™ CITY', line: 'Predict. Prevent. Protect.' },
+    { name: 'UNDERWATCH™ VISION', line: 'Advanced identity recognition.' },
+    { name: 'UNDERWATCH™ PREDICT', line: "Don't wait for danger." },
+    { name: 'UNDERWATCH™ CARE', line: 'Someone is always looking out.' },
   ],
 };
 
@@ -63,12 +63,12 @@ export const SYSTEM = {
   /**
    * What VISION actually gives you.
    *
-   * This used to read "SAFEtrace VISION — AVAILABLE" alongside a hint naming a
+   * This used to read "UNDERWATCH VISION — AVAILABLE" alongside a hint naming a
    * control, because unlocking it grew a button on the HUD. The plan view is
    * now a control the player has had since the first frame; what changes here
    * is what is drawn inside it. So the line names the content, not a key.
    */
-  visionAvailable: 'SAFEtrace VISION — SUBJECT LAYER ENABLED',
+  visionAvailable: 'UNDERWATCH VISION — SUBJECT LAYER ENABLED',
   /** The plan view's own caption, before there is anything else to say. */
   planView: 'PLAN VIEW',
   queryAvailable: 'QUERY AND TRACE AVAILABLE',
@@ -96,7 +96,7 @@ export const SYSTEM = {
   searchingLastKnown: 'UNITS SEARCHING — LAST KNOWN POSITION',
   pursuitCleared: 'SUBJECT NOT LOCATED — SEARCH STOOD DOWN',
   /*
-   * A bearing hit somebody. SAFEtrace does not say "you hurt them", because
+   * A bearing hit somebody. UNDERWATCH does not say "you hurt them", because
    * nobody was hurt and the system would not care if they had been. It logs an
    * incident against a subject, which is the only language it has.
    */
@@ -160,11 +160,11 @@ export interface AdBeat {
 
 export const AD_SCRIPT: AdBeat[] = [
   { seconds: 4.5, look: { x: 150, y: 232, zoom: 8.5 }, headline: 'Bellhaven', sub: 'A place worth looking after.' },
-  { seconds: 4.0, look: { x: 132, y: 200, zoom: 11.5 }, headline: 'SAFEtrace™ HOME', sub: 'Protect your family.' },
-  { seconds: 4.0, look: { x: 366, y: 96, zoom: 10.5 }, headline: 'SAFEtrace™ CITY', sub: 'Predict. Prevent. Protect.' },
-  { seconds: 4.0, look: { x: 348, y: 318, zoom: 10.0 }, headline: 'SAFEtrace™ SCHOOL', sub: 'Safer classrooms. Smarter communities.' },
-  { seconds: 3.6, look: { x: 505, y: 206, zoom: 12.0 }, headline: 'SAFEtrace™ PREDICT', sub: "Don't wait for danger." },
-  { seconds: 4.4, look: { x: 170, y: 250, zoom: 9.0 }, headline: 'SAFEtrace™ CARE', sub: 'Someone is always looking out.' },
+  { seconds: 4.0, look: { x: 132, y: 200, zoom: 11.5 }, headline: 'UNDERWATCH™ HOME', sub: 'Protect your family.' },
+  { seconds: 4.0, look: { x: 366, y: 96, zoom: 10.5 }, headline: 'UNDERWATCH™ CITY', sub: 'Predict. Prevent. Protect.' },
+  { seconds: 4.0, look: { x: 348, y: 318, zoom: 10.0 }, headline: 'UNDERWATCH™ SCHOOL', sub: 'Safer classrooms. Smarter communities.' },
+  { seconds: 3.6, look: { x: 505, y: 206, zoom: 12.0 }, headline: 'UNDERWATCH™ PREDICT', sub: "Don't wait for danger." },
+  { seconds: 4.4, look: { x: 170, y: 250, zoom: 9.0 }, headline: 'UNDERWATCH™ CARE', sub: 'Someone is always looking out.' },
   { seconds: 5.0, look: { x: 158, y: 214, zoom: 11.0 }, wordmark: true },
   { seconds: 3.0, look: { x: 158, y: 214, zoom: 12.6 }, title: true },
 ];
@@ -234,7 +234,7 @@ export const DIALOGUE = {
 /**
  * The phone widget's own words.
  *
- * "Community Safety Score" is what SAFEtrace would call it, and the first human
+ * "Community Safety Score" is what UNDERWATCH would call it, and the first human
  * to play read it as a statistic about the neighbourhood rather than a verdict
  * about them — which is a usability failure and also, accidentally, lets the
  * brand off the hook. One possessive fixes both: it is a score the town keeps
@@ -250,15 +250,15 @@ export const PHONE = {
   /** The line in a camera's own record: who it is holding, and their number. */
   record: (subject: string, n: number, band: string) => `HOLDING ${subject} · COMMUNITY SAFETY SCORE ${n} · ${band}`,
   /** The moment of finding it, as a note. */
-  found: 'SAFEtrace keeps a number on you',
+  found: 'UNDERWATCH keeps a number on you',
   foundDetail: (n: number, band: string) => `Community Safety Score ${n} — ${band}`,
   /** When it moves between bands, once found: small, and gone. */
   moved: (n: number, band: string) => `Community Safety Score ${n} · ${band}`,
   /** On the plan, once found. */
-  plan: (n: number, band: string) => `SAFETRACE HAS YOU AT ${n} · ${band}`,
+  plan: (n: number, band: string) => `UNDERWATCH HAS YOU AT ${n} · ${band}`,
   /** In the notes, in the player's own words. */
   notes: (n: number, band: string, where: string) =>
-    `SAFEtrace has a number on me. It calls it my "Community Safety Score". Found it ${where === 'the plan' ? 'on the plan' : `in ${where}'s record`}. Right now it says ${n} — ${band.toLowerCase()}. Higher is better, apparently. Nobody asked me.`,
+    `UNDERWATCH has a number on me. It calls it my "Community Safety Score". Found it ${where === 'the plan' ? 'on the plan' : `in ${where}'s record`}. Right now it says ${n} — ${band.toLowerCase()}. Higher is better, apparently. Nobody asked me.`,
 };
 
 /**
@@ -272,7 +272,7 @@ export const PHONE = {
  * free, which is the only thing they need to know to start.
  */
 export const INSPECT = {
-  heading: 'SAFEtrace NETWORK',
+  heading: 'UNDERWATCH NETWORK',
   kind: {
     CAMERA: 'Camera',
     JUNCTION: 'Segment relay',

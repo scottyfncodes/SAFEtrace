@@ -241,7 +241,7 @@ export class World {
   }
 
   /**
-   * How far p is from anything SAFEtrace modelled.
+   * How far p is from anything UNDERWATCH modelled.
    *
    * Zero inside modelled space — carriageway, footway, plaza, school forecourt —
    * because being in a place people are expected to be is ordinary. Otherwise

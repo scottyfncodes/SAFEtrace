@@ -80,7 +80,7 @@ describe('architecture', () => {
   });
 
   /*
-   * Plan view is a control; SAFEtrace VISION is content. They were one flag,
+   * Plan view is a control; UNDERWATCH VISION is content. They were one flag,
    * which is how a phone grew a button the moment the story fired and how the
    * keyboard's Q did nothing for the first several minutes of a session.
    */
@@ -168,13 +168,13 @@ describe('architecture', () => {
     ]);
   });
 
-  it('keeps every player-visible SAFEtrace string in one file', () => {
+  it('keeps every player-visible UNDERWATCH string in one file', () => {
     // Tone control: this voice must be edited as a single document or it drifts.
     const offenders: string[] = [];
     for (const f of [...simFiles, ...walk('src/render')]) {
       if (f.includes('content/copy')) continue;
       const code = read(f).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
-      // Long ALL-CAPS sentences are SAFEtrace speech and belong in copy.ts.
+      // Long ALL-CAPS sentences are UNDERWATCH speech and belong in copy.ts.
       for (const m of code.matchAll(/'([A-Z][A-Z ]{18,})'/g)) {
         offenders.push(`${f}: ${m[1]}`);
       }

@@ -780,7 +780,7 @@ export class StoryDirector {
     this.ctx.after(30, () => { if (officer) officer.visible = false; });
     sim.devonVisible = false;
     sim.message('CARE', [CARE.devonHome], 6.0);
-    // Somebody from SAFEtrace is out talking to residents this evening.
+    // Somebody from UNDERWATCH is out talking to residents this evening.
     const priya = sim.person('priya');
     if (priya) priya.visible = true;
   }
@@ -927,7 +927,7 @@ export class StoryDirector {
       case 'intervene': {
         if (this.state.intervened !== null) return;
         this.state.intervened = true;
-        // You are a party present now, and SAFEtrace writes that down too.
+        // You are a party present now, and UNDERWATCH writes that down too.
         sim.playerSubject.priorContacts += 1;
         sim.message('SYSTEM', [SYSTEM.partyPresent], 4.2, 'normal', 'important');
         this.ctx.after(6, () => {

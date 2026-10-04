@@ -36,7 +36,7 @@ a place you read. It is not notification, not objective, not flavour.
    with nothing to inspect, which is the opening move of the whole game. The
    story already introduces QUERY at CM-207; now nothing arrives before it.
 2. **It says what category it is.** A line above the identifier:
-   `SAFEtrace NETWORK · Segment relay`. Not an explanation of the fields — a
+   `UNDERWATCH NETWORK · Segment relay`. Not an explanation of the fields — a
    foothold, so the answer is "I've found something on their network" rather
    than "I don't know what this is."
 3. **It can be waved away.** A Close control, and a dismissal that survives
@@ -88,7 +88,7 @@ release to fire → the shot resolves → tap to return.
 - Surfaces are projected flat, buildings as wall quads plus a roof with
   back-faces skipped, and everything that moves as a camera-facing card.
 - It keeps the flat-colour vector language of the veneer rather than reaching
-  for texture it does not have. It reads as SAFEtrace, not as a military FPS.
+  for texture it does not have. It reads as UNDERWATCH, not as a military FPS.
 - **The character does not move an inch.** `aimAnchor` is captured on entry and
   the position is re-pinned after physics every tick, so no input can drift it.
   That is asserted in tests, not hoped for.
@@ -99,7 +99,7 @@ release to fire → the shot resolves → tap to return.
   leaves it; the HUD's competing layers are hidden while it is up.
 
 ---
-## 4. SAFEtrace noise, and the opening
+## 4. UNDERWATCH noise, and the opening
 
 The score and the notification tiers were rebuilt in pass 01 and the round-two
 findings predate that build. One thing was still wrong, and it is the §12 ask:

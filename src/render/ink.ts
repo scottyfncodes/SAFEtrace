@@ -1,5 +1,5 @@
 /**
- * The ink: how SAFEtrace's street is drawn, as opposed to what colour it is.
+ * The ink: how UNDERWATCH's street is drawn, as opposed to what colour it is.
  *
  * A uniform outline round every polygon is what a "comic shader" does, and it
  * is the look this replaces. Here every inked thing belongs to a class, the

@@ -7,7 +7,7 @@
  * Boots the dev build, skips the advertisement, hides every piece of HUD
  * (DOM and canvas controls), parks the rider at a few fixed places in the
  * representative slice, and saves each frame at phone size and desktop size.
- * Uses the dev-only `window.__safetrace` handle; it never ships.
+ * Uses the dev-only `window.__underwatch` handle; it never ships.
  */
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
@@ -53,22 +53,22 @@ for (const vp of VIEWPORTS) {
   await page.click('#pref-go');
   await page.waitForTimeout(600);
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => window.__safetrace?.phase === 'play', null, { timeout: 60000 }).catch(async () => {
+  await page.waitForFunction(() => window.__underwatch?.phase === 'play', null, { timeout: 60000 }).catch(async () => {
     // A tap skips on touch.
     await page.mouse.click(vp.width / 2, vp.height / 2);
-    await page.waitForFunction(() => window.__safetrace?.phase === 'play', null, { timeout: 60000 });
+    await page.waitForFunction(() => window.__underwatch?.phase === 'play', null, { timeout: 60000 });
   });
   await page.addStyleTag({ content: '#ui, #boot { display: none !important; }' });
   // The thumb controls are drawn on the canvas and reassigned every frame.
   await page.evaluate(() => {
-    Object.defineProperty(window.__safetrace.renderer, 'controlVisual', { get: () => null, set() {}, configurable: true });
+    Object.defineProperty(window.__underwatch.renderer, 'controlVisual', { get: () => null, set() {}, configurable: true });
   });
   // An afternoon partly investigated: the two places nearest Maple Court have
   // been looked at, and the cameras around it noticed. The game builds these
   // up as you play; the harness puts them down so the shots show them.
   if (process.env.SHOT_FRESH !== '1') {
     await page.evaluate(() => {
-      const g = window.__safetrace;
+      const g = window.__underwatch;
       const at = { x: 160, y: 250 };
       const d = (p) => Math.hypot(p.x - at.x, p.y - at.y);
       for (const id of ['p-dropin', 'p-doorbell', 'p-noticeboard']) g.seenPlaces.add(id);
@@ -78,12 +78,12 @@ for (const vp of VIEWPORTS) {
   // Pin the town's mood for the shot (docs/41): SHOT_MOOD=-1..1.
   if (process.env.SHOT_MOOD !== undefined) {
     const m = Number(process.env.SHOT_MOOD);
-    await page.evaluate((m) => { const r = window.__safetrace.renderer; r.moodOverride = m; }, m);
+    await page.evaluate((m) => { const r = window.__underwatch.renderer; r.moodOverride = m; }, m);
     await page.waitForTimeout(6000);
   }
   for (const s of SHOTS) {
     await page.evaluate((s) => {
-      const g = window.__safetrace;
+      const g = window.__underwatch;
       const p = g.sim.player;
       if (s.near === 'patrol') {
         const o = g.sim.patrols[0].pos;
@@ -98,7 +98,7 @@ for (const vp of VIEWPORTS) {
   // What drawing the world actually costs, per frame, at the busiest shot —
   // and again with the CPU slowed 4x, which is roughly a mid-range phone.
   const measure = () => page.evaluate(() => new Promise((res) => {
-    const r = window.__safetrace.renderer;
+    const r = window.__underwatch.renderer;
     const pr = r.perspective;
     const orig = pr.draw;
     const times = [];

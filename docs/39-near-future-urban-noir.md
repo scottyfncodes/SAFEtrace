@@ -2,14 +2,14 @@
 
 > **Superseded in part by [40 — The Inked Town](40-the-inked-town.md)** for
 > the street view: the palette and noir correction (§3, §4), and characters
-> (§6). The rules for SAFEtrace hardware, the record UI and where dressing may
+> (§6). The rules for UNDERWATCH hardware, the record UI and where dressing may
 > stand are unchanged.
 
 The visual identity, restated. This supersedes the palette and mood sections of
 [10 — Art Direction](10-art-direction.md) (§3 light, §4 palette, §6
 characters) and the accent colour in [11 — Brand & UI](11-brand-and-ui.md) §1.
 Everything else in those two documents stands: the peel, the diegetic UI rule,
-the message grammar, the motion curve, and the rule that SAFEtrace hardware is
+the message grammar, the motion curve, and the rule that UNDERWATCH hardware is
 a nice consumer product.
 
 ## 1. The direction in one line
@@ -22,7 +22,7 @@ it already knows.
 
 ## 2. The contrast is the identity
 
-| | The town | SAFEtrace |
+| | The town | UNDERWATCH |
 |---|---|---|
 | Reads as | messy, human, ambiguous | clean, precise, authoritative, trustworthy |
 | Colour | muted: concrete, asphalt, faded paint, worn brick, overcast sky | three saturated accents and nothing else |
@@ -34,7 +34,7 @@ be wrong, and the picture says so before any text does: an exact, beautiful
 `MATCH 98.7%` sitting on top of a world that is obviously more complicated than
 that.
 
-**The tonal rule: SAFEtrace looks good.** Its hardware is the best-made thing
+**The tonal rule: UNDERWATCH looks good.** Its hardware is the best-made thing
 on the street. Its interface is calm and well-set. Nothing it makes is red,
 jittery or sinister. The unsettling part is that it looks trustworthy, so the
 player's first thought is *"it says 98.7%, why wouldn't I believe it?"* and
@@ -62,13 +62,13 @@ Buildings keep the paint they were authored with, but `weather()` wears it down
 on the way to the glass and it is laid over a material — brick, block, render,
 siding — chosen per building. Neighbours still differ; nothing looks new.
 
-### SAFEtrace (`TECH`, used by `MACHINE` and the UI tokens)
+### UNDERWATCH (`TECH`, used by `MACHINE` and the UI tokens)
 ```
 Electric cyan   #2FE3F2   the system at rest and working
 Cyan ink        #0B7F8E   the same, printed on a white sign or a pale wall
 Acid green      #B6F23A   the system being sure: MATCH, CONFIDENCE, the forecast
 Warning orange  #FF8B2B   attention — never alarm
-Hardware white  #EEF2F3   every housing SAFEtrace installs
+Hardware white  #EEF2F3   every housing UNDERWATCH installs
 ```
 Nothing in the physical town or the player's own things uses any of these
 (tested). The town's and the player's amber (`VENEER.warning`, `#E8A33D` — the
@@ -138,7 +138,7 @@ means something in play:
 All of it lives in `palette.ts` and the environment paths of
 `perspective.ts`. Nothing reads it but the renderer.
 
-## 5. SAFEtrace in the street
+## 5. UNDERWATCH in the street
 
 - **Cameras** are hardware white with a thin cyan line under the housing while
   they are working. The lens still goes the rider's red when it has them and
@@ -198,13 +198,13 @@ before it ships.
 - A low-angle camera mode (§8).
 - Traffic signals and storefront dressing beyond signs. Bellhaven's layout is
   residential; a denser commercial block is where those belong.
-- Occasional digital glitches on SAFEtrace surfaces. The peel residual
+- Occasional digital glitches on UNDERWATCH surfaces. The peel residual
   ([10](10-art-direction.md) §5) is the right place to start.
 - The app icons still use the old teal. They are rendered PNGs and should be
   re-exported together with the SVG.
 
 ## 10. The screenshot test
 
-A frame from SAFEtrace should be recognisable as SAFEtrace from three things:
+A frame from UNDERWATCH should be recognisable as UNDERWATCH from three things:
 a muted, worn street seen from a board; one or two exact, beautiful things in
 cyan within it; and a person, inked, in a colour nothing else in the frame has.

@@ -273,7 +273,7 @@ describe('the world reacts without being scripted', () => {
   });
 
   /**
-   * The risk landscape is learnable content. A player who understands SAFEtrace
+   * The risk landscape is learnable content. A player who understands UNDERWATCH
    * should be able to predict this table, so it is asserted rather than left to
    * drift with tuning.
    */
@@ -381,7 +381,7 @@ describe('what it costs to look', () => {
   });
 
   /*
-   * The plan view is a view, and SAFEtrace VISION is a story unlock. They were
+   * The plan view is a view, and UNDERWATCH VISION is a story unlock. They were
    * the same flag, which is how a phone ended up growing a button the moment
    * the story fired — and how the keyboard's Q did nothing at all for the
    * first several minutes of a session.
@@ -614,7 +614,7 @@ describe('being watched is not being hunted', () => {
   it('says when somebody is sent, as well as when they give up', () => {
     const sim = makeUnlockedSim();
     const said: string[] = [];
-    sim.bus.on('safetrace:message', (m) => said.push(...m.lines));
+    sim.bus.on('underwatch:message', (m) => said.push(...m.lines));
     const cam = sim.sensorById.get('CM-207')!;
     place(sim, { x: 145, y: 62 });
 

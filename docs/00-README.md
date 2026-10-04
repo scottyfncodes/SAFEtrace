@@ -1,6 +1,6 @@
-# SAFETRACE™ — Pre-Production Set
+# UNDERWATCH — Pre-Production Set
 
-This directory is the design and technical record for SAFETRACE™. It was written
+This directory is the design and technical record for UNDERWATCH. It was written
 before implementation and is the authority for what the game is trying to be.
 
 | # | Document | Purpose |
@@ -15,7 +15,7 @@ before implementation and is the authority for what the game is trying to be.
 | 08 | [Hacking System](08-hacking-system.md) | The network layer and its verbs |
 | 09 | [Drone System](09-drone-system.md) | Aerial layer behaviour |
 | 10 | [Art Direction](10-art-direction.md) | Visual identity and the three render states |
-| 11 | [SAFEtrace Brand & UI](11-brand-and-ui.md) | The corporate design system |
+| 11 | [UNDERWATCH Brand & UI](11-brand-and-ui.md) | The corporate design system |
 | 12 | [Audio Direction](12-audio-direction.md) | The sound language and its corruption |
 | 13 | [Vertical Slice Plan](13-vertical-slice.md) | What ships first and why |
 | 14 | [Asset Strategy](14-asset-strategy.md) | Procedural-first content pipeline |

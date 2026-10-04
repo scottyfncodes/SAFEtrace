@@ -39,6 +39,8 @@ export const defaultSettings = (): Settings => ({
   classicSling: false,
 });
 
+// Keeps the game's original name on purpose: renaming the key would reset
+// every player's settings. Never shown.
 const KEY = 'safetrace.settings.v1';
 
 export function loadSettings(): Settings {

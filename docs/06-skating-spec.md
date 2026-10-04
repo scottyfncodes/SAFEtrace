@@ -88,7 +88,7 @@ Ollie             Space (or A) — hold to load, release to pop, 0.25 s max load
 Foot / board      Shift
 Aim slingshot     Right mouse / Left trigger (hold or toggle, configurable)
 Fire              Left mouse / Right trigger
-SAFEtrace VISION  Q (hold or toggle)
+UNDERWATCH VISION  Q (hold or toggle)
 Phone / inspect   E on a highlighted node
 ```
 
@@ -108,7 +108,7 @@ Eight verbs. That is the whole game. Nothing is added later; things become
 
 - **Grinds and manuals are cut from the slice.** They are the natural next
   addition, but a half-implemented grind system would immediately make this feel
-  like a worse skateboarding game rather than a good SAFETRACE. Basic movement
+  like a worse skateboarding game rather than a good UNDERWATCH. Basic movement
   is proven first, per the brief's own instruction.
 - **Trick scoring is cut permanently.** A score popup would tell the player this
   is a skateboarding game about points. It is not. Flow replaces it, and flow

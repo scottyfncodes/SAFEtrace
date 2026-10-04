@@ -80,7 +80,7 @@ export function authorNorthgate(b: TownBuilder): void {
    * The count is read out of the network rather than written down, because a
    * district grows and a written number does not. It said 14 while the segment
    * held 18, which is a small lie in the one place the game cannot afford one:
-   * the whole argument is that SAFEtrace's own paperwork is accurate.
+   * the whole argument is that UNDERWATCH's own paperwork is accurate.
    */
   b.junction(pt(112, 88), 'NORTHGATE JUNCTION', 'JX-207', (ctx) => {
     const seg = ctx.network.segments.find((s) => s.id === 'S-N2');
@@ -166,7 +166,7 @@ export function authorNorthgate(b: TownBuilder): void {
     sweep: 26, sweepPeriod: 8, height: 4.4, bias: 0.88,
     label: 'SUBSTATION — PERIMETER',
   });
-  b.prop('sign', pt(226, 12), 0, { tint: 'SAFEtrace CITY — RESTRICTED' });
+  b.prop('sign', pt(226, 12), 0, { tint: 'UNDERWATCH CITY — RESTRICTED' });
 
   // ------------------------------------------------------------- Sable Lane
   /*

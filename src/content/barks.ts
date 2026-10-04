@@ -35,19 +35,19 @@ export const BARKS: Bark[] = [
   { id: 'b-score', phase: 'before', district: 'maple', lines: ['Our street went up to 94 this month.', "Did it? Must be the new doorbell."] },
   { id: 'b-plaza', phase: 'before', district: 'commons', lines: ['They put two more cameras on the cinema.', "Good. Kids were sitting on the steps."] },
   { id: 'b-school', phase: 'before', district: 'ridgeline', lines: ['Did you sign the SCHOOL form?', "You don't sign it. You're just in it."] },
-  { id: 'b-pa-before', phase: 'before', at: { x: 356, y: 70 }, lines: ['SAFEtrace CARE: Bellhaven Commons is a safe space. Thank you for keeping it that way.'] },
+  { id: 'b-pa-before', phase: 'before', at: { x: 356, y: 70 }, lines: ['UNDERWATCH CARE: Bellhaven Commons is a safe space. Thank you for keeping it that way.'] },
 
   // ------------------------------------------------------------ matched
   { id: 'b-burglary', phase: 'matched', lines: ['Did you get the alert? Northgate.', 'A burglary. In the afternoon. On Northgate Lane.'] },
   { id: 'b-kid', phase: 'matched', district: 'commons', lines: ["They're saying it was a kid from Ridgeline.", 'One of the skaters. It had his name and everything.'] },
   { id: 'b-photo', phase: 'matched', district: 'maple', lines: ["That's the Araya boy, isn't it. From the alert.", "He's always been polite to me."] },
-  { id: 'b-pa-alert', phase: 'matched', at: { x: 84, y: 97 }, lines: ['SAFEtrace CARE: Northgate residents — a person of interest has been identified. Please remain aware.'] },
+  { id: 'b-pa-alert', phase: 'matched', at: { x: 84, y: 97 }, lines: ['UNDERWATCH CARE: Northgate residents — a person of interest has been identified. Please remain aware.'] },
 
   // ----------------------------------------------------------- released
   { id: 'b-carvalho', phase: 'released', district: 'northgate', lines: ["Ines is back from work. Says she never called anybody.", "Then who did?"] },
   { id: 'b-courier', phase: 'released', district: 'northgate', lines: ["That courier's been up and down the Lane all day.", 'Hood up, in this. Poor sod.'] },
   { id: 'b-brennan', phase: 'released', district: 'northgate', lines: ["Gerald says he saw the boy himself.", 'Gerald says a lot of things.'] },
-  { id: 'b-dropin', phase: 'released', district: 'commons', lines: ["There's a SAFEtrace woman at the community centre tonight.", 'A drop-in. You can ask her things, apparently.'] },
+  { id: 'b-dropin', phase: 'released', district: 'commons', lines: ["There's an UNDERWATCH woman at the community centre tonight.", 'A drop-in. You can ask her things, apparently.'] },
   { id: 'b-devon-home', phase: 'released', district: 'maple', lines: ["They let the Araya boy go. He's home.", 'His mum was out on the drive for an hour.'] },
   { id: 'b-relay', phase: 'released', district: 'relay', lines: ['Half the cameras in town come through that shed.', 'Nobody told us. They just turned up.'] },
   { id: 'b-channel', phase: 'released', district: 'channel', lines: ["There's a camera on the apron now. Wasn't there when I was a kid.", 'Floods, they said.'] },

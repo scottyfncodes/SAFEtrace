@@ -13,7 +13,7 @@ export interface SurfacePatch {
   priority: number;
   /**
    * True for space a planner actually modelled: carriageway, footway, plaza,
-   * school forecourt. SAFEtrace's forecast runs over modelled space, so being
+   * school forecourt. UNDERWATCH's forecast runs over modelled space, so being
    * here is ordinary. Backyards, drainage channels and desire paths are not
    * modelled, which is exactly why they are worth knowing about.
    */

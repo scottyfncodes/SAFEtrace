@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Prove that SAFETRACE is a distinct game, not a description of one. The slice is
+Prove that UNDERWATCH is a distinct game, not a description of one. The slice is
 "one afternoon in Bellhaven": roughly 20–25 minutes, containing the complete
 emotional arc in miniature.
 
@@ -10,7 +10,7 @@ emotional arc in miniature.
 
 | # | Item | Status target |
 |---|---|---|
-| 1 | Opening SAFEtrace advertisement | Shipping quality, not placeholder |
+| 1 | Opening UNDERWATCH advertisement | Shipping quality, not placeholder |
 | 2 | Playable suburban district (Maple Court, Commons, Ridgeline, the Channel) | Dense, authored |
 | 3 | Skating: push / carve / ollie / slide / bail / flow | Excellent, tuned |
 | 4 | Camera network with cones, sweep, occlusion, blind spots | Full simulation |
@@ -22,14 +22,14 @@ emotional arc in miniature.
 | 10 | Drones: patrol / investigate / track, cover counterplay | Full simulation |
 | 11 | The false-positive incident with Devon | Fully authored beat |
 | 12 | First veneer crack | Fully authored |
-| 13 | SAFEtrace VISION machine-vision sequence and the peel | Fully authored |
+| 13 | UNDERWATCH VISION machine-vision sequence and the peel | Fully authored |
 | 14 | Advertisement reprise, annotated | Fully authored |
 
 ## 3. Beat sheet
 
 1. **Advertisement** (~75 s). Bellhaven from above, sunlit, in motion. Kids
    skate. A family walks. A drone passes and nobody looks up. Product lines
-   appear. The wordmark resolves. `SAFETRACE™`.
+   appear. The wordmark resolves. `UNDERWATCH`.
 2. **The same street, playable.** The exact geometry from the ad's final shot.
    Devon is on the kerb. Free skating; the town teaches itself.
 3. **Errand.** Devon wants to get to the Channel. This is a movement tutorial

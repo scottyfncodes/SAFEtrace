@@ -62,5 +62,5 @@ src/content/story.ts       beats
 ```
 
 All player-facing text lives in `copy.ts`. Not for localisation convenience —
-for *tone control*. SAFEtrace's voice must be edited as a single document, or it
+for *tone control*. UNDERWATCH's voice must be edited as a single document, or it
 will drift, and its consistency is the whole characterisation.

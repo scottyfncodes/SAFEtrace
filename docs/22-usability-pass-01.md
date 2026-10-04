@@ -120,7 +120,7 @@ the meter in the band colour, so the player learns which way is bad without
 being shown any arithmetic — and the duplicate `STATUS` row below it is gone.
 The displayed value eases toward the real one instead of flickering.
 
-No formula is exposed. The intended takeaway is only: *SAFEtrace is evaluating
+No formula is exposed. The intended takeaway is only: *UNDERWATCH is evaluating
 me, and what I do changes how it evaluates me.*
 
 ---
@@ -151,14 +151,14 @@ dispatch, escalation change, subject monitoring, MASK, and **`SEGMENT … DEGRAD
 → `important`. That last one is the moment the player learns what a segment is,
 and it was previously competing with an advert.
 
-**Nothing was deleted.** SAFEtrace says exactly as much as it did before. It is
+**Nothing was deleted.** UNDERWATCH says exactly as much as it did before. It is
 now rankable at a glance, which is the difference between *"the system is
 watching everything I do"* and *"I don't know what any of this means"*.
 
 ---
 ## What remains intentionally overwhelming
 
-- SAFEtrace still talks constantly, and still talks about you.
+- UNDERWATCH still talks constantly, and still talks about you.
 - The score still moves while you do nothing, because the town is still looking.
 - `CARE` still sells you things during an escalation. That juxtaposition is the
   joke and it stays.

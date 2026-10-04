@@ -295,7 +295,7 @@ export function castLook(id: string, tint: string): Look | null {
       skin: VENEER.skinTones[3], hair: VENEER.hair[0], hairStyle: 'bun', hat: 'none', hatColour: PRINT.ink,
       shoes: '#2A2622', carry: 'none', carryColour: PRINT.ink, trim: '#3B3A36',
     };
-    // SAFEtrace Regional Operations: a long tailored coat, and a lanyard
+    // UNDERWATCH Regional Operations: a long tailored coat, and a lanyard
     // badge in the system's own cyan — the only person who wears it.
     case 'priya': return {
       body: { ...ADULT, scale: 1.02, shoulder: 0.19 }, garment: 'coat', top, bottom: '#24272C',

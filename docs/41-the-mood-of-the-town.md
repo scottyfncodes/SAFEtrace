@@ -28,7 +28,7 @@ keeps the town lit even while the player is being chased through it.
 ### The town begins partially owned
 
 **The player's job is to peel ownership away.** A fresh afternoon starts at
-`START = 0.32`: the sky already a shade toward slate, SAFEtrace's plates on
+`START = 0.32`: the sky already a shade toward slate, UNDERWATCH's plates on
 about a third of the poles, the lenses faintly glowing, a cold patch of light
 under each one. Not dark — there is somewhere for pressure to go — but
 plainly not the kid's town yet. The loop the numbers are set for is
@@ -71,7 +71,7 @@ against "simply desaturated 3D" applies to this pass more than any other.
   drew hard cyan wedges here, which read as UI; they are gone.)
 - **Every lens glows.** A soft cyan halo on each working camera: in the dark
   the cyan points are the first thing you see, and they are everywhere.
-- **SAFEtrace's plates go up on the poles.** A white plate with the wordmark
+- **UNDERWATCH's plates go up on the poles.** A white plate with the wordmark
   and one cyan band at head height, first on one pole in ten and then on
   most of them, chosen by hash so they come up in a stable order.
 - **The town goes dark around the few who are home.** Most windows are

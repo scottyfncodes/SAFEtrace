@@ -7,7 +7,7 @@ and character sections of [39 — Near-Future Urban Noir](39-near-future-urban-n
 (§3, §4 "noir correction", §6) for the **street view** — the chase camera and
 first-person aim. The plan view and machine vision are unchanged; they are the
 system's register and are meant to look like a different product. Everything
-in 39 about SAFEtrace hardware, the record UI and the dressing rules stands.
+in 39 about UNDERWATCH hardware, the record UI and the dressing rules stands.
 
 It is an exploration on a branch. Nothing here is final art, and §9 lists what
 final art would still need.
@@ -123,7 +123,7 @@ and requires the same path.
 ### Three meanings (`SIGNAL`)
 ```
 Player   amber   #F2BE3C   the rider, the board, the flow ring, the player's own marks
-System   cyan    #2FE3F2   SAFEtrace, the plan, the relay masts
+System   cyan    #2FE3F2   UNDERWATCH, the plan, the relay masts
 Warning  orange  #FF6326   a camera that has you, an officer responding
 ```
 These are sacred, and two fixes made them so:
@@ -232,7 +232,7 @@ player's hand (`evidence.ts`), and only once they have earned it:
   camera sweeps. Cameras nobody has noticed have none.
 
 The town looks more mapped the more of it you have worked out, and none of it
-is HUD: it is drawn in the world and sorts with it. SAFEtrace's own picture is
+is HUD: it is drawn in the world and sorts with it. UNDERWATCH's own picture is
 still the plan, in cyan; this is the kid's, on the street, in pencil.
 
 ![The marker up close, in first-person aim](art/40/after-aim-evidence.jpg)
@@ -263,7 +263,7 @@ touched**; `src/sim` still imports nothing from `render` (tested).
   `SIGNAL.warning`. No layout or logic change.
 - `machine.ts` — the listening-camera glow uses `SIGNAL.player`.
 - `styles.css` — `--st-orange` follows the new warning orange.
-- `main.ts` — a dev-only `window.__safetrace` handle for the screenshot
+- `main.ts` — a dev-only `window.__underwatch` handle for the screenshot
   harness. Vite strips it from production builds.
 - `scripts/shots.mjs` — the harness: boots the dev build, skips the
   advertisement, hides every piece of HUD, frames the slice at 390×844 and
@@ -359,7 +359,7 @@ than for the table above).
 
 ## 11. The screenshot test
 
-With the HUD hidden, a frame is SAFEtrace if it has: **paper sky over an inked
+With the HUD hidden, a frame is UNDERWATCH if it has: **paper sky over an inked
 skyline with one cyan point in it; a black scratchboard road; hatched walls;
 an amber kid on a board; and, once you have played a while, amber pencil in the
 street where you have been looking.**

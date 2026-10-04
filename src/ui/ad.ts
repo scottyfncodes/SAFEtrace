@@ -21,7 +21,7 @@ const MARK = `
   <path d="M13.5 27.5C18.6 20 24.9 16 32 16s13.4 4 18.5 11.5" stroke="white" stroke-width="2.6" stroke-linecap="round" opacity="0.6"/>
 </svg>`;
 
-const WORDMARK = '<b>SAFE</b><span>trace</span><sup>™</sup>';
+const WORDMARK = '<b>UNDER</b><span>WATCH</span><sup>™</sup>';
 
 export class Advertisement {
   private el: HTMLElement;
@@ -126,7 +126,7 @@ export class Advertisement {
     if (beat.title) {
       this.el.innerHTML = `
         <div class="centre">
-          <div class="titlecard"><b>SAFE</b>TRACE<sup>™</sup></div>
+          <div class="titlecard"><b>UNDER</b>WATCH<sup>™</sup></div>
         </div>`;
       return;
     }

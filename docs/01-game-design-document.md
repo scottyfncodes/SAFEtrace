@@ -48,7 +48,7 @@ A drone arrives before Devon can finish reading the notification.
 
 ## 4. The antagonist is not a person
 
-SAFEtrace has no CEO the player fights. Its most disturbing property is that
+UNDERWATCH has no CEO the player fights. Its most disturbing property is that
 almost everything it does is defensible in isolation:
 
 - It observes. That is what the residents asked for.
@@ -63,7 +63,7 @@ genuinely believes she is reducing harm — but she is a symptom, not a boss.
 
 ## 5. Central contradiction
 
-> SAFEtrace: "Nothing should go unseen."
+> UNDERWATCH: "Nothing should go unseen."
 >
 > The player: "Then I'll be something you can't predict."
 
@@ -78,9 +78,9 @@ system in the game measures, rewards, or punishes classification.
   false positive happens to *them*, which is why it lands.
 - **Mara Okonjo** — runs the bike-and-board shop in Bellhaven Commons. Knows
   where the wiring goes because she watched it get installed.
-- **Priya Venn** — SAFEtrace regional operations. Not a villain. The most
+- **Priya Venn** — UNDERWATCH regional operations. Not a villain. The most
   frightening character in the game because she is reasonable.
-- **SAFEtrace** — always calm, always helpful, never angry.
+- **UNDERWATCH** — always calm, always helpful, never angry.
 
 ## 7. Structure
 
@@ -88,7 +88,7 @@ system in the game measures, rewards, or punishes classification.
 line and by shortcut. Surveillance is background texture. Ends with the false
 positive.
 
-**Act II — Comprehension.** SAFEtrace VISION unlocks. Cameras acquire cones,
+**Act II — Comprehension.** UNDERWATCH VISION unlocks. Cameras acquire cones,
 houses acquire node IDs, people acquire brackets. The player investigates the
 match: which camera, which feed, which decision. They learn the pipeline by
 using it. Ends with the player understanding that Devon's score never went back

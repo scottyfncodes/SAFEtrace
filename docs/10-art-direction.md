@@ -51,7 +51,7 @@ Grass               #8FB369   Grass shadow   #5E8A54
 Stucco warm         #F0E3D0   Stucco cool    #DCE4E8
 Roof terracotta     #C4714E   Roof slate     #56626E
 Sky/void            #DCE9F2   Shadow         #3A4C6B at 26% multiply
-Accent (SAFEtrace)  #2C8C8C   Warning        #E8A33D
+Accent (UNDERWATCH)  #2C8C8C   Warning        #E8A33D
 ```
 Nothing is grey-brown. Nothing is desaturated. It is a *nice place*.
 
@@ -114,7 +114,7 @@ the game's whole argument, and it should be shown, never stated.
 ## 7. Surveillance hardware
 
 Every sensor type has an unmistakable silhouette, and they are *nice-looking
-consumer products* — rounded, white, friendly, Braun-ish. A SAFEtrace HOME porch
+consumer products* — rounded, white, friendly, Braun-ish. An UNDERWATCH HOME porch
 camera looks like something you would be glad to own. That is why nobody in
 Bellhaven objects to them, and it is why the player does not notice them for the
 first ten minutes.

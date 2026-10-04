@@ -228,7 +228,7 @@ lit, and only that lens — every camera used to light up whenever any one of
 them could see you). On the plan its cone turns amber and visibly swings off
 its sweep, and the noise itself ripples on the map. And it costs something
 to lean on: three noises within twenty-five metres inside fifty seconds is a
-pattern, and SAFEtrace sends a unit to stand exactly where it happened —
+pattern, and UNDERWATCH sends a unit to stand exactly where it happened —
 which is the place a player using noise as cover was about to go through. (Superseded by pass 38: the count rule became the disturbance ledger,
 where the third noise in a place is noticed and the fifth is a pattern. See
 [`38-stealth-manipulation-and-escalation.md`](38-stealth-manipulation-and-escalation.md).)

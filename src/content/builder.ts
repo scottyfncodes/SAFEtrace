@@ -152,7 +152,7 @@ export class TownBuilder {
 
   /**
    * A paved path. It exists physically and it is excellent to skate, but it is
-   * deliberately NOT on the road graph — so SAFEtrace's forecast cannot run
+   * deliberately NOT on the road graph — so UNDERWATCH's forecast cannot run
    * along it. The spaces the system did not model are the spaces you are free in.
    */
   path(pts: Vec2[], width = 3.4, surface: SurfaceKind = 'roughConcrete'): this {
@@ -307,7 +307,7 @@ export class TownBuilder {
   }
 
   speaker(pos: Vec2, label: string): NetworkNodeData {
-    return this.addNode('SPEAKER', pos, label, undefined, ['PUBLIC ADDRESS', 'SAFEtrace CITY']);
+    return this.addNode('SPEAKER', pos, label, undefined, ['PUBLIC ADDRESS', 'UNDERWATCH CITY']);
   }
 
   fence(a: Vec2, b: Vec2, height = 1.9): this {

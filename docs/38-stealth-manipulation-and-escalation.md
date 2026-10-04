@@ -125,11 +125,11 @@ draws it.
 - **Before VISION**, the plan now shows the cameras the player has *noticed*:
   any within 26 m with a clear line, and any that have had the player in view.
   They're drawn in warm ink, not the machine's cyan (this is the player's sketch,
-  not SAFEtrace's map), each with the arc it has been seen to swing through.
+  not UNDERWATCH's map), each with the arc it has been seen to swing through.
   A camera that has you right now is drawn hot, and a dead one is a grey cross.
   VISION doesn't change the questions, only how much of the machine's answer is
   on the page: every cone, plus `VIGILANCE n%` on a watchful camera, plus the
-  districts SAFEtrace itself has flagged, ringed and labelled.
+  districts UNDERWATCH itself has flagged, ringed and labelled.
 - **Put a pin down and it becomes a question.** The cameras a stone at the
   pin would turn are drawn again as white, dashed ghost cones facing the pin,
   so the gap they would leave in the route is visible. If there's a bin or a

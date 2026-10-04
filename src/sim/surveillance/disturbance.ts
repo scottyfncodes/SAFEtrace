@@ -6,7 +6,7 @@
  * clatters into a road, every bin that goes over, every camera that suddenly
  * points at a wall or goes dark, every node that fails an integrity check
  * leaves a little heat where it happened, whether or not anybody is ever
- * blamed for it. The heat fades. Enough of it in one area and SAFEtrace stops
+ * blamed for it. The heat fades. Enough of it in one area and UNDERWATCH stops
  * treating each event as an accident and starts treating the area as a
  * pattern.
  *

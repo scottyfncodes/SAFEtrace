@@ -1,19 +1,19 @@
-/* SAFETRACE interface system.
+/* UNDERWATCH interface system.
 
    Two registers share this sheet, and keeping them apart is the design:
 
-   - SAFEtrace's own voice (notifications, node records, the advertisement):
+   - UNDERWATCH's own voice (notifications, node records, the advertisement):
      teal on paper or on void, calm, tabular, never urgent. Nothing here is
      ever jittery or flashing — not even INTERVENTION, which slides in as
      gently as a weather update.
    - The player's own things (notes, buttons, the people who talk to you):
-     warm paper, pencil ink, and an amber that SAFEtrace never uses.
+     warm paper, pencil ink, and an amber that UNDERWATCH never uses.
 
    Every colour, radius, duration and type size below comes from the tokens
    in :root. A hard-coded value further down is a bug. */
 
 :root {
-  /* --- SAFEtrace accents (docs/39) -----------------------------------------
+  /* --- UNDERWATCH accents (docs/39) -----------------------------------------
          The company owns exactly three colours, and nothing in the player's
          world uses any of them: electric cyan for the system working, acid
          green for the system being sure, warning orange for the system paying
@@ -51,7 +51,7 @@
   --pencil-muted: #5B6670;         /* 5.3:1 on --paper */
   --pencil-faint: #8A949C;         /* decorative only */
 
-  /* --- the player's accent: amber, which SAFEtrace never uses ------------ */
+  /* --- the player's accent: amber, which UNDERWATCH never uses ------------ */
   --own: #F2C86B;                  /* on ink */
   --own-strong: #C58A1A;
   --own-ink: #8A5A0C;              /* on paper (5.4:1) */
@@ -134,9 +134,9 @@ button { font-family: inherit; }
 }
 .on-paper :focus-visible, .nb-sheet :focus-visible { --focus: var(--st-teal-ink); }
 
-/* The game's own name. Not SAFEtrace's wordmark — that one is lower-case
-   `trace`, in teal, and belongs to the company. This is the title of the
-   thing you are playing: SAFE set solid, TRACE set as a thin line, and a
+/* The game's own name. Not the company's wordmark in the advertisement —
+   that one is in teal, with a ™, and belongs to UNDERWATCH the product. This
+   is the title of the thing you are playing: UNDER set solid, WATCH set as a thin line, and a
    rule underneath that runs to a point — a record, and where it ends. */
 .st-title {
   display: inline-flex; flex-direction: column; gap: 7px;
@@ -340,7 +340,7 @@ kbd {
 #inspect .rec.held { color: var(--own); }
 
 /* ------------------------------------------------------------------ inspect
-   A node's own record, read at the node. SAFEtrace's register: void, teal,
+   A node's own record, read at the node. UNDERWATCH's register: void, teal,
    monospace — a document, not a dialog. */
 .node-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -574,7 +574,7 @@ html.reduce-motion #inspect.show::after { animation: none; }
 
 /* ------------------------------------------------------------- hud buttons
    Two small chips under the phone: the player's own notes, and a way to stop.
-   Paper, like the phone, because they are the player's — not SAFEtrace's. */
+   Paper, like the phone, because they are the player's — not UNDERWATCH's. */
 #hud-buttons { display: flex; flex-direction: row; gap: 8px; }
 .hud-button {
   pointer-events: auto; cursor: pointer;

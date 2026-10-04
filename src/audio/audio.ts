@@ -3,7 +3,7 @@
  *
  * The strategy in one line: establish a warm, trustworthy sound language in the
  * first ninety seconds, then never change it, and let context do all the work.
- * The SAFEtrace motif is identical in the advertisement and in the moment a
+ * The UNDERWATCH motif is identical in the advertisement and in the moment a
  * patrol is routed to intercept you. Only the player changes.
  */
 import type { Settings } from '../core/settings';
@@ -121,7 +121,7 @@ export class Audio {
 
   private buildMachineDrone(): void {
     const c = this.ctx!;
-    // Tuned to the same root as the SAFEtrace motif. The machine is in key
+    // Tuned to the same root as the UNDERWATCH motif. The machine is in key
     // with the advertisement, because it is the same company.
     for (const [f, g] of [[55, 0.35], [82.5, 0.18], [110, 0.12], [165, 0.05]] as Array<[number, number]>) {
       const o = c.createOscillator();
@@ -208,7 +208,7 @@ export class Audio {
   }
 
   /**
-   * The SAFEtrace motif. Three notes, a fifth then a major third, soft bell
+   * The UNDERWATCH motif. Three notes, a fifth then a major third, soft bell
    * attack. It is never altered, in the advertisement or in the last hour.
    */
   motif(strength = 1): void {
@@ -380,7 +380,7 @@ export class Audio {
   // ------------------------------------------------------------- the player's
 
   /*
-   * The player's own sounds. Everything SAFEtrace makes is a bell in A, and it
+   * The player's own sounds. Everything UNDERWATCH makes is a bell in A, and it
    * never changes. The notebook is a pencil and a guitar-ish pluck in E
    * minor: warmer, lower, a little out of step — a person, not a product.
    */

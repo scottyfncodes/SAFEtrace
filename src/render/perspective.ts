@@ -886,7 +886,7 @@ export class PerspectiveRenderer {
       ctx.fillStyle = alpha(PRINT.ink, mast ? 0.55 : 0.4);
       ctx.fillRect(x - (mast ? 1 : 0.6), base - ht, mast ? 2 : 1.2, ht);
       if (!mast) ctx.fillRect(x - 0.9 * deg, base - ht + 0.3 * deg, 1.8 * deg, 1);
-      // A relay mast carries SAFEtrace's light: one cyan point, the only
+      // A relay mast carries UNDERWATCH's light: one cyan point, the only
       // colour in the whole backdrop, and the system's own.
       if (mast) { ctx.fillStyle = TECH.cyan; ctx.fillRect(x - 1.5, base - ht - 1, 3, 3); }
     }
@@ -1413,7 +1413,7 @@ export class PerspectiveRenderer {
           this.card(cam, { x: lx, y: ly }, z, r, r, alpha(TECH.cyan, 0.45 * k));
           this.inkAs = wasInk;
         }
-        // At rest, a SAFEtrace lens shows one thin line of cyan under the
+        // At rest, an UNDERWATCH lens shows one thin line of cyan under the
         // housing: the product working, calmly, the way it is meant to look.
         for (const side of [1, -1]) {
           const f = this.push(cam, [
@@ -1430,7 +1430,7 @@ export class PerspectiveRenderer {
   }
 
   /**
-   * SAFEtrace's street cabinets: the junctions and service points a player
+   * UNDERWATCH's street cabinets: the junctions and service points a player
    * walks up to and reads. They are the nicest-made objects in the town on
    * purpose — hardware white, square-edged, a dark glass face, one band of
    * cyan that says it is working. The band goes orange when it has been
@@ -1452,7 +1452,7 @@ export class PerspectiveRenderer {
       this.boxAt(cam, t.at, t.rot, 0.44, 0.8, 1.34, 1.42, shade(TECH.white, -0.08));
       this.panel(cam, t.at, t.rot, 0.62, 0.5, 0.86, '#11181E', undefined, 0.26);
       this.panel(cam, t.at, t.rot, 0.66, 0.12, 1.16, TECH.white,
-        { str: 'SAFEtrace', colour: TECH.cyanInk, aspect: 5.5, weight: 600 }, 0.262);
+        { str: 'UNDERWATCH', colour: TECH.cyanInk, aspect: 5.5, weight: 600 }, 0.262);
     }
   }
 
@@ -1566,7 +1566,7 @@ export class PerspectiveRenderer {
       poleN++;
       if (!near(p.at, 130)) continue;
       /*
-       * SAFEtrace's plates go up on the poles as the system takes hold: a
+       * UNDERWATCH's plates go up on the poles as the system takes hold: a
        * white plate with the wordmark and one cyan band, at eye height,
        * first on one pole in ten and then on most of them. They come down
        * again as the town is cut loose. Nothing in the world data moves.
@@ -1576,7 +1576,7 @@ export class PerspectiveRenderer {
         const at = { x: p.at.x + nx * 0.16, y: p.at.y + ny * 0.16 };
         const inkBefore: Ink | null = this.inkAs;
         this.inkAs = Ink.Interactable;
-        this.panel(cam, at, p.rot + Math.PI / 2, 0.5, 0.7, 3.1, TECH.white, { str: 'SAFEtrace', colour: TECH.cyanInk, aspect: 0.71, weight: 600 }, 0.03);
+        this.panel(cam, at, p.rot + Math.PI / 2, 0.5, 0.7, 3.1, TECH.white, { str: 'UNDERWATCH', colour: TECH.cyanInk, aspect: 0.71, weight: 600 }, 0.03);
         this.inkAs = null;
         this.panel(cam, at, p.rot + Math.PI / 2, 0.5, 0.07, 2.73, TECH.cyan, undefined, 0.035);
         this.inkAs = inkBefore;
@@ -1789,7 +1789,7 @@ export class PerspectiveRenderer {
         this.personAt(cam, 'devon', sim.devonPos, DEVON, { tick, sun, gait: 'stand' });
       }
     }
-    // A drone is SAFEtrace's, and inked as something you can act on; its
+    // A drone is UNDERWATCH's, and inked as something you can act on; its
     // shadow is a flat card at ground height and gets no line at all.
     this.inkAs = Ink.Interactable;
     for (const d of sim.drones) {
@@ -2811,7 +2811,7 @@ const TUFT: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /*
- * A traffic cone is the town's, not SAFEtrace's, so it is a faded, dirty
+ * A traffic cone is the town's, not UNDERWATCH's, so it is a faded, dirty
  * orange: still a cone at a glance, never mistaken for warning orange.
  */
 const CONE = PRINT.cone;

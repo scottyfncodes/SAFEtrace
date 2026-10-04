@@ -25,7 +25,7 @@ the single best drone-blind route in the slice.
 
 ### Ridgeline Secondary — school
 Fenced field, bike racks, loading dock, and the best skateable bank in town on
-the gym's back wall. SAFEtrace SCHOOL runs here, which means the density of
+the gym's back wall. UNDERWATCH SCHOOL runs here, which means the density of
 sensors is highest around children, presented entirely as care.
 
 ### The Channel — drainage infrastructure
@@ -38,7 +38,7 @@ lesson: the machine's coverage follows its assumptions about where people go.
 Older, denser, further from the player. Referenced constantly before it is
 visited.
 
-### Relay 12 — SAFEtrace facility
+### Relay 12 — UNDERWATCH facility
 A fenced utility yard with the district uplink. Not a fortress; a beige box with
 a chain-link fence and one bored contractor. Its ordinariness is the point.
 
@@ -54,7 +54,7 @@ Districts are joined by more than roads:
 - **Rooftop and deck routes** — parking structure, school gym roof via the bank,
   low garage roofs on Maple Court. Slow, but overhead cover defeats drones.
 - **Backyards and fence gaps** — skate-only, awkward, and crucially *not on the
-  road graph*, which means SAFEtrace's prediction cannot forecast them.
+  road graph*, which means UNDERWATCH's prediction cannot forecast them.
 
 That last point is the world design's most important idea. **Prediction runs on
 the road graph. Freedom lives off it.** The town's layout is therefore a direct
@@ -71,7 +71,7 @@ Coverage is authored as a readable, learnable landscape, not scattered:
 - **Sparse**: alleys, the utility yard's back fence, construction site.
 - **Dark**: the Channel, backyards, under the parking decks, inside the culvert.
 
-Blind spots are never labelled. They are *discoverable*, and once SAFEtrace
+Blind spots are never labelled. They are *discoverable*, and once UNDERWATCH
 VISION exists they become legible all at once — which is the reward for the
 Act II unlock.
 

@@ -2,13 +2,13 @@
  * The diegetic HUD.
  *
  * Almost every element is a thing in the fiction: the risk score is the
- * SAFEtrace app's own Community Safety Score widget that every resident has.
+ * UNDERWATCH app's own Community Safety Score widget that every resident has.
  * There is no ammunition counter, because there is no ammunition — the
  * slingshot throws rocks, and the town is made of them.
  */
 import type { Sim } from '../sim/sim';
 import type { Settings } from '../core/settings';
-import type { MessagePriority, SafetraceMessage } from '../sim/events';
+import type { MessagePriority, UnderwatchMessage } from '../sim/events';
 import { VERBS, verbsFor, type HackVerb, type NetworkNode } from '../sim/surveillance/network';
 
 /*
@@ -70,7 +70,7 @@ export class Hud {
   /** Set by the host: the two buttons under the phone. */
   onButton: (which: 'notes' | 'menu') => void = () => {};
 
-  private queue: SafetraceMessage[] = [];
+  private queue: UnderwatchMessage[] = [];
   private live = new Set<HTMLElement>();
   /** When each headline was last put on the screen. */
   private recent = new Map<string, number>();
@@ -177,7 +177,7 @@ export class Hud {
     });
     this.inspect.addEventListener('pointerdown', (e) => e.stopPropagation());
 
-    sim.bus.on('safetrace:message', (m) => this.queue.push(m));
+    sim.bus.on('underwatch:message', (m) => this.queue.push(m));
     document.documentElement.style.setProperty('--text-scale', String(settings.textScale));
   }
 
@@ -257,7 +257,7 @@ export class Hud {
       this.prompts.style.opacity = String(1 - this.promptFade);
     }
 
-    // Aiming is one job. The phone stays — SAFEtrace does not stop watching
+    // Aiming is one job. The phone stays — UNDERWATCH does not stop watching
     // because you stood still — but nothing else competes with the reticle.
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
     // On a phone the hint and the toasts share the top of the glass; a toast
@@ -305,7 +305,7 @@ export class Hud {
     /*
      * The town gets louder as it gets more interested in you.
      *
-     * Before Devon is stopped, SAFEtrace is a pleasant utility that mentions
+     * Before Devon is stopped, UNDERWATCH is a pleasant utility that mentions
      * the weather; the player is learning to move and has no frame for a
      * segment or a node. So until VISION is unlocked the quiet tiers are
      * dropped and only what is actually happening gets through. Nothing is
@@ -357,7 +357,7 @@ export class Hud {
       el.className = `note ${m.register === 'SYSTEM' ? 'system' : 'care'} p-${m.priority}${m.emphasis === 'strong' ? ' strong' : ''}`;
       el.dataset.priority = m.priority;
       el.dataset.key = key;
-      const brand = m.register === 'SYSTEM' ? 'SAFEtrace CITY' : 'SAFEtrace CARE';
+      const brand = m.register === 'SYSTEM' ? 'UNDERWATCH CITY' : 'UNDERWATCH CARE';
       el.innerHTML =
         `<div class="brand"><span>${brand}</span><span>now</span></div>` +
         m.lines.map((l) => `<div class="line">${escapeHtml(l)}</div>`).join('');

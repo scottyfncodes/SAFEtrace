@@ -128,7 +128,7 @@ export class Menu {
       <div class="menu-card" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <div class="menu-head">
           <div>
-            <div class="st-title" aria-hidden="true"><div><b>SAFE</b><span>TRACE</span></div></div>
+            <div class="st-title" aria-hidden="true"><div><b>UNDER</b><span>WATCH</span></div></div>
             <div class="menu-title" id="menu-title">Paused</div>
             <div class="menu-sub">Bellhaven waits for you.</div>
           </div>
