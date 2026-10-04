@@ -1088,6 +1088,7 @@ export class Renderer {
         this.drawTrajectory(ctx, eye, sim.player.pos, sim.shotDraw(), 0.35 + sim.player.draw * 0.65);
       }
       this.drawHeldSling(ctx);
+      this.drawReticle(ctx);
       this.drawGrindable(ctx, eye, dt);
       this.drawMousePull(ctx);
       this.drawSkateHud(ctx);
@@ -1689,6 +1690,31 @@ export class Renderer {
     }
   }
   private sparkClock = 0;
+
+  /**
+   * The aimer, with the sling raised: fixed in the middle of the glass,
+   * because the camera is the aim. A ring with a gap at each quarter, and a
+   * dot; it tightens as the band is drawn.
+   */
+  private drawReticle(ctx: CanvasRenderingContext2D): void {
+    if (!this.chase.aiming || this.overlaysHidden) return;
+    const x = this.w / 2, y = this.h / 2;
+    const draw = this.sim.player.aiming ? this.sim.player.draw : 0;
+    const r = 18 - draw * 7;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const [col, w] of [[alpha(PRINT.ink, 0.55), 4], [draw > 0.95 ? VENEER.player : '#F6F4EE', 2]] as const) {
+      ctx.strokeStyle = col;
+      ctx.lineWidth = w;
+      for (let q = 0; q < 4; q++) {
+        const a0 = q * Math.PI / 2 + 0.25, a1 = (q + 1) * Math.PI / 2 - 0.25;
+        ctx.beginPath(); ctx.arc(x, y, r, a0, a1); ctx.stroke();
+      }
+    }
+    ctx.fillStyle = draw > 0.95 ? VENEER.player : '#F6F4EE';
+    ctx.beginPath(); ctx.arc(x, y, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;

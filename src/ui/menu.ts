@@ -33,7 +33,7 @@ const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
   ['TRICK', 'tap to flip the board, hold to grab it'],
   ['GRIND', 'press near a rail, ledge or bench: it pops you onto it. Ollie or TRICK to get off'],
-  ['SLING', 'press it, slide down to pull back, let go to throw'],
+  ['SLING', 'tap to raise it: drag to aim (the middle of the screen), hold THROW to draw, let go to throw, quick tap to lower'],
   ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];

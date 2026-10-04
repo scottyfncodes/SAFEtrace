@@ -967,10 +967,17 @@ class Game {
     const mouse = this.input.takeLook();
     if (this.sim.planViewActive) {
       if (look.x || look.y) this.renderer.cam.panBy(look.x, look.y);
+    } else if (this.touch.isSlingOut) {
+      // The sling raised: a drag is the aim, turning the rig and tilting it.
+      if (look.x) this.renderer.chase.swing(look.x * 0.0048);
+      if (look.y) this.renderer.chase.tilt(-look.y * 0.0036);
     } else {
       const swing = look.x * 0.0062 + (this.input.rightHeld ? mouse.x * 0.0045 : 0);
       if (swing) this.renderer.chase.swing(swing);
     }
+    // Over the shoulder while the sling is up; the plan puts it away.
+    if (this.sim.planViewActive && this.touch.isSlingOut) this.touch.setSlingOut(false);
+    this.renderer.chase.aimMode = this.touch.isSlingOut && !this.sim.aimMode;
 
     if (tap) this.resolveTap(tap);
     this.orientMove();

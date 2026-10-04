@@ -36,7 +36,7 @@ const TOUCH_STAGES: Array<{ until: number; html: string }> = [
   { until: 30, html: '<span>Left thumb: hold to roll, push to steer</span>' },
   { until: 110, html: '<span>TRICK: tap to flip, hold to grab</span>' },
   { until: 220, html: '<span>GRIND: press near a lit rail or ledge</span>' },
-  { until: Infinity, html: '<span>SLING: press, slide down, let go</span>' },
+  { until: Infinity, html: '<span>SLING: tap to raise · drag to aim · hold THROW</span>' },
 ];
 import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
