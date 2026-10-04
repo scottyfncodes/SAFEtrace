@@ -21,16 +21,38 @@ each other, and the art reads their difference:
 | **Grip** | the system's hold on the player *right now* | risk score (45%), escalation ladder (25%), scrutiny where they stand (20%), a lens on them now, units responding |
 | **Cut** | what the player has taken from the system *over the afternoon* | nodes looped, tampered or down (the big lever, 55%, on a square root so the first one counts most), cameras noticed (20%), clues written (20%), VISION (12%) |
 
-`control = grip − cut`, clamped to −1..1. Grip rises in a moment and falls
-back as the town forgets; cut only grows. So an afternoon of sabotage keeps
-the town lit even while the player is being chased through it, and a quiet
-player who has done nothing sees the town exactly as [40](40-the-inked-town.md)
-drew it.
+`control = START + grip − cut`, clamped to −1..1. Grip rises in a moment and
+falls back as the town forgets; cut only grows. So an afternoon of sabotage
+keeps the town lit even while the player is being chased through it.
 
-The renderer eases toward the value over about a second and a half, so a
-looped node *brightens* the street rather than switching it. Tests hold the
-direction of every input, the bounds, that a fresh afternoon is ordinary,
-and that reading the mood changes nothing in the simulation.
+### The town begins partially owned
+
+**The player's job is to peel ownership away.** A fresh afternoon starts at
+`START = 0.32`: the sky already a shade toward slate, SAFEtrace's plates on
+about a third of the poles, the lenses faintly glowing, a cold patch of light
+under each one. Not dark — there is somewhere for pressure to go — but
+plainly not the kid's town yet. The loop the numbers are set for is
+
+> **pressure → identify → sabotage → relief → deeper infiltration**
+
+- **Pressure**: being noticed raises grip, and the town closes in.
+- **Identify**: noticing cameras and writing clues lowers control a little,
+  steadily.
+- **Sabotage → relief**: the first node looped is the biggest single step
+  the player can take (the square root on sabotage makes the first one
+  count most). From a fresh afternoon it alone takes the town most of the
+  way back to ordinary: the plates come off most poles, the lens glow and
+  the cold patches fade, the sky lifts to paper.
+- **Deeper infiltration**: each further node is worth less than the first,
+  but understanding keeps compounding, and only a sustained run of both
+  takes the town past ordinary into lit.
+
+Relief is quick and pressure creeps: the renderer eases toward a *lower*
+control in about half a second and toward a *higher* one over nearly two,
+so a sabotage lands as a moment and being found out is a slow closing-in.
+Tests hold the start state, the size and order of the steps in that loop,
+the direction of every input, the bounds, and that reading the mood changes
+nothing in the simulation.
 
 ## 2. What darkens
 
@@ -40,17 +62,23 @@ against "simply desaturated 3D" applies to this pass more than any other.
 - **The page.** The paper goes down toward a cold slate; the ground past the
   modelled edge with it.
 - **The sky.** More rules, closer together, heavier and darker: a low lid.
-- **The system's own lines on the town.** A cyan wedge on the ground in
-  front of **every** working camera — the plan's coverage cones, leaking
-  into the street — orange for the one that has you. They come up past
-  control 0.3 and vanish the moment the town is cut loose.
+- **Watched ground is colder.** Every working camera throws a faint pool of
+  cold, paper-white light onto the ground in the direction it faces, the
+  way an infrared lamp under a housing lights a patch of pavement — faintly
+  warm for the one that has you. No edges, no outline, five soft rings for a
+  falloff: a player who looks learns to see which patches of street are
+  watched; one who doesn't only feels that the town is. (The first version
+  drew hard cyan wedges here, which read as UI; they are gone.)
 - **Every lens glows.** A soft cyan halo on each working camera: in the dark
   the cyan points are the first thing you see, and they are everywhere.
 - **SAFEtrace's plates go up on the poles.** A white plate with the wordmark
   and one cyan band at head height, first on one pole in ten and then on
   most of them, chosen by hash so they come up in a stable order.
-- **The lamps go out.** Windows that had somebody home go dark; curtains
-  closed.
+- **The town goes dark around the few who are home.** Most windows are
+  dark, but rooms with somebody in them and shops that are open hold their
+  light, and spill a soft pool of paper-white onto the ground in front —
+  never lamp-yellow, which is the player's hue. Few, low and soft: the town
+  should feel watched, not decorated.
 - **Hoods go up.** More residents walk with their hoods up and heads down.
 - **Shadows lengthen** — the same sun, later in the day.
 - **The birds leave.**
@@ -130,12 +158,20 @@ drainpipes and aerials, and the per-frame page), the same when owned, and
 5–10% more when lit (chalk and birds). Faces per frame rise by about 80 in
 the ordinary state and 100–180 at either end of the mood.
 
+Local light and the start state, measured alternately against the merged
+mood pass on the same machine (slower again that day): phone median 8.4–8.5 ms
+against 7.9–8.9 ms, and about 10% more at 4× throttle. About 130 more faces
+in the start state: the pools, the plates on a third of the poles, the lens
+glow.
+
+![Start, after the first node, owned](art/41/start-relief-owned.jpg)
+
 ## 7. Still to do
 
-- **The wash is global.** A lamp-lit window in an owned town is a dark
-  window; there is no local light. A later pass could let a few windows and
-  the lenses *cast* light on the ground in an owned town — the one place a
-  warm wash would mean something.
+- **Light is not occluded by people.** The pools are drawn on the ground
+  layer, so buildings in front of them hide them correctly, but a person
+  standing in one is not lit by it. A rim of light on a figure standing in a
+  pool would be the next step.
 - **Sound** does not know the mood. The audio layer reads the same bus; a
   lower, emptier mix in an owned town is the obvious pair to this.
 - **The plan view** is unchanged, and should probably not change: it is the

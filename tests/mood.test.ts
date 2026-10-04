@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NEUTRAL, moodFrom, moodOf, readMood } from '../src/render/mood';
+import { NEUTRAL, START, moodFrom, moodOf, readMood } from '../src/render/mood';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { Sim } from '../src/sim/sim';
 
@@ -10,19 +10,43 @@ import { Sim } from '../src/sim/sim';
  * is read from the simulation without touching it.
  */
 describe('the mood of the town', () => {
-  it('is ordinary when nothing has happened', () => {
+  it("begins partially owned: the town is the system's before the player does anything", () => {
     const m = moodFrom(NEUTRAL);
     expect(m.grip).toBe(0);
     expect(m.cut).toBe(0);
-    expect(m.control).toBe(0);
+    expect(m.control).toBe(START);
+    // Slightly owned, not dark: there is somewhere for pressure to go.
+    expect(START).toBeGreaterThan(0.2);
+    expect(START).toBeLessThan(0.45);
+  });
+
+  it('gives the first sabotage an immediate, outsized relief', () => {
+    // pressure -> identify -> sabotage -> relief -> deeper infiltration.
+    const pressure = moodFrom({ ...NEUTRAL, risk: 35, level: 'MONITORING', scrutiny: 0.3 });
+    const identified = moodFrom({ ...NEUTRAL, risk: 35, level: 'MONITORING', scrutiny: 0.3, sensorsKnown: 6, clues: 1 });
+    const sabotage = moodFrom({ ...NEUTRAL, risk: 35, level: 'MONITORING', scrutiny: 0.3, sensorsKnown: 6, clues: 1, nodesCut: 1 });
+    const deeper = moodFrom({ ...NEUTRAL, risk: 35, level: 'MONITORING', scrutiny: 0.3, sensorsKnown: 6, clues: 1, nodesCut: 3 });
+    expect(pressure.control).toBeGreaterThan(START);
+    expect(identified.control).toBeLessThan(pressure.control);
+    // The first node is the biggest single step the player can take...
+    const first = identified.control - sabotage.control;
+    expect(first).toBeGreaterThan(0.18);
+    expect(first).toBeGreaterThan(identified.control - moodFrom({ ...NEUTRAL, risk: 35, level: 'MONITORING', scrutiny: 0.3, sensorsKnown: 12, clues: 3 }).control);
+    // ...and from a fresh afternoon it alone takes the town most of the way back to ordinary.
+    expect(moodFrom({ ...NEUTRAL, nodesCut: 1 }).control).toBeLessThan(START * 0.4);
+    // Going deeper keeps peeling ownership away, with each node worth less than the first.
+    expect(deeper.control).toBeLessThan(sabotage.control);
+    expect(sabotage.control - deeper.control).toBeLessThan(first * 2);
   });
 
   it('darkens as the system takes hold', () => {
-    const risk = moodFrom({ ...NEUTRAL, risk: 60 }).control;
-    const ladder = moodFrom({ ...NEUTRAL, risk: 60, level: 'PATROL_DISPATCH' }).control;
-    const looked = moodFrom({ ...NEUTRAL, risk: 60, level: 'PATROL_DISPATCH', scrutiny: 0.8 }).control;
-    const seen = moodFrom({ ...NEUTRAL, risk: 60, level: 'PATROL_DISPATCH', scrutiny: 0.8, observed: true, unitsActing: 2 }).control;
-    expect(risk).toBeGreaterThan(0);
+    // Kept below the cap: the town starts partly owned, so there is less room.
+    const risk = moodFrom({ ...NEUTRAL, risk: 30 }).control;
+    const ladder = moodFrom({ ...NEUTRAL, risk: 30, level: 'PATROL_DISPATCH' }).control;
+    const looked = moodFrom({ ...NEUTRAL, risk: 30, level: 'PATROL_DISPATCH', scrutiny: 0.5 }).control;
+    const seen = moodFrom({ ...NEUTRAL, risk: 30, level: 'PATROL_DISPATCH', scrutiny: 0.5, observed: true, unitsActing: 1 }).control;
+    expect(seen).toBeLessThan(1);
+    expect(risk).toBeGreaterThan(START);
     expect(ladder).toBeGreaterThan(risk);
     expect(looked).toBeGreaterThan(ladder);
     expect(seen).toBeGreaterThan(looked);
@@ -54,16 +78,17 @@ describe('the mood of the town', () => {
 
   it('is louder for sabotage than for the same risk', () => {
     // Half the nodes looped outweighs a middling risk score: the town has
-    // visibly been taken from the system, and it should look it.
+    // visibly been taken from the system, and looks less owned than it did
+    // at the start of the afternoon even while the player is wanted.
     const m = moodFrom({ ...NEUTRAL, risk: 45, level: 'DRONE_DISPATCH', nodesCut: 5 });
-    expect(m.control).toBeLessThan(0);
+    expect(m.control).toBeLessThan(START);
   });
 
-  it('reads a fresh afternoon as ordinary, and reads without writing', () => {
+  it('reads a fresh afternoon as partly owned, and reads without writing', () => {
     const sim = new Sim(buildBellhaven());
     const before = JSON.stringify(readMood(sim));
     const m = moodOf(sim);
-    expect(Math.abs(m.control)).toBeLessThan(0.15);
+    expect(Math.abs(m.control - START)).toBeLessThan(0.12);
     expect(JSON.stringify(readMood(sim))).toBe(before);
     expect(sim.tick).toBe(0);
   });
