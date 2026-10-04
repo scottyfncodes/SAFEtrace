@@ -823,9 +823,12 @@ export class Renderer {
       ctx.fillStyle = alpha('#0B1117', 0.55 * a);
       const label = this.waypointLabel ? `${this.waypointLabel} · ${Math.round(d)} m` : `${Math.round(d)} m`;
       const wd = ctx.measureText(label).width + 10;
-      roundRect(ctx, x - sx * 26 - wd / 2, y - sy * 26 - 8, wd, 16, 8); ctx.fill();
+      // The label stays on the glass, whichever edge the arrow is on.
+      const lx = Math.max(this.safe.left + wd / 2 + 6, Math.min(this.w - this.safe.right - wd / 2 - 6, x - sx * 26));
+      const ly = y - sy * 26;
+      roundRect(ctx, lx - wd / 2, ly - 8, wd, 16, 8); ctx.fill();
       ctx.fillStyle = alpha('#F6F4EE', 0.95 * a);
-      ctx.fillText(label, x - sx * 26, y - sy * 26 + 4);
+      ctx.fillText(label, lx, ly + 4);
       ctx.translate(x, y);
       ctx.rotate(Math.atan2(sy, sx));
       ctx.fillStyle = alpha(VENEER.player, 0.9 * a);
