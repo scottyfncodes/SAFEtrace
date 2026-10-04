@@ -1,5 +1,9 @@
 # 11 — SAFEtrace™ Brand & UI System
 
+> The accent colour moved from teal to electric cyan, with acid green and
+> warning orange beside it — see [39](39-near-future-urban-noir.md) §3. The rest
+> of this document stands.
+
 ## 1. The brand must feel real
 
 If SAFEtrace looks like a video game evil corporation, the game does not work.

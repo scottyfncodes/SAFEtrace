@@ -13,10 +13,20 @@
    in :root. A hard-coded value further down is a bug. */
 
 :root {
-  /* --- SAFEtrace accent -------------------------------------------------- */
-  --st-teal: #2C8C8C;
-  --st-teal-bright: #4FE0C4;
-  --st-teal-ink: #1F6F6A;          /* teal that reads on paper (5.6:1) */
+  /* --- SAFEtrace accents (docs/39) -----------------------------------------
+         The company owns exactly three colours, and nothing in the player's
+         world uses any of them: electric cyan for the system working, acid
+         green for the system being sure, warning orange for the system paying
+         attention. The token names say "teal" for history; the values are
+         the cyan the brand moved to. */
+  --st-teal: #0B7F8E;
+  --st-teal-bright: #2FE3F2;
+  --st-teal-ink: #0A6C78;          /* cyan that reads on paper (5.8:1) */
+  --st-cyan-rgb: 47, 227, 242;
+  --st-cyan-ink-rgb: 11, 127, 142;
+  --st-acid: #B6F23A;              /* MATCH 98.7% — certainty */
+  --st-orange: #FF8B2B;            /* attention, never alarm */
+  --st-record: #9DB8BE;            /* the body text of a record */
 
   /* --- ink: the cool neutral the whole interface stands on --------------- */
   --ink-void: #070B10;
@@ -50,8 +60,9 @@
   /* --- semantic states. Never the only signal: each is paired with a
          shape, a word, or a weight wherever it is used. -------------------- */
   --ok: var(--st-teal-bright);
-  --warn: #E8A33D;
-  --risk: #FF5C47;
+  --warn: var(--st-orange);
+  --risk: #FF4A3D;
+  --risk-rgb: 255, 74, 61;
   --risk-ink: #B23A2C;             /* risk on paper (5.2:1) */
 
   /* Kept for anything outside this sheet that still names them. */
@@ -169,9 +180,9 @@ button { font-family: inherit; }
 .btn.quiet, .menu-card button.quiet { border-color: transparent; color: var(--ink-muted); }
 .btn.quiet:hover, .menu-card button.quiet:hover { color: var(--ink-text); background: rgba(231, 237, 242, 0.05); border-color: var(--ink-line); }
 .btn.danger, .menu-card button.danger {
-  border-color: rgba(255, 92, 71, 0.6); color: #FFC2B8; background: rgba(255, 92, 71, 0.08);
+  border-color: rgba(var(--risk-rgb), 0.6); color: #FFC2B8; background: rgba(var(--risk-rgb), 0.08);
 }
-.btn.danger:hover, .menu-card button.danger:hover { background: rgba(255, 92, 71, 0.16); border-color: var(--risk); }
+.btn.danger:hover, .menu-card button.danger:hover { background: rgba(var(--risk-rgb), 0.16); border-color: var(--risk); }
 .btn:disabled { opacity: 0.4; cursor: default; transform: none; }
 
 /* Key caps. */
@@ -334,7 +345,7 @@ kbd {
 .node-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-bottom: 8px; padding-bottom: 8px;
-  border-bottom: 1px solid rgba(79, 224, 196, 0.16);
+  border-bottom: 1px solid rgba(var(--st-cyan-rgb), 0.16);
 }
 .node-kind {
   font-family: var(--font-sans);
@@ -353,7 +364,7 @@ kbd {
   background: rgba(8, 15, 21, 0.92);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(79, 224, 196, 0.30);
+  border: 1px solid rgba(var(--st-cyan-rgb), 0.30);
   border-radius: var(--r-md); padding: 12px 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
   color: #DCEFEA;
@@ -364,9 +375,21 @@ kbd {
   transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease);
 }
 #inspect.show { opacity: 1; transform: translateY(0); }
+/* One scan line passes down a record as it opens, once: the system reading
+   the thing for you. Never looped, and gone entirely with reduced motion. */
+#inspect::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--st-teal-bright) 30%, var(--st-teal-bright) 70%, transparent);
+  opacity: 0; pointer-events: none;
+}
+#inspect.show::after { animation: st-scan 760ms var(--ease) 1; }
+@keyframes st-scan { 0% { top: 0; opacity: 0.85; } 100% { top: 100%; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #inspect.show::after { animation: none; } }
+html.reduce-motion #inspect.show::after { animation: none; }
 #inspect .node-id { color: var(--st-teal-bright); font-size: calc(13px * var(--text-scale)); font-weight: 500; letter-spacing: 0.08em; }
-#inspect .rec { color: #93B3AE; }
+#inspect .rec { color: var(--st-record); }
 /* The line the case turns on: the same document, in a hand you can read. */
+#inspect .rec .pct { color: var(--st-acid); font-weight: 600; }
 #inspect .rec.key {
   color: #EEF8F5; font-size: calc(12.5px * var(--text-scale)); font-weight: 600; letter-spacing: 0.02em;
   border-left: 2px solid var(--st-teal-bright); padding-left: 8px; margin: 2px 0 2px -10px;
@@ -374,11 +397,11 @@ kbd {
 #inspect .verbs { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 #inspect .verb {
   font-family: var(--font-mono);
-  border: 1px solid rgba(79,224,196,0.4); border-radius: var(--r-xs);
+  border: 1px solid rgba(var(--st-cyan-rgb), 0.4); border-radius: var(--r-xs);
   padding: 2px 8px; font-size: calc(9.5px * var(--text-scale)); color: var(--st-teal-bright);
   transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-#inspect .verb:hover { background: rgba(79, 224, 196, 0.12); border-color: var(--st-teal-bright); }
+#inspect .verb:hover { background: rgba(var(--st-cyan-rgb), 0.12); border-color: var(--st-teal-bright); }
 /* A verb with a trace line under it stacks the two. */
 #inspect .verb[data-verb] { flex-direction: column; justify-content: center; line-height: 1.15; }
 #inspect .verb .trace {
@@ -501,7 +524,7 @@ kbd {
   position: fixed; inset: 0; z-index: 30; display: flex;
   align-items: center; justify-content: center;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(44, 140, 140, 0.10), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(var(--st-cyan-ink-rgb), 0.10), transparent 70%),
     var(--ink-bg);
   transition: opacity 500ms var(--ease);
   padding: 24px;
@@ -678,7 +701,7 @@ kbd {
   width: min(760px, 94vw); height: min(680px, 88vh);
   display: flex; flex-direction: column;
   background:
-    linear-gradient(rgba(44, 140, 140, 0.065) 1px, transparent 1px) 0 0 / 100% 24px,
+    linear-gradient(rgba(var(--st-cyan-ink-rgb), 0.065) 1px, transparent 1px) 0 0 / 100% 24px,
     var(--paper);
   color: var(--pencil); border-radius: var(--r-lg); overflow: hidden;
   box-shadow: var(--shadow-sheet);

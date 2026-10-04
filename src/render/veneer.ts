@@ -410,7 +410,7 @@ export class VeneerRenderer {
       ctx.fillStyle = offline ? '#8A8F93' : '#F4F2EC';
       roundRect(ctx, -0.42 * z, -0.34 * z, 1.05 * z, 0.68 * z, 0.3 * z);
       ctx.fill();
-      ctx.fillStyle = offline ? '#4A4E52' : (s.state === 'LOOPED' ? '#2C8C8C' : '#2A3138');
+      ctx.fillStyle = offline ? '#4A4E52' : (s.state === 'LOOPED' ? VENEER.accent : '#2A3138');
       ctx.beginPath(); ctx.arc(0.42 * z, 0, 0.22 * z, 0, Math.PI * 2); ctx.fill();
       if (!offline) {
         ctx.fillStyle = alpha(VENEER.accent, 0.9);

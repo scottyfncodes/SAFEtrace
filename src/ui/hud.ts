@@ -481,7 +481,11 @@ export class Hud {
    */
   private recordsOf(node: NetworkNode): string {
     return resolveRecords(node.records, this.sim.recordContext())
-      .map((r) => `<div class="rec${KEY_RECORD.test(r) ? ' key' : ''}">${escapeHtml(r)}</div>`).join('');
+      // A percentage is the system being sure of something, and is set in the
+      // colour it keeps for that: 98.7% should look like a fact.
+      .map((r) => `<div class="rec${KEY_RECORD.test(r) ? ' key' : ''}">${
+        escapeHtml(r).replace(/\d+(\.\d+)?%/g, (m) => `<span class="pct">${m}</span>`)
+      }</div>`).join('');
   }
 
   private updateDebug(): void {

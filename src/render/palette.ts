@@ -1,33 +1,85 @@
 /**
- * Three colour systems.
+ * Three colour systems — near-future urban noir (docs/39).
  *
- * The veneer is warm and saturated because Bellhaven is a nice place; the
- * horror is structural, not chromatic. The machine is cold, luminous and
- * deliberately beautiful — the system is not presented as evil, it is presented
- * as elegant, which is worse.
+ * The veneer is the town as it is: concrete, asphalt, faded paint, weathered
+ * brick, a sky that is mostly cloud. Muted, textured, human, slightly worn. It
+ * is still a place you would want to skate; it is no longer a brochure.
+ *
+ * The machine is the opposite on purpose: clean, sharp, precise, and
+ * attractive. Electric cyan, acid green, warning orange — and nothing else.
+ * The system is not presented as evil, it is presented as trustworthy, which
+ * is worse. The contrast between the two is the game's premise in one image:
+ * a messy, ambiguous world, and a system that is extremely confident about it.
+ *
+ * The people on screen are the exception to the muting. The rider, Devon and
+ * the uniform keep their full colour, because telling them apart at a glance
+ * is gameplay (tests/legibility.test.ts), and because in a grey city a person
+ * is the warmest thing in the frame.
  */
 
+/**
+ * SAFEtrace's own accents. Everything the company makes, says or draws uses
+ * these and only these, and nothing in the physical town does.
+ */
+export const TECH = {
+  /** Electric cyan: the system at rest, working, reassuring. */
+  cyan: '#2FE3F2',
+  /** The same cyan, deep enough to print on a white sign or a pale wall. */
+  cyanInk: '#0B7F8E',
+  /** Acid green: a match, a forecast, a confident conclusion. */
+  acid: '#B6F23A',
+  /** Warning orange: attention, never alarm. */
+  orange: '#FF8B2B',
+  /** Hardware white: the housing of everything SAFEtrace installs. */
+  white: '#EEF2F3',
+};
+
+/**
+ * Wear a colour down into the town.
+ *
+ * Building paint comes from content, authored when Bellhaven was a pastel
+ * suburb. Rather than re-author every wall, the renderer weathers it on the
+ * way to the glass: most of the saturation goes, it darkens a little, and it
+ * drifts toward the concrete everything here is really made of. Different
+ * houses still read as different houses; none of them reads as new.
+ */
+export function weather(c: string, amount = 1): string {
+  const [r, g, b] = hex(c);
+  const grey = r * 0.3 + g * 0.55 + b * 0.15;
+  const keep = 1 - 0.55 * amount;           // saturation that survives
+  const dark = 1 - 0.16 * amount;           // and the grime on top of it
+  const tint = [150, 148, 140];             // weathered concrete
+  const k = 0.12 * amount;
+  const ch = (v: number, t: number) => Math.round(((grey + (v - grey) * keep) * dark) * (1 - k) + t * k);
+  return `rgb(${ch(r, tint[0])},${ch(g, tint[1])},${ch(b, tint[2])})`;
+}
+
 export const VENEER = {
-  void: '#DCE9F2',
-  asphalt: '#6E7A85',
-  asphaltEdge: '#5B6771',
-  smoothConcrete: '#C3C7C4',
-  roughConcrete: '#C9C4B8',
-  tile: '#D6CFC2',
-  grass: '#8FB369',
-  grassDark: '#7CA25C',
-  gravel: '#A9A294',
-  dirt: '#B29A78',
-  water: '#7FB2C4',
-  shadow: 'rgba(58,76,107,0.24)',
-  shadowSoft: 'rgba(58,76,107,0.13)',
-  wallWarm: '#F0E3D0',
-  wallCool: '#DCE4E8',
-  roofTerracotta: '#C4714E',
-  roofSlate: '#56626E',
-  line: 'rgba(40,52,66,0.30)',
-  roadMark: 'rgba(246,242,230,0.55)',
-  accent: '#2C8C8C',
+  void: '#C3C9CC',
+  asphalt: '#4D545A',
+  asphaltEdge: '#40464C',
+  smoothConcrete: '#A3A49F',
+  roughConcrete: '#99958B',
+  tile: '#A89E90',
+  grass: '#6C7754',
+  grassDark: '#5C6648',
+  gravel: '#8A8478',
+  dirt: '#7F6C55',
+  water: '#5A7880',
+  shadow: 'rgba(22,28,38,0.30)',
+  shadowSoft: 'rgba(22,28,38,0.16)',
+  wallWarm: '#B9AD9C',
+  wallCool: '#A6ADB0',
+  roofTerracotta: '#80574A',
+  roofSlate: '#3E454C',
+  line: 'rgba(20,24,30,0.36)',
+  roadMark: 'rgba(222,216,196,0.42)',
+  accent: TECH.cyanInk,
+  /**
+   * The town's and the player's amber — the flow ring, a stone's ripple, the
+   * ammo cache. Not SAFEtrace's warning orange, which nothing outside the
+   * system may wear.
+   */
   warning: '#E8A33D',
   player: '#E8563F',
   /*
@@ -44,7 +96,7 @@ export const VENEER = {
    * the one hue nothing else in a person's silhouette uses.
    */
   friend: '#5FBF52',
-  tree: '#5E8A54',
+  tree: '#4A5B44',
   /*
    * People, and telling them apart.
    *
@@ -59,9 +111,12 @@ export const VENEER = {
    * life of the session. None of them is the uniform.
    */
   civilian: [
-    '#B4705A', '#7E9B6A', '#C9A15B', '#8C7BA6',
-    '#5E9AA8', '#B98FA0', '#9A9382', '#6E7A88',
+    '#A8624C', '#73905E', '#C29548', '#806FA0',
+    '#4F8E9E', '#A87E90', '#8F8775', '#B5523F',
   ],
+  /** Hair, and the ink line every figure is drawn with: graphic-novel, not photo. */
+  hair: ['#1E1A17', '#3A2A20', '#5A3E28', '#8A6A44', '#C9B79A', '#2B2B33'],
+  ink: '#14181D',
   /** The uniform: darker and bluer than anything a resident wears. */
   uniform: '#28374D',
   uniformDark: '#1A2432',
@@ -69,26 +124,28 @@ export const VENEER = {
   responding: '#E8A33D',
   intervening: '#FF5C47',
   skin: '#F2D3B8',
-  treeLight: '#7BA766',
-  glass: 'rgba(180,214,232,0.85)',
+  treeLight: '#5F7150',
+  glass: 'rgba(118,146,160,0.85)',
 };
 
 export const MACHINE = {
-  void: '#060B12',
-  surface: '#0C1A26',
-  surfaceAlt: '#13293A',
-  structure: '#2A5D6E',
-  structureBright: '#3F8798',
-  data: '#4FE0C4',
-  identity: '#F2F5F7',
-  coverage: 'rgba(44,140,140,0.16)',
-  coverageEdge: 'rgba(79,224,196,0.45)',
-  prediction: '#7B6BFF',
-  edge: 'rgba(63,135,152,0.42)',
-  riskLow: '#4FE0C4',
-  riskMid: '#E8C33D',
-  riskHigh: '#FF5C47',
-  grid: 'rgba(52,110,128,0.30)',
+  void: '#05090D',
+  surface: '#0A161E',
+  surfaceAlt: '#10252F',
+  structure: '#1E5A66',
+  structureBright: '#3790A0',
+  data: TECH.cyan,
+  identity: '#F2F7F9',
+  /** A conclusion the system is sure of: MATCH, CONFIDENCE, the forecast line. */
+  confirm: TECH.acid,
+  coverage: 'rgba(47,227,242,0.12)',
+  coverageEdge: 'rgba(47,227,242,0.45)',
+  prediction: TECH.acid,
+  edge: 'rgba(55,144,160,0.42)',
+  riskLow: TECH.cyan,
+  riskMid: TECH.orange,
+  riskHigh: '#FF4A3D',
+  grid: 'rgba(46,110,124,0.28)',
 };
 
 /** Colour-blind-safe variant: risk is carried by lightness as well as hue. */
@@ -97,7 +154,8 @@ export const MACHINE_SAFE = {
   riskLow: '#8FD9FF',
   riskMid: '#FFD98F',
   riskHigh: '#FFFFFF',
-  prediction: '#B7A8FF',
+  prediction: '#DDF7A8',
+  confirm: '#DDF7A8',
 };
 
 export function riskColour(risk: number, safe = false): string {

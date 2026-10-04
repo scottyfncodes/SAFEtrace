@@ -1,5 +1,9 @@
 # 10 — Art Direction
 
+> **Superseded in part by [39 — Near-Future Urban Noir](39-near-future-urban-noir.md):**
+> the light (§3), the palette (§4) and the character notes (§6). The peel (§5)
+> and the surveillance hardware (§7) stand.
+
 ## 1. The problem the art must solve
 
 Two truths on screen at once: *this is a lovely place to be a kid* and *this is
