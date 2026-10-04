@@ -315,7 +315,7 @@ export class MachineRenderer {
       ];
       if (held) lines.push(`PREDICTIVE RISK ${Math.round(t.risk.total)}%`);
       if (t.attributionConfidence > 0.5) lines.push(`MATCH ${(t.attributionConfidence * 100).toFixed(1)}%`);
-      this.label(ctx, { x: c.x + r, y: c.y - r }, lines, col, 0.68);
+      this.label(ctx, { x: c.x + r, y: c.y - r }, lines, col, 0.68, m.confirm);
     }
   }
 
@@ -383,7 +383,7 @@ export class MachineRenderer {
       'FORECAST — 15 S',
       `CONFIDENCE ${Math.round(t.predictionConfidence * 100)}%`,
       `ANOMALY ${Math.round(t.predictionError * 100)}%`,
-    ], m.prediction, 0.68);
+    ], m.prediction, 0.68, m.confirm);
   }
 
   /** Evidence, and the disc SAFEtrace is searching inside. */
@@ -436,8 +436,15 @@ export class MachineRenderer {
   }
 
   /** A world-space annotation with a leader line. Not screen furniture. */
+  /**
+   * A label, as an institutional system would set one: a hairline leader, a
+   * quiet plate behind the type, and the number that matters in the colour
+   * the system reserves for being sure of itself. The plate is what makes it
+   * read as a record rather than a game's floating text.
+   */
   private label(
     ctx: CanvasRenderingContext2D, at: Vec2, lines: string[], colour: string, scale = 1,
+    confirm: string = MACHINE.confirm,
   ): void {
     const size = Math.round(9 * scale + 2);
     ctx.font = `${size}px ui-monospace, "SF Mono", Menlo, monospace`;
@@ -453,8 +460,19 @@ export class MachineRenderer {
     ctx.lineTo(x, y + lines.length * (size + 2));
     ctx.stroke();
 
-    ctx.fillStyle = colour;
+    let wide = 0;
+    for (const l of lines) wide = Math.max(wide, ctx.measureText(l).width);
+    const ph = lines.length * (size + 2) + 3;
+    ctx.fillStyle = alpha(MACHINE.void, 0.62);
+    ctx.fillRect(x, y - 2, wide + 7, ph);
+    // A hairline along the top of the plate: the record's edge.
+    ctx.fillStyle = alpha(colour, 0.85);
+    ctx.fillRect(x, y - 2, Math.min(wide + 7, 18), 1);
+
     for (let i = 0; i < lines.length; i++) {
+      // A confident conclusion is set apart: MATCH 98.7%, CONFIDENCE 91%.
+      const sure = /^(MATCH|CONFIDENCE) /.test(lines[i]);
+      ctx.fillStyle = sure ? confirm : colour;
       ctx.fillText(lines[i], x + 3, y + i * (size + 2));
     }
   }

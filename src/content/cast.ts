@@ -56,7 +56,7 @@ export function authorCast(b: TownBuilder): void {
   b.sceneProp('sp-window-case', 'poster', pt(420, 48.25), { rot: 90, w: 3.6, z: 1.5, tint: '#FFFFFF', text: 'NOT A MATCH', visible: false });
   b.place('p-window-case', pt(420, 50.6), 'Shop window', { reach: 3.0, visible: false, sceneProp: 'sp-window-case' });
   // The drop-in, advertised from the first frame of play.
-  b.sceneProp('sp-dropin', 'poster', pt(244, 130.3), { rot: 90, w: 1.4, z: 1.55, tint: '#2C8C8C', text: 'DROP-IN' });
+  b.sceneProp('sp-dropin', 'poster', pt(244, 130.3), { rot: 90, w: 1.4, z: 1.55, tint: '#0B7F8E', text: 'DROP-IN' });
   b.place('p-dropin', pt(244, 132.6), 'Poster', { reach: 2.8, sceneProp: 'sp-dropin' });
   // The community centre's noticeboard: years of the town, one leaflet on top.
   b.sceneProp('sp-noticeboard', 'notice', pt(264, 130.3), { rot: 90, w: 1.2, z: 1.4, tint: '#E9E2D2', text: 'NOTICES' });

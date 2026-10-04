@@ -167,14 +167,14 @@ html.touch #inspect .verb {
   padding: 0 14px;
   border-radius: 8px;
   font-size: calc(11.5px * var(--text-scale));
-  background: rgba(79, 224, 196, 0.08);
+  background: rgba(var(--st-cyan-rgb), 0.08);
 }
-html.touch #inspect .verb:active { background: rgba(79, 224, 196, 0.22); }
+html.touch #inspect .verb:active { background: rgba(var(--st-cyan-rgb), 0.22); }
 #inspect .verbs { gap: 8px; }
 #inspect .traced {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   margin-top: 8px; padding-top: 8px;
-  border-top: 1px solid rgba(79, 224, 196, 0.18);
+  border-top: 1px solid rgba(var(--st-cyan-rgb), 0.18);
 }
 #inspect .verb.node { border-color: rgba(242, 245, 247, 0.35); color: #E8EFF2; }
 html.touch #inspect .verb.node { background: rgba(242, 245, 247, 0.07); }

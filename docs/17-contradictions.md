@@ -141,6 +141,26 @@ thesis. Skating well is *how you become unpredictable*.
 
 ---
 
+### 11. "Nothing is desaturated, it is a nice place" vs. near-future urban noir
+
+*Added after the original ten, when the art direction was restated.*
+
+**Conflict.** [10](10-art-direction.md) §4 made the town warm, saturated and
+suburban so that the horror would be structural, not chromatic. The restated
+direction ([39](39-near-future-urban-noir.md)) asks for a muted, worn,
+believable city, with the system as the only clean and precise thing in it.
+
+**Resolution.** The town goes muted, and the original reasoning survives
+intact, because it was never really about saturation: it was that the town
+must not look sinister. A worn, overcast, lived-in street is not sinister —
+it is human. What carries the argument now is the contrast: the system is the
+one exact, beautiful thing in a messy frame, which makes its confidence look
+earned. The people stay in full colour, so the town is still a place where
+people live, and the cameras still look like something you would be glad to
+own.
+
+---
+
 ## Standing principle used for all ten
 
 Where a requirement about implementation collided with a requirement about

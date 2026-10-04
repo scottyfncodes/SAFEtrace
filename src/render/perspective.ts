@@ -24,8 +24,17 @@ import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/mat
 import { hashString } from '../core/rng';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
-import type { Building, Prop } from '../sim/worldTypes';
-import { SURFACE_COLOUR, VENEER, alpha, shade } from './palette';
+import type { Building, Prop, WorldData } from '../sim/worldTypes';
+import { SURFACE_COLOUR, TECH, VENEER, alpha, mix, shade, weather } from './palette';
+
+/** The sky over Bellhaven, and the ground that runs out to it. */
+const SKY = {
+  top: '#5C6873',
+  mid: '#96A0A6',
+  horizon: '#C8B99C',
+  haze: '#A7AFB3',
+  ground: '#5E654E',
+};
 
 /** Eye height of a teenager standing on a board. */
 export const EYE_Z = 1.62;
@@ -543,10 +552,13 @@ export class PerspectiveRenderer {
     this.collectShadows(sim, cam);
     this.collectBuildings(sim, cam);
     this.collectSensors(sim, cam);
+    this.collectTerminals(sim, cam);
     this.collectSceneProps(sim, cam);
     this.collectActors(sim, cam);
     this.slingHands = null;
+    this.inking = true;
     if (!firstPerson) this.collectRider(sim, cam);
+    this.inking = false;
 
     this.faces.sort((a, b) => {
       if (a.layer !== b.layer) return a.layer - b.layer;
@@ -621,23 +633,24 @@ export class PerspectiveRenderer {
   private drawMiniatureHaze(ctx: CanvasRenderingContext2D, cam: Cam): void {
     const band = cam.h * 0.3;
     const g = ctx.createLinearGradient(0, 0, 0, band);
-    g.addColorStop(0, alpha('#C4D6E4', 0.62));
-    g.addColorStop(0.45, alpha('#C4D6E4', 0.2));
-    g.addColorStop(1, alpha('#C4D6E4', 0));
+    g.addColorStop(0, alpha(SKY.haze, 0.6));
+    g.addColorStop(0.45, alpha(SKY.haze, 0.18));
+    g.addColorStop(1, alpha(SKY.haze, 0));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cam.w, band);
   }
 
   private drawSkyAndGround(ctx: CanvasRenderingContext2D, cam: Cam): void {
     const horizon = cam.h / 2 + Math.tan(cam.pitch) * cam.f;
-    // Four in the afternoon: blue overhead, warming toward the horizon.
+    // Late afternoon under cloud: slate overhead, and a band of low, dirty
+    // light along the horizon where the sun is getting under the overcast.
     const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
-    sky.addColorStop(0, '#A9CDE8');
-    sky.addColorStop(0.7, '#D9E6EE');
-    sky.addColorStop(1, '#F1E6D2');
+    sky.addColorStop(0, SKY.top);
+    sky.addColorStop(0.62, SKY.mid);
+    sky.addColorStop(1, SKY.horizon);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, cam.w, Math.max(0, horizon));
-    ctx.fillStyle = VENEER.grass;
+    ctx.fillStyle = SKY.ground;
     ctx.fillRect(0, Math.max(0, horizon), cam.w, cam.h - Math.max(0, horizon));
     const haze = ctx.createLinearGradient(0, horizon - 26, 0, horizon + 34);
     haze.addColorStop(0, alpha(VENEER.void, 0));
@@ -663,7 +676,14 @@ export class PerspectiveRenderer {
     if (minZ > FAR) return;
     const clipped = clipNear(pts);
     if (clipped.length < 3) return;
-    this.faces.push({ pts: clipped, depth: sum / world.length, layer, order, fill, stroke, wide });
+    const depth = sum / world.length;
+    if (this.inking && !stroke && layer !== Layer.Ground) {
+      // An ink line, thinner with distance so a far figure stays a figure
+      // and does not become a black dot.
+      stroke = alpha(VENEER.ink, clamp(1 - depth / 120, 0.35, 0.9));
+      wide = clamp(1.6 - depth / 45, 0.6, 1.5);
+    }
+    this.faces.push({ pts: clipped, depth, layer, order, fill, stroke, wide });
   }
 
   /** A vertical panel in a wall's plane, facing along `rot`, optionally printed on. */
@@ -741,7 +761,7 @@ export class PerspectiveRenderer {
           break;
         case 'notice':
           this.panel(cam, sp.pos, sp.rot, sp.w, sp.w * 0.7, sp.z, sp.tint,
-            sp.text ? { str: sp.text, colour: '#2C8C8C', aspect: 1.43 } : undefined);
+            sp.text ? { str: sp.text, colour: TECH.cyanInk, aspect: 1.43 } : undefined);
           break;
         case 'graffiti':
           this.panel(cam, sp.pos, sp.rot, sp.w, 0.9, sp.z, alpha(sp.tint, 0.18),
@@ -823,7 +843,7 @@ export class PerspectiveRenderer {
       this.push(cam, [
         { x: a.x, y: a.y, z: 0 }, { x: c.x, y: c.y, z: 0 },
         { x: c.x, y: c.y, z: eave }, { x: a.x, y: a.y, z: eave },
-      ], shade(b.wall, (facing < 0 ? 0.02 : -0.12) + lit * 0.06 - 0.04), alpha('#2E3944', 0.16));
+      ], shade(dr.wall, (facing < 0 ? 0.02 : -0.12) + lit * 0.06 - 0.04), alpha(VENEER.ink, 0.22));
       const face = this.faces[before];
       const decals = detail ? dr.walls[j] : undefined;
       if (face && decals && decals.length) {
@@ -838,12 +858,14 @@ export class PerspectiveRenderer {
       const r = dr.ridge;
       // Two slopes and two gable ends. The gables are wall-coloured, the
       // slopes are the roof, and the slope facing the sun is the lighter one.
-      this.push(cam, [r.a0, r.a1, r.top1, r.top0], shade(b.roof, 0.04), alpha('#2E3944', 0.14));
-      this.push(cam, [r.b1, r.b0, r.top0, r.top1], shade(b.roof, -0.12), alpha('#2E3944', 0.14));
-      this.push(cam, [r.a0, r.b0, r.top0], shade(b.wall, -0.06), alpha('#2E3944', 0.12));
-      this.push(cam, [r.b1, r.a1, r.top1], shade(b.wall, -0.06), alpha('#2E3944', 0.12));
+      this.push(cam, [r.a0, r.a1, r.top1, r.top0], shade(dr.roof, 0.04), alpha(VENEER.ink, 0.2));
+      this.push(cam, [r.b1, r.b0, r.top0, r.top1], shade(dr.roof, -0.12), alpha(VENEER.ink, 0.2));
+      this.push(cam, [r.a0, r.b0, r.top0], shade(dr.wall, -0.06), alpha(VENEER.ink, 0.18));
+      this.push(cam, [r.b1, r.a1, r.top1], shade(dr.wall, -0.06), alpha(VENEER.ink, 0.18));
     } else {
-      this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), b.roof, alpha('#2E3944', 0.14));
+      this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), dr.roof, alpha(VENEER.ink, 0.2));
+      // A flat roof is where the plant goes: a parapet line and a unit or two.
+      for (const u of dr.plant) this.boxAt(cam, u.at, u.rot, u.w, u.d, eave, eave + u.h, '#6E7275');
     }
   }
 
@@ -857,7 +879,7 @@ export class PerspectiveRenderer {
    */
   private collectShadows(sim: Sim, cam: Cam): void {
     const sun = sim.sun;
-    const fill = alpha('#34465C', 0.17);
+    const fill = alpha('#161C26', 0.22);
     for (const b of sim.world.data.buildings) {
       if (b.height < 1.2) continue;
       const c = b.poly[0];
@@ -907,7 +929,7 @@ export class PerspectiveRenderer {
       const fx = Math.cos(face), fy = Math.sin(face);
       const rx = -fy, ry = fx;
       const live = s.state === 'ONLINE' || s.state === 'DEGRADED';
-      const body = live ? '#F2EFE7' : '#9AA3A9';
+      const body = live ? TECH.white : '#8E979C';
       const z = d.height;
 
       // Bracket: a short arm from the wall out to the housing.
@@ -957,7 +979,43 @@ export class PerspectiveRenderer {
         // Bigger than the lens itself: a status light is meant to be seen.
         const r = Math.min(0.9, 0.3 + dist * 0.006);
         this.card(cam, { x: lx, y: ly }, z, r, r, alpha(watching ? VENEER.player : '#F2B441', 0.45));
+      } else if (live) {
+        // At rest, a SAFEtrace lens shows one thin line of cyan under the
+        // housing: the product working, calmly, the way it is meant to look.
+        for (const side of [1, -1]) {
+          this.push(cam, [
+            { x: hx - fx * 0.3 + rx * 0.205 * side, y: hy - fy * 0.3 + ry * 0.205 * side, z: z - 0.17 },
+            { x: hx + fx * 0.3 + rx * 0.205 * side, y: hy + fy * 0.3 + ry * 0.205 * side, z: z - 0.17 },
+            { x: hx + fx * 0.3 + rx * 0.205 * side, y: hy + fy * 0.3 + ry * 0.205 * side, z: z - 0.12 },
+            { x: hx - fx * 0.3 + rx * 0.205 * side, y: hy - fy * 0.3 + ry * 0.205 * side, z: z - 0.12 },
+          ], TECH.cyan);
+        }
       }
+    }
+  }
+
+  /**
+   * SAFEtrace's street cabinets: the junctions and service points a player
+   * walks up to and reads. They are the nicest-made objects in the town on
+   * purpose — hardware white, square-edged, a dark glass face, one band of
+   * cyan that says it is working. The band goes orange when it has been
+   * interfered with and dark when it is down, and that is all it ever says.
+   */
+  private collectTerminals(sim: Sim, cam: Cam): void {
+    for (const n of sim.network.nodes.values()) {
+      if (n.kind !== 'JUNCTION' && n.kind !== 'SERVICE' && n.kind !== 'UPLINK') continue;
+      if (Math.hypot(n.pos.x - cam.pos.x, n.pos.y - cam.pos.y) > 100) continue;
+      const t = terminalFor(sim.world.data, n.id, n.pos);
+      if (!t) continue;
+      const band = n.state === 'OFFLINE' ? '#3A4046'
+        : n.state === 'LOOPED' || n.state === 'TAMPERED' || n.state === 'DEGRADED' ? TECH.orange
+        : TECH.cyan;
+      this.boxAt(cam, t.at, t.rot, 0.5, 0.86, 0, 1.28, TECH.white);
+      this.boxAt(cam, t.at, t.rot, 0.52, 0.88, 1.28, 1.34, band);
+      this.boxAt(cam, t.at, t.rot, 0.44, 0.8, 1.34, 1.42, shade(TECH.white, -0.08));
+      this.panel(cam, t.at, t.rot, 0.62, 0.5, 0.86, '#11181E', undefined, 0.26);
+      this.panel(cam, t.at, t.rot, 0.66, 0.12, 1.16, TECH.white,
+        { str: 'SAFEtrace', colour: TECH.cyanInk, aspect: 5.5, weight: 600 }, 0.262);
     }
   }
 
@@ -1024,8 +1082,71 @@ export class PerspectiveRenderer {
     lump(0.66, -rad * 0.18, rad * 0.18, '#7C838B');
   }
 
+  /**
+   * While set, every face pushed gets an ink outline. People are drawn in ink
+   * and the town is not: graphic-novel figures against a painted city, so a
+   * person's silhouette is the strongest edge in the frame.
+   */
+  private inking = false;
+
   private collectActors(sim: Sim, cam: Cam): void {
+    this.collectStreetDressing(sim, cam);
     for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, FAR)) this.prop(cam, p, sim);
+    this.inking = true;
+    this.collectPeople(sim, cam);
+    this.inking = false;
+  }
+
+  /**
+   * The city's infrastructure, which the simulation never needed and the
+   * picture always did: utility poles on the verge with wire sagging between
+   * them, street-name blades at the corners, patched asphalt and a centre line
+   * that has not been repainted in years. All of it stands where nobody skates
+   * — on the verge outside the footway, or seven metres up — and none of it
+   * is in the world data, so not one collision, sightline or forecast moves.
+   */
+  private collectStreetDressing(sim: Sim, cam: Cam): void {
+    const sd = streetDressingFor(sim.world.data);
+    const near = (p: Vec2, r: number) => Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y) < r;
+    for (const m of sd.marks) {
+      if (!near(m.c, 90)) continue;
+      this.push(cam, m.poly.map((q) => ({ x: q.x, y: q.y, z: 0 })), m.fill, undefined, undefined, Layer.Ground, 20);
+    }
+    for (const p of sd.poles) {
+      if (!near(p.at, 130)) continue;
+      // Creosote-dark timber, a crossarm, and on some a transformer can.
+      this.boxAt(cam, p.at, p.rot, 0.24, 0.24, 0, POLE_H, '#4A4038');
+      this.boxAt(cam, { x: p.at.x, y: p.at.y }, p.rot, 0.12, 1.8, POLE_H - 0.55, POLE_H - 0.42, '#3B332D');
+      if (p.can) this.boxAt(cam, { x: p.at.x + Math.cos(p.rot + Math.PI / 2) * 0.32, y: p.at.y + Math.sin(p.rot + Math.PI / 2) * 0.32 }, p.rot, 0.42, 0.42, POLE_H - 2.4, POLE_H - 1.3, '#6F7477');
+    }
+    for (const w of sd.wires) {
+      if (!near(w.a, 120) && !near(w.b, 120)) continue;
+      const STEPS = 5;
+      for (let i = 0; i < STEPS; i++) {
+        const t0 = i / STEPS, t1 = (i + 1) / STEPS;
+        const z0 = w.z - Math.sin(t0 * Math.PI) * w.sag, z1 = w.z - Math.sin(t1 * Math.PI) * w.sag;
+        const a = { x: lerp(w.a.x, w.b.x, t0), y: lerp(w.a.y, w.b.y, t0) };
+        const b = { x: lerp(w.a.x, w.b.x, t1), y: lerp(w.a.y, w.b.y, t1) };
+        this.push(cam, [
+          { x: a.x, y: a.y, z: z0 - 0.03 }, { x: b.x, y: b.y, z: z1 - 0.03 },
+          { x: b.x, y: b.y, z: z1 + 0.03 }, { x: a.x, y: a.y, z: z0 + 0.03 },
+        ], '#24282C');
+      }
+    }
+    for (const sg of sd.signs) {
+      if (!near(sg.at, 70)) continue;
+      this.boxAt(cam, sg.at, 0, 0.08, 0.08, 0, 3.1, '#5C6166');
+      sg.blades.forEach((bl, i) => {
+        const z = 2.85 - i * 0.24;
+        for (const side of [1, -1]) {
+          this.panel(cam, sg.at, bl.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2), 1.5, 0.2, z, '#2E5A45',
+            { str: bl.name.toUpperCase(), colour: '#E9EDE6', aspect: 7.5, weight: 700 }, 0.02);
+        }
+      });
+    }
+  }
+
+  private collectPeople(sim: Sim, cam: Cam): void {
     /*
      * Who is who, at the size a person actually is on the glass.
      *
@@ -1040,7 +1161,7 @@ export class PerspectiveRenderer {
     for (const n of sim.npcs) {
       // Their own clothes, and the same clothes every time you pass them.
       const wear = VENEER.civilian[hashString(n.id) % VENEER.civilian.length];
-      this.person(cam, n.pos, wear);
+      this.person(cam, n.pos, wear, { hair: hairFor(n.id) });
     }
     for (const p of sim.patrols) {
       // A uniform and a cap, so an officer is an officer at a hundred metres —
@@ -1056,7 +1177,7 @@ export class PerspectiveRenderer {
       if (p.uniform) {
         this.person(cam, p.pos, VENEER.uniform, { cap: VENEER.uniformDark });
       } else {
-        this.person(cam, p.pos, p.tint, { hood: p.hood ? shade(p.tint, -0.18) : undefined });
+        this.person(cam, p.pos, p.tint, { hood: p.hood ? shade(p.tint, -0.18) : undefined, hair: hairFor(p.id) });
       }
     }
     /*
@@ -1066,15 +1187,16 @@ export class PerspectiveRenderer {
      * from the town entirely.
      */
     if (sim.devonVisible) {
-      if (sim.devonFollowing && !sim.devonStopped) this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend);
+      if (sim.devonFollowing && !sim.devonStopped) this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend, VENEER.hair[0]);
       else {
-        this.person(cam, sim.devonPos, VENEER.friend);
+        this.person(cam, sim.devonPos, VENEER.friend, { hair: VENEER.hair[0] });
         this.card(cam, { x: sim.devonPos.x + 0.45, y: sim.devonPos.y + 0.2 }, 0.45, 0.1, 0.42, shade(VENEER.friend, -0.45));
       }
     }
     for (const d of sim.drones) {
       if (d.state === 'DESTABILISED') continue;
-      this.card(cam, d.pos, d.z, 1.3, 0.45, '#F6F4EE');
+      this.card(cam, d.pos, d.z, 1.3, 0.45, TECH.white);
+      this.card(cam, d.pos, d.z - 0.36, 0.9, 0.04, TECH.cyan);
       this.card(cam, d.pos, 0.02, 1.1, 0.01, alpha('#3A4C6B', 0.18));   // drone shadow
     }
     for (const pr of sim.projectiles) {
@@ -1131,7 +1253,7 @@ export class PerspectiveRenderer {
         const sh = this.treeShake.get(p.id) ?? 0;
         const sway = sh > 0 ? Math.sin(sim.tick * 0.9) * 0.22 * sh : 0;
         const crown = { x: p.pos.x + sway, y: p.pos.y - sway * 0.6 };
-        this.card(cam, p.pos, 1.2 * s, 0.14 * s, 1.2 * s, '#6B5646');
+        this.card(cam, p.pos, 1.2 * s, 0.14 * s, 1.2 * s, '#4C4038');
         this.blob(cam, crown, 3.5 * s, 2.25 * s, 0.95, VENEER.tree, seed);
         this.blob(cam, { x: crown.x - 0.3, y: crown.y - 0.3 }, 3.9 * s, 1.35 * s, 0.9, VENEER.treeLight, seed + 2);
         return;
@@ -1140,12 +1262,12 @@ export class PerspectiveRenderer {
         this.blob(cam, p.pos, 0.55 * p.scale, 0.8 * p.scale, 0.7, VENEER.tree, 1);
         return;
       case 'car': {
-        if (dist > 120) { this.card(cam, p.pos, 0.7, 1.4, 0.7, tint ?? '#8C96A0'); return; }
-        const col = tint ?? '#8C96A0';
+        const col = weather(tint ?? '#8C96A0', 0.6);
+        if (dist > 120) { this.card(cam, p.pos, 0.7, 1.4, 0.7, col); return; }
         this.box(cam, p.pos, p.rot, 4.2, 1.8, 0.85, col);
         const fx = Math.cos(p.rot), fy = Math.sin(p.rot);
         const cab = { x: p.pos.x - fx * 0.35, y: p.pos.y - fy * 0.35 };
-        this.boxAt(cam, cab, p.rot, 2.2, 1.6, 0.85, 1.4, '#3E4B57');
+        this.boxAt(cam, cab, p.rot, 2.2, 1.6, 0.85, 1.4, '#2C353D');
         // A car whose alarm is going flashes its lights.
         if (p.alarmUntil && p.alarmUntil > sim.tick && Math.floor(sim.tick / 20) % 2 === 0) {
           this.card(cam, { x: p.pos.x + fx * 2.15, y: p.pos.y + fy * 2.15 }, 0.65, 0.5, 0.12, '#FFD166');
@@ -1157,24 +1279,24 @@ export class PerspectiveRenderer {
           // Over on its side, pointing the way it was hit, lid off.
           const tip = clamp01(age / 0.35);
           const at = { x: p.pos.x + kx * 0.45 * tip, y: p.pos.y + ky * 0.45 * tip };
-          this.box(cam, at, (p.knockDir ?? 0), lerp(0.62, 1.05, tip), 0.62, lerp(1.05, 0.62, tip), '#4E6B58');
-          if (tip >= 1) this.box(cam, { x: at.x + kx * 1.1 - ky * 0.4, y: at.y + ky * 1.1 + kx * 0.4 }, 0.6, 0.66, 0.66, 0.06, '#3E5747');
+          this.box(cam, at, (p.knockDir ?? 0), lerp(0.62, 1.05, tip), 0.62, lerp(1.05, 0.62, tip), '#3F4E46');
+          if (tip >= 1) this.box(cam, { x: at.x + kx * 1.1 - ky * 0.4, y: at.y + ky * 1.1 + kx * 0.4 }, 0.6, 0.66, 0.66, 0.06, '#33413A');
         } else {
-          this.box(cam, p.pos, p.rot, 0.62, 0.62, 1.05, '#4E6B58');
+          this.box(cam, p.pos, p.rot, 0.62, 0.62, 1.05, '#3F4E46');
         }
         return;
       case 'hydrant':
         this.card(cam, p.pos, 0.38, 0.14, 0.38, '#C8513E');
         return;
       case 'bench':
-        this.boxAt(cam, p.pos, p.rot, 1.8, 0.5, 0.38, 0.48, '#8A6A4E');
+        this.boxAt(cam, p.pos, p.rot, 1.8, 0.5, 0.38, 0.48, '#6E5A48');
         return;
       case 'mailbox':
         this.card(cam, p.pos, 0.5, 0.05, 0.5, '#5B5F63');
         this.boxAt(cam, p.pos, p.rot, 0.5, 0.3, 1.0, 1.3, '#2F4F6F');
         return;
       case 'planter':
-        this.box(cam, p.pos, 0, 1.1 * p.scale, 1.1 * p.scale, 0.55, tint ?? '#B8B2A6');
+        this.box(cam, p.pos, 0, 1.1 * p.scale, 1.1 * p.scale, 0.55, weather(tint ?? '#B8B2A6', 0.7));
         this.blob(cam, p.pos, 0.85, 0.55 * p.scale, 0.6, VENEER.treeLight, 3);
         return;
       case 'hoop':
@@ -1196,8 +1318,38 @@ export class PerspectiveRenderer {
         this.card(cam, p.pos, 1.3, 0.05, 1.3, '#50575E');
         const label = p.tint && !p.tint.startsWith('#') ? p.tint : '';
         for (const side of [1, -1]) {
-          this.panel(cam, sp, p.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2) + wob * 0.2, 1.8, 0.7, 2.7, '#F4F2EC',
-            label ? { str: label, colour: '#2C8C8C', aspect: 2.57 } : undefined, 0.02);
+          this.panel(cam, sp, p.rot + (side > 0 ? Math.PI / 2 : -Math.PI / 2) + wob * 0.2, 1.8, 0.7, 2.7, TECH.white,
+            label ? { str: label, colour: TECH.cyanInk, aspect: 2.57 } : undefined, 0.02);
+        }
+        return;
+      }
+      case 'fenceGate': {
+        /*
+         * Fences are real: they block the rider and the cameras. They were
+         * drawn as a half-metre grey tile at their midpoint. A tall one is
+         * chain-link now — posts, a top rail, and a mesh you can see through —
+         * and a low one is a block wall, because that is what they are.
+         */
+        const len = p.scale;
+        const h = fenceHeight(sim, p);
+        const dx = Math.cos(p.rot), dy = Math.sin(p.rot);
+        const a = { x: p.pos.x - dx * len / 2, y: p.pos.y - dy * len / 2 };
+        const b = { x: p.pos.x + dx * len / 2, y: p.pos.y + dy * len / 2 };
+        const quad = (z0: number, z1: number, fill: string, u0 = 0, u1 = 1) => this.push(cam, [
+          { x: lerp(a.x, b.x, u0), y: lerp(a.y, b.y, u0), z: z0 }, { x: lerp(a.x, b.x, u1), y: lerp(a.y, b.y, u1), z: z0 },
+          { x: lerp(a.x, b.x, u1), y: lerp(a.y, b.y, u1), z: z1 }, { x: lerp(a.x, b.x, u0), y: lerp(a.y, b.y, u0), z: z1 },
+        ], fill);
+        if (h < 1.5) {
+          this.boxAt(cam, p.pos, p.rot, len, 0.22, 0, h, '#8C887F');
+          return;
+        }
+        quad(0, h, alpha('#7E868C', 0.26));
+        quad(h - 0.05, h, '#7E868C');
+        quad(0.04, 0.08, alpha('#7E868C', 0.8));
+        const posts = Math.max(1, Math.round(len / 2.6));
+        for (let i = 0; i <= posts; i++) {
+          const t = i / posts;
+          this.boxAt(cam, { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }, p.rot, 0.07, 0.07, 0, h + 0.05, '#6A7176');
         }
         return;
       }
@@ -1214,11 +1366,12 @@ export class PerspectiveRenderer {
 
   private person(
     cam: Cam, p: Vec2, tint: string,
-    kit?: { cap?: string; light?: string; hood?: string },
+    kit?: { cap?: string; light?: string; hood?: string; hair?: string },
   ): void {
     this.card(cam, p, 0.45, 0.22, 0.45, shade(tint, -0.22));   // legs
     this.card(cam, p, 1.28, 0.28, 0.38, tint);                 // torso
     this.card(cam, p, 1.75, 0.17, 0.17, VENEER.skin);          // head
+    if (kit?.hair && !kit.cap && !kit.hood) this.card(cam, p, 1.88, 0.18, 0.07, kit.hair);
     // A cap breaks the silhouette, which is what actually carries at distance:
     // the eye reads the outline long before it reads the colour.
     if (kit?.cap) this.card(cam, p, 1.95, 0.21, 0.06, kit.cap);
@@ -1236,7 +1389,7 @@ export class PerspectiveRenderer {
    * you at your own speed and never gets on anything is not a friend skating
    * along, it is a tail. The board was the missing word.
    */
-  private skater(cam: Cam, p: Vec2, vel: Vec2, tint: string): void {
+  private skater(cam: Cam, p: Vec2, vel: Vec2, tint: string, hair?: string): void {
     const speed = Math.hypot(vel.x, vel.y);
     const h = speed > 0.35 ? Math.atan2(vel.y, vel.x) : 0;
     const fx = Math.cos(h), fy = Math.sin(h);
@@ -1252,6 +1405,7 @@ export class PerspectiveRenderer {
     this.card(cam, p, 0.42, 0.24, 0.36, shade(tint, -0.22));
     this.card(cam, p, 1.14, 0.29, 0.36, tint);
     this.card(cam, p, 1.58, 0.16, 0.16, VENEER.skin);
+    if (hair) this.card(cam, p, 1.7, 0.17, 0.065, hair);
   }
 
   /**
@@ -1619,11 +1773,43 @@ interface Dressing {
   /** Per wall edge, how squarely it faces the sun, 0..1. */
   sunlit: number[];
   ridge: { a0: P3; a1: P3; b0: P3; b1: P3; top0: P3; top1: P3 } | null;
+  /** The building's own paint and roof, weathered down into the town. */
+  wall: string;
+  roof: string;
+  /** Rooftop plant on a flat roof: condensers, a vent housing. */
+  plant: Array<{ at: Vec2; rot: number; w: number; d: number; h: number }>;
 }
 
-const GLASS = '#51687A';
-const GLASS_LIT = '#6F8BA0';
-const DOOR = '#6E5443';
+/*
+ * What gets written on walls. Kids' tags, a crew, a joke — never a slogan
+ * about the system: nobody in Bellhaven is protesting anything, which is the
+ * point. The colours are cheap spray, mostly faded, and one in a while fresh.
+ */
+/*
+ * What the town is built of. A building's authored paint is kept as a tint
+ * over one of these, so neighbours still differ — but every wall is brick,
+ * block, render or siding first, and colour second.
+ */
+const MATERIAL: Partial<Record<Building['kind'], string[]>> & { house: string[] } = {
+  house: ['#8E7F6C', '#7A8083', '#6F5446', '#958B7B', '#5E6A6E', '#84705C'],
+  shop: ['#6A4639', '#7A766E', '#5A6064', '#7C5A44'],
+  school: ['#7C5242', '#827D73'],
+  civic: ['#8A867D', '#6E7375'],
+  utility: ['#6F7270', '#5E6260'],
+  garage: ['#7A7670', '#6A6E70'],
+  shed: ['#6E6052', '#7A7466'],
+  structure: ['#7D7C78', '#6C6D6A'],
+};
+
+const TAGS = ['KEZ', 'RONK', 'DV8', 'LOTUS', 'MOTH', 'SK8', 'OKAY?', 'NOVA', 'BRIX', 'ZEPH', 'TUFF', 'GHOST'];
+const SPRAY = ['#C9C2B0', '#D2643F', '#5E86A8', '#E0C34C', '#9E5A8C', '#2B2B2B', '#7FA35A'];
+
+const GLASS = '#3B4850';
+const GLASS_LIT = '#566B77';
+/** A room with the light on: late afternoon under cloud, somebody is home. */
+const GLASS_WARM = '#B09466';
+const DOOR = '#4E3E33';
+const SIGN = '#D9D4C8';
 
 /** Which words go on a building's sign, if any. */
 function signFor(b: Building): string | null {
@@ -1679,6 +1865,11 @@ function dress(b: Building, sim: Sim): Dressing {
   }
 
   const sun = sim.sun;
+  const seed = hashString(b.id) >>> 0;
+  // What it is built of, and then the paint it was given, worn down.
+  const stock = MATERIAL[b.kind] ?? MATERIAL.house;
+  const wall = mix(weather(b.wall), stock[seed % stock.length], 0.55);
+  const roof = weather(b.roof, 0.8);
   const walls: Decal[][] = [];
   const sunlit: number[] = [];
   const houseLike = b.kind === 'house';
@@ -1702,11 +1893,43 @@ function dress(b: Building, sim: Sim): Dressing {
     };
     const isFront = k === front && frontD < 26;
 
+    /*
+     * Wear. A darker band where the street splashes up the wall, and a few
+     * streaks down from the eave where the rain runs. Nothing here is new and
+     * nobody has repainted since the cameras went up.
+     */
+    if (e.len > 1.5) {
+      out.push(rect(0, e.len, 0.0, 0.45, shade(wall, -0.2), undefined, 0.02));
+      const streaks = Math.floor(e.len / 6);
+      for (let q = 0; q < streaks; q++) {
+        const t = (((seed >>> (q * 3 % 24)) % 97) / 97) * (e.len - 0.9) + 0.3;
+        const top = b.height - 0.05;
+        out.push(rect(t, t + 0.12 + (q % 3) * 0.06, Math.max(0.5, top - 1.6 - (q % 4) * 0.7), top, alpha('#2A2622', 0.14), undefined, 0.025));
+      }
+    }
+    /*
+     * Tags, on the walls a kid would reach: the sides and backs of shops,
+     * garages, the depot, the substation — and only the odd house. Low, at
+     * arm's height, and never over a window or a sign.
+     */
+    const taggable = b.kind === 'shop' || b.kind === 'garage' || b.kind === 'utility' || b.kind === 'structure'
+      || b.kind === 'shed' || (houseLike && (seed + k) % 5 === 0);
+    if (taggable && !isFront && e.len > 3.4 && (seed + k * 7) % 3 !== 1) {
+      const tag = TAGS[(seed + k * 13) % TAGS.length];
+      const col = SPRAY[(seed + k * 5) % SPRAY.length];
+      const w = Math.min(e.len * 0.6, 1.2 + tag.length * 0.45);
+      const t0 = ((seed + k * 31) % 100) / 100 * (e.len - w);
+      const z0 = 0.55 + ((seed + k) % 3) * 0.15;
+      const fresh = (seed + k) % 4 === 0;
+      out.push(rect(t0, t0 + w, z0, z0 + 0.95, alpha(col, 0.001),
+        { str: tag, colour: alpha(col, fresh ? 0.92 : 0.6), aspect: w / 0.95, weight: 900 }, 0.03));
+    }
+
     if (b.kind === 'shop' && isFront) {
       // A glass front, a door in it, and the name over the top.
       out.push(rect(e.len * 0.08, e.len * 0.92, 0.35, 2.7, GLASS_LIT));
       out.push(rect(e.len * 0.46, e.len * 0.54, 0.02, 2.4, '#3D4C58', undefined, 0.05));
-      if (sign) out.push(rect(e.len * 0.12, e.len * 0.88, 3.05, 4.05, '#F4F1EA',
+      if (sign) out.push(rect(e.len * 0.12, e.len * 0.88, 3.05, 4.05, SIGN,
         { str: sign, colour: '#2B3640', aspect: (e.len * 0.76) / 1.0, weight: 700 }, 0.05));
     } else if (floors > 0 && e.len > 3.2 && (b.kind !== 'structure' || isFront)) {
       const count = Math.max(1, Math.floor((e.len - 1.6) / 3.3));
@@ -1718,25 +1941,26 @@ function dress(b: Building, sim: Sim): Dressing {
           const t = step * (w + 0.5);
           // Leave the doorway clear on a house front.
           if (houseLike && isFront && f === 0 && Math.abs(t - e.len * 0.62) < 1.3) continue;
-          out.push(rect(t - 0.6, t + 0.6, z0, z0 + 1.25, (w + f + k) % 3 === 0 ? GLASS_LIT : GLASS));
+          const pane = (w + f + k + seed) % 7 === 0 ? GLASS_WARM : (w + f + k) % 3 === 0 ? GLASS_LIT : GLASS;
+          out.push(rect(t - 0.6, t + 0.6, z0, z0 + 1.25, pane));
         }
       }
       if (houseLike && isFront) {
         out.push(rect(e.len * 0.62 - 0.5, e.len * 0.62 + 0.5, 0.02, 2.15, DOOR));
         // A number by the door, where the street has numbers.
         const num = b.label?.match(/^(\d+) /)?.[1];
-        if (num) out.push(rect(e.len * 0.62 + 0.75, e.len * 0.62 + 1.35, 1.55, 2.0, '#F4F1EA',
+        if (num) out.push(rect(e.len * 0.62 + 0.75, e.len * 0.62 + 1.35, 1.55, 2.0, SIGN,
           { str: num, colour: '#2B3640', aspect: 1.33, weight: 800 }, 0.05));
       }
       if ((b.kind === 'civic' || b.kind === 'school') && isFront) {
         out.push(rect(e.len * 0.44, e.len * 0.56, 0.02, 2.5, '#3D4C58', undefined, 0.05));
-        if (sign) out.push(rect(e.len * 0.18, e.len * 0.82, b.height - 1.45, b.height - 0.45, '#F4F1EA',
+        if (sign) out.push(rect(e.len * 0.18, e.len * 0.82, b.height - 1.45, b.height - 0.45, SIGN,
           { str: sign, colour: '#2B3640', aspect: (e.len * 0.64) / 1.0 }, 0.05));
       }
     } else if (b.kind === 'garage' && isFront && e.len > 2.6) {
       out.push(rect(e.len * 0.15, e.len * 0.85, 0.02, 2.3, shade(b.wall, -0.18)));
     } else if (b.kind === 'structure' && isFront && sign) {
-      out.push(rect(e.len * 0.15, e.len * 0.85, b.height - 1.6, b.height - 0.5, '#F4F1EA',
+      out.push(rect(e.len * 0.15, e.len * 0.85, b.height - 1.6, b.height - 0.5, SIGN,
         { str: sign, colour: '#2B3640', aspect: (e.len * 0.7) / 1.1 }, 0.05));
     }
     walls.push(out);
@@ -1758,7 +1982,276 @@ function dress(b: Building, sim: Sim): Dressing {
       top0: mid(p0, p3), top1: mid(p1, p2),
     };
   }
-  return { walls, sunlit, ridge };
+  // Flat roofs carry plant: a condenser or two, set in from the parapet.
+  const plant: Dressing['plant'] = [];
+  if (!ridge && b.height >= 3.5 && b.kind !== 'structure') {
+    const units = 1 + (seed % 2);
+    for (let u = 0; u < units; u++) {
+      const f = 0.35 + 0.3 * u;
+      plant.push({
+        at: { x: cx + (poly[0].x - cx) * f * 0.6, y: cy + (poly[0].y - cy) * f * 0.6 },
+        rot: Math.atan2(poly[1].y - poly[0].y, poly[1].x - poly[0].x),
+        w: 1.4, d: 1.0, h: 0.9,
+      });
+    }
+  }
+  return { walls, sunlit, ridge, wall, roof, plant };
+}
+
+const POLE_H = 8.2;
+
+export interface StreetDressing {
+  poles: Array<{ at: Vec2; rot: number; can: boolean }>;
+  wires: Array<{ a: Vec2; b: Vec2; z: number; sag: number }>;
+  signs: Array<{ at: Vec2; blades: Array<{ name: string; rot: number }> }>;
+  marks: Array<{ c: Vec2; poly: Vec2[]; fill: string }>;
+}
+
+const streetCache = new WeakMap<object, StreetDressing>();
+
+/**
+ * Work out the town's poles, wires, street signs and road wear, once.
+ *
+ * Deterministic from the world data alone, so the same town gets the same
+ * poles every session and every screenshot.
+ */
+export function streetDressingFor(data: WorldData): StreetDressing {
+  const hit = streetCache.get(data);
+  if (hit) return hit;
+  const out: StreetDressing = { poles: [], wires: [], signs: [], marks: [] };
+  const nodes = new Map(data.roadNodes.map((r) => [r.id, r.pos]));
+  const edges = data.roadEdges
+    .map((e) => ({ e, a: nodes.get(e.a), b: nodes.get(e.b) }))
+    .filter((x): x is { e: typeof data.roadEdges[number]; a: Vec2; b: Vec2 } => !!x.a && !!x.b);
+  const inBuilding = (q: Vec2, pad: number) => data.buildings.some((b) => pointInPoly(q, b.poly) || polyDist(q, b.poly) < pad);
+  const onRoad = (q: Vec2, pad: number) => edges.some(({ e, a, b }) => segDist(q.x, q.y, a, b) < e.width / 2 + pad);
+  const nearThing = (q: Vec2, r: number) => data.props.some((p) => Math.hypot(p.pos.x - q.x, p.pos.y - q.y) < r + (p.kind === 'fenceGate' ? p.scale / 2 : 0))
+    || data.features.some((f) => pointInPoly(q, f.poly) || polyDist(q, f.poly) < r);
+  const topSurface = (q: Vec2) => {
+    let best: typeof data.surfaces[number] | null = null;
+    for (const sf of data.surfaces) if (pointInPoly(q, sf.poly) && (!best || sf.priority >= best.priority)) best = sf;
+    return best;
+  };
+
+  let k = 0;
+  let last: Vec2 | null = null;
+  let prevB = '';
+  for (const { e, a, b } of edges) {
+    // A run of wire carries on round a bend in the same street.
+    if (e.a !== prevB) last = null;
+    prevB = e.b;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 8) continue;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const nx = -uy, ny = ux;
+    const rot = Math.atan2(uy, ux);
+
+    // Poles on one verge, every thirty-odd metres, wired in a run.
+    if (e.surface === 'asphalt') {
+      const off = e.width / 2 + 2.2 + 0.8;
+      for (let d = 7; d < len - 4; d += 30) {
+        // Nudge along the verge round a driveway's bins or a mailbox, the
+        // way a line crew would; give up and break the run only if nothing fits.
+        let at: Vec2 | null = null;
+        // Failing that, the far verge: the run drops across the road to it.
+        for (const side of [1, -1]) {
+          for (const shift of [0, 2.5, -2.5, 5, -5]) {
+            const q = { x: a.x + ux * (d + shift) + nx * off * side, y: a.y + uy * (d + shift) + ny * off * side };
+            if (!inBuilding(q, 0.8) && !onRoad(q, 2.4) && !nearThing(q, 1.0)) { at = q; break; }
+          }
+          if (at) break;
+        }
+        if (!at) { last = null; continue; }
+        out.poles.push({ at, rot, can: (k++ % 4) === 1 });
+        if (last && Math.hypot(at.x - last.x, at.y - last.y) < 42) {
+          for (const side of [-0.7, 0.7]) {
+            out.wires.push({
+              a: { x: last.x + nx * side, y: last.y + ny * side },
+              b: { x: at.x + nx * side, y: at.y + ny * side },
+              z: POLE_H - 0.5, sag: 0.45,
+            });
+          }
+        }
+        last = at;
+      }
+    }
+
+    // Wear in the carriageway, only where the carriageway is what you see.
+    let h = hashString(`${e.a}-${e.b}`);
+    const rnd = () => { h = (h * 1103515245 + 12345) >>> 0; return (h >>> 8) / 16777216; };
+    if (e.surface === 'asphalt') {
+      for (let d = 4 + rnd() * 10; d < len - 4; d += 14 + rnd() * 22) {
+        const lat = (rnd() - 0.5) * e.width * 0.55;
+        const c = { x: a.x + ux * d + nx * lat, y: a.y + uy * d + ny * lat };
+        const top = topSurface(c);
+        if (!top || top.kind !== 'asphalt') continue;
+        // An irregular patch of newer tar, or an oil stain: never a rectangle.
+        const hl = 0.6 + rnd() * 1.3, hw = 0.4 + rnd() * 0.7;
+        const poly: Vec2[] = [];
+        for (let i = 0; i < 7; i++) {
+          const ang = (i / 7) * Math.PI * 2;
+          const r = 0.75 + rnd() * 0.35;
+          const cu = Math.cos(ang) * hl * r, cv = Math.sin(ang) * hw * r;
+          poly.push({ x: c.x + ux * cu + nx * cv, y: c.y + uy * cu + ny * cv });
+        }
+        out.marks.push({ c, fill: alpha('#262A2E', 0.16 + rnd() * 0.14), poly });
+      }
+      // A centre line, dashed and half worn away, on anything wide enough to have one.
+      if (e.width >= 7) {
+        for (let d = 3; d < len - 3; d += 9) {
+          const c = { x: a.x + ux * (d + 1.5), y: a.y + uy * (d + 1.5) };
+          const top = topSurface(c);
+          if (!top || top.kind !== 'asphalt') continue;
+          const fade = 0.25 + rnd() * 0.3;
+          out.marks.push({
+            c, fill: alpha('#D8D2BE', fade),
+            poly: [
+              { x: a.x + ux * d - nx * 0.07, y: a.y + uy * d - ny * 0.07 },
+              { x: a.x + ux * (d + 3) - nx * 0.07, y: a.y + uy * (d + 3) - ny * 0.07 },
+              { x: a.x + ux * (d + 3) + nx * 0.07, y: a.y + uy * (d + 3) + ny * 0.07 },
+              { x: a.x + ux * d + nx * 0.07, y: a.y + uy * d + ny * 0.07 },
+            ],
+          });
+        }
+      }
+    }
+  }
+
+  // Street-name blades where one named street runs into another.
+  const streets = data.streets ?? [];
+  const dirAt = (pts: Vec2[], q: Vec2) => {
+    let best = Infinity, rot = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = segDist(q.x, q.y, pts[i - 1], pts[i]);
+      if (d < best) { best = d; rot = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x); }
+    }
+    return { best, rot };
+  };
+  /*
+   * Streets are authored as named runs that stop short of the street they
+   * join, with the corner itself laid separately. So a junction is a street
+   * ending near, and square to, another one — and its sign goes where that
+   * street would meet it.
+   */
+  const junctions: Array<{ at: Vec2; a: typeof streets[number]; b: typeof streets[number] }> = [];
+  for (const A of streets) {
+    const n = A.pts.length;
+    if (n < 2) continue;
+    for (const [end, prev] of [[A.pts[0], A.pts[1]], [A.pts[n - 1], A.pts[n - 2]]] as const) {
+      const dl = Math.hypot(end.x - prev.x, end.y - prev.y) || 1;
+      const ux = (end.x - prev.x) / dl, uy = (end.y - prev.y) / dl;
+      let best: { at: Vec2; B: typeof streets[number]; d: number } | null = null;
+      for (const B of streets) {
+        if (B === A || B.name === A.name) continue;
+        for (let m = 1; m < B.pts.length; m++) {
+          const p0 = B.pts[m - 1], p1 = B.pts[m];
+          const bl = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+          const bx = (p1.x - p0.x) / bl, by = (p1.y - p0.y) / bl;
+          if (Math.abs(ux * bx + uy * by) > 0.5) continue;      // not square to it
+          const t = clamp((end.x - p0.x) * bx + (end.y - p0.y) * by, 0, bl);
+          const q = { x: p0.x + bx * t, y: p0.y + by * t };
+          const d = Math.hypot(q.x - end.x, q.y - end.y);
+          // Ahead of the street's end, not behind it.
+          if (d > 48 || (q.x - end.x) * ux + (q.y - end.y) * uy < d * 0.8 - 2) continue;
+          if (!best || d < best.d) best = { at: q, B, d };
+        }
+      }
+      if (best && !junctions.some((x) => Math.hypot(x.at.x - best!.at.x, x.at.y - best!.at.y) < 14)) {
+        junctions.push({ at: best.at, a: A, b: best.B });
+      }
+    }
+  }
+  for (const jn of junctions) {
+    const ra = dirAt(jn.a.pts, jn.at).rot, rb = dirAt(jn.b.pts, jn.at).rot;
+    const w = Math.max(...edges.filter(({ a, b }) => segDist(jn.at.x, jn.at.y, a, b) < 6).map(({ e }) => e.width), 7) / 2;
+    // Stand it on whichever corner is clear: out past both kerbs.
+    let at: Vec2 | null = null;
+    for (const sa of [1, -1]) for (const sb of [1, -1]) {
+      if (at) break;
+      const c = {
+        x: jn.at.x + Math.cos(ra + Math.PI / 2) * sa * (w + 1.4) + Math.cos(rb + Math.PI / 2) * sb * (w + 1.4),
+        y: jn.at.y + Math.sin(ra + Math.PI / 2) * sa * (w + 1.4) + Math.sin(rb + Math.PI / 2) * sb * (w + 1.4),
+      };
+      if (!inBuilding(c, 0.6) && !onRoad(c, 0.4) && !nearThing(c, 1.0)) at = c;
+    }
+    if (at) out.signs.push({ at, blades: [{ name: jn.a.name, rot: ra }, { name: jn.b.name, rot: rb }] });
+  }
+  streetCache.set(data, out);
+  return out;
+}
+
+const terminals = new WeakMap<object, Map<string, { at: Vec2; rot: number } | null>>();
+/** Where a node's cabinet stands, facing the nearest street; null inside a building. */
+function terminalFor(data: WorldData, id: string, pos: Vec2): { at: Vec2; rot: number } | null {
+  let m = terminals.get(data);
+  if (!m) { m = new Map(); terminals.set(data, m); }
+  if (m.has(id)) return m.get(id)!;
+  /*
+   * A node is authored where it sits on the network, which is often the
+   * middle of the street. The cabinet stands on the nearest verge instead,
+   * just past the footway and well inside the reach for reading it, and faces
+   * the road it serves.
+   */
+  let t: { at: Vec2; rot: number } | null = null;
+  const nodes = new Map(data.roadNodes.map((r) => [r.id, r.pos]));
+  let best = Infinity;
+  let near: { q: Vec2; nx: number; ny: number; hw: number } | null = null;
+  for (const e of data.roadEdges) {
+    const a = nodes.get(e.a), b = nodes.get(e.b);
+    if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l = Math.hypot(dx, dy) || 1;
+    const u = Math.max(0, Math.min(1, ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / (l * l)));
+    const q = { x: a.x + dx * u, y: a.y + dy * u };
+    const d = Math.hypot(pos.x - q.x, pos.y - q.y);
+    if (d < best) { best = d; near = { q, nx: -dy / l, ny: dx / l, hw: e.width / 2 }; }
+  }
+  const blocked = (c: Vec2) => data.buildings.some((b) => pointInPoly(c, b.poly) || polyDist(c, b.poly) < 0.7)
+    || data.props.some((p) => Math.hypot(p.pos.x - c.x, p.pos.y - c.y) < 1.2);
+  if (near && best < 12) {
+    const pref = (pos.x - near.q.x) * near.nx + (pos.y - near.q.y) * near.ny >= 0 ? 1 : -1;
+    for (const side of [pref, -pref]) {
+      const off = near.hw + 2.2 + 0.7;
+      const c = { x: near.q.x + near.nx * side * off, y: near.q.y + near.ny * side * off };
+      if (!blocked(c)) { t = { at: c, rot: Math.atan2(-near.ny * side, -near.nx * side) }; break; }
+    }
+  } else if (!data.buildings.some((b) => pointInPoly(pos, b.poly))) {
+    t = { at: pos, rot: 0 };
+  }
+  m.set(id, t);
+  return t;
+}
+
+const fenceHeights = new WeakMap<Prop, number>();
+function fenceHeight(sim: Sim, p: Prop): number {
+  let h = fenceHeights.get(p);
+  if (h === undefined) {
+    h = 1.9;
+    for (const o of sim.world.data.occluders) {
+      if (Math.hypot((o.a.x + o.b.x) / 2 - p.pos.x, (o.a.y + o.b.y) / 2 - p.pos.y) < 0.05) { h = o.height; break; }
+    }
+    fenceHeights.set(p, h);
+  }
+  return h;
+}
+
+function pointInPoly(q: Vec2, poly: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > q.y) !== (b.y > q.y) && q.x < ((b.x - a.x) * (q.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+function polyDist(q: Vec2, poly: Vec2[]): number {
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) best = Math.min(best, segDist(q.x, q.y, poly[j], poly[i]));
+  return best;
+}
+
+function hairFor(id: string): string {
+  return VENEER.hair[hashString(id + ':hair') % VENEER.hair.length];
 }
 
 function segDist(x: number, y: number, a: Vec2, b: Vec2): number {
