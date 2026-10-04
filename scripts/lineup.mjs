@@ -9,7 +9,7 @@
  * and frames them at phone and desktop size, at the chase camera's normal
  * distance and at the closer conversation framing. People keep walking (their
  * routes are frozen in place, not their animation), so each shot is a fair
- * picture of how they read in play. Dev builds only (`window.__safetrace`).
+ * picture of how they read in play. Dev builds only (`window.__underwatch`).
  */
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
@@ -35,14 +35,14 @@ for (const vp of [{ name: 'phone', width: 390, height: 844, scale: 2 }, { name: 
   await page.click('#pref-go');
   await page.waitForTimeout(600);
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => window.__safetrace?.phase === 'play', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__underwatch?.phase === 'play', null, { timeout: 60000 });
   await page.addStyleTag({ content: '#ui, #boot, #ad { display: none !important; }' });
   await page.evaluate(() => {
-    Object.defineProperty(window.__safetrace.renderer, 'controlVisual', { get: () => null, set() {}, configurable: true });
+    Object.defineProperty(window.__underwatch.renderer, 'controlVisual', { get: () => null, set() {}, configurable: true });
   });
   for (const framing of ['chase', 'close']) {
     await page.evaluate((framing) => {
-      const g = window.__safetrace, sim = g.sim;
+      const g = window.__underwatch, sim = g.sim;
       const p = sim.player;
       p.pos = { x: 158, y: 214 }; p.vel = { x: 0, y: 0 }; p.speed = 0; p.heading = Math.PI / 2;
       // A row across Maple Court, twelve metres ahead, each walking along it

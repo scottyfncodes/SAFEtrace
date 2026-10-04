@@ -10,7 +10,7 @@ symptom.
 
 ---
 
-## Part 1 — Plan View is a control, SAFEtrace VISION is content
+## Part 1 — Plan View is a control, UNDERWATCH VISION is content
 
 The two were **one flag**. `intent.vision` opened the view, and the sim gated it
 on `visionUnlocked`, so:
@@ -27,7 +27,7 @@ They are now two things:
 | | What it is | How it is reached | When |
 | --- | --- | --- | --- |
 | **Plan view** | A view of the town from above | `Q`, or the `PLAN` button | Always, from the first frame |
-| **SAFEtrace VISION** | A story unlock | — | When Devon is stopped |
+| **UNDERWATCH VISION** | A story unlock | — | When Devon is stopped |
 
 `Intent.planView` replaces `Intent.vision`; `Sim.planViewActive` /
 `planViewBlend` replace `visionActive` / `visionBlend`; `Settings.holdForPlanView`
@@ -43,12 +43,12 @@ entitled to have: ground, the 20 m grid, surfaces, buildings drawn as buildings
 are drawn on a plan, and the road graph. Plus a locator: one dot, a heading, and
 the district, captioned `PLAN VIEW`. A map with no "you are here" is not a map.
 
-**Unlocked** — the same view, plus what SAFEtrace makes of it: coverage cones,
+**Unlocked** — the same view, plus what UNDERWATCH makes of it: coverage cones,
 network edges and nodes, drone footprints, evidence discs, the forecast, and
 every subject bracketed with an identity, its flags and its score.
 
 Unlocking fills in the map the player already had. It does not hand them a
-button. The story beat says so — `SAFEtrace VISION — SUBJECT LAYER ENABLED`,
+button. The story beat says so — `UNDERWATCH VISION — SUBJECT LAYER ENABLED`,
 with `COVERAGE AND SUBJECTS NOW IN PLAN VIEW` — and that line is now identical
 on both devices, because it describes content rather than a control.
 

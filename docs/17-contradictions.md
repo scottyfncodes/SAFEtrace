@@ -82,7 +82,7 @@ statement that this is a game about misdirection rather than force.
 **Conflict.** §24 requires legible rules; §16 forbids telling the player things.
 
 **Resolution.** The system explains itself *to itself*, in front of the player.
-Every SAFEtrace notification is an internal state change narrated in its own
+Every UNDERWATCH notification is an internal state change narrated in its own
 corporate voice — `UNUSUAL ROUTE DETECTED`, `ORIGIN ESTIMATED — 41 M SOUTHWEST`.
 No character ever explains a mechanic. The tutorial and the antagonist are the
 same voice, and that voice never breaks character. VISION then makes the same
@@ -120,7 +120,7 @@ square kilometres of streets would.
 
 **Resolution.** Every harmful outcome is traceable to a defensible decision made
 by a reasonable component. The gallery included Devon because a parent consented
-to SAFEtrace SCHOOL. The prior was high because Devon's cousin lives in
+to UNDERWATCH SCHOOL. The prior was high because Devon's cousin lives in
 Northgate. The threshold was 97% because lowering it once reduced a real harm.
 The player can read each of these and disagree with none of them individually.
 The one human employee in the story is sympathetic and overworked. The system is

@@ -1,6 +1,6 @@
 # 05 — Surveillance System Model
 
-This is the most important document in the set. SAFEtrace must be a *simulation*
+This is the most important document in the set. UNDERWATCH must be a *simulation*
 that produces situations nobody scripted.
 
 ## 1. Entities
@@ -116,7 +116,7 @@ resource the player can move.**
 ## 3. Evidence and trajectory analysis
 
 Physical interference creates `Evidence`. If the impact was observed, or the
-impact geometry allows reconstruction, SAFEtrace estimates an origin:
+impact geometry allows reconstruction, UNDERWATCH estimates an origin:
 
 ```
 originEstimate = impactPoint - normalize(projectileVelocity) * estimatedRange

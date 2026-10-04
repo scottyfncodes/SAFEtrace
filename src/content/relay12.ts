@@ -204,7 +204,7 @@ export function authorRelay12(b: TownBuilder): void {
   b.junction(pt(496.4, 254), 'RELAY 12 — HAULAGE SEGMENT RELAY', 'JX-R12', [
     'SEGMENT RELAY — S-X3 YARD & HAULAGE',
     'ORIGIN: PRIVATE SITE CCTV, VENN HAULAGE LTD',
-    'ADOPTED 2031 UNDER SAFEtrace CITY PARTNER SCHEME',
+    'ADOPTED 2031 UNDER UNDERWATCH CITY PARTNER SCHEME',
     'COST TO OPERATOR: NIL',
     'CONDITION OF ADOPTION: FEEDS AVAILABLE TO SVC-VISION',
     'OPERATOR RETAINS: NOTHING',
@@ -256,7 +256,7 @@ export function authorRelay12(b: TownBuilder): void {
   // ---------------------------------------------------------------- dressing
   b.cover([pt(490, 232), pt(548, 232), pt(548, 248), pt(490, 248)], 'awning', 4.6);
   b.cover([pt(532, 262), pt(552, 262), pt(552, 300), pt(532, 300)], 'canopy', 4.0);
-  b.prop('sign', pt(480, 172), 0, { tint: 'SAFEtrace CITY — RESTRICTED' });
+  b.prop('sign', pt(480, 172), 0, { tint: 'UNDERWATCH CITY — RESTRICTED' });
   b.prop('sign', pt(514, 170), 0, { tint: 'BELLHAVEN COUNCIL — HIGHWAYS DEPOT 12' });
   b.prop('bin', pt(512, 194)); b.prop('bin', pt(533, 192));
   b.prop('cone', pt(506, 236)); b.prop('cone', pt(534, 236)); b.prop('cone', pt(541, 296));
@@ -282,7 +282,7 @@ export function authorRelay12(b: TownBuilder): void {
 export const TX2_RECORDS = uplinkRecords(
   'TX-2',
   [
-    'SAFEtrace TRANSPORT — DISTRICT UPLINK TX-2',
+    'UNDERWATCH TRANSPORT — DISTRICT UPLINK TX-2',
     'SITE: RELAY 12, EAST BELLHAVEN',
     'FUNCTION: AGGREGATION AND CARRIAGE',
     'NO LOCAL STORAGE. NO LOCAL MATCHING. NO LOCAL DECISION.',

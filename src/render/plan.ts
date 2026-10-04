@@ -14,7 +14,7 @@
  * Before VISION it is the player's own knowledge — only cameras they have
  * been near enough to notice, and their own marks where they caused trouble.
  * VISION does not change the questions, only how much of the machine's
- * answer is on the page: every camera, and the areas SAFEtrace itself has
+ * answer is on the page: every camera, and the areas UNDERWATCH itself has
  * flagged. Pure: no canvas, so it can be tested.
  */
 import type { Vec2 } from '../core/math';
@@ -57,7 +57,7 @@ export interface PlanReading {
   earshot: PlanEarshot | null;
   /** Where trouble was caused, fading as the place forgets. 0..1 strength. */
   marks: Array<{ pos: Vec2; strength: number; heavy: boolean }>;
-  /** VISION only: districts SAFEtrace itself has flagged, and where. */
+  /** VISION only: districts UNDERWATCH itself has flagged, and where. */
   areas: Array<{ pos: Vec2; level: DisturbanceLevel; district: string }>;
   /** Plain-language readings, most urgent first. */
   lines: string[];

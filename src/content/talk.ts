@@ -8,7 +8,7 @@
  * the ones that do nothing say so ("Not yet").
  *
  * People speak in their own voices. Devon types in lower case because he is
- * sixteen. SAFEtrace is not in this file at all.
+ * sixteen. UNDERWATCH is not in this file at all.
  */
 import { CASE_HOLDS, type ReportTarget } from './case';
 

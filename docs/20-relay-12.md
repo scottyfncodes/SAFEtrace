@@ -191,7 +191,7 @@ dispatch code changed.
 `JX-207`'s first record is the only line in the game that says what a segment
 is, and it is a required read. It said `SEGMENT S-N2 — 14 NODES` while `S-N2`
 held **18** — Northgate grew after the record was written. In a game whose
-argument is that SAFEtrace's own paperwork is accurate, that is the one place a
+argument is that UNDERWATCH's own paperwork is accurate, that is the one place a
 wrong number cannot sit.
 
 It is now derived from the live network, the way `MT-R12` and `TX-2` already

@@ -87,7 +87,7 @@ Screenshots, deliberately, not assertions — the numbers were already right
 and had already been checked twice. Three before the fix (aim entered, both
 thumbs down at rest, pulled back) showing the crossing cords and a fork that
 had visibly moved. Two after: one at a confirmed full draw
-(`draw: 1`, logged from `window.safetrace`), one with the pull thumb held at
+(`draw: 1`, logged from `window.underwatch`), one with the pull thumb held at
 that same full draw while the aim thumb was dragged to a completely
 different part of the screen. The camera view changes correctly between
 those last two — proving the drag still reaches the camera — while the

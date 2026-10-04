@@ -64,7 +64,7 @@ Feel, pacing, comprehension. Structured playtests with one question each:
 - Session B: do they notice the cameras? (record the minute at which they first
   look at one)
 - Session C: does the false positive land? (record what they say)
-- Session D: can they explain how SAFEtrace decided? (the real success metric)
+- Session D: can they explain how UNDERWATCH decided? (the real success metric)
 
 Session D is the one that matters. If a player cannot explain the system after
 the slice, the systems are opaque and the game has failed, regardless of how

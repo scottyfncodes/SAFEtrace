@@ -467,7 +467,7 @@ export class Renderer {
    */
   private mood = 0;
   moodOverride: number | null = null;
-  /** Set by the host once SAFEtrace's number for the player has been found. */
+  /** Set by the host once UNDERWATCH's number for the player has been found. */
   scoreLine: string | null = null;
 
   /**
@@ -628,7 +628,7 @@ export class Renderer {
    * they would look: the route that opens is the gap they leave. Where
    * trouble has been caused there is a small mark, fading as the place
    * forgets. With VISION the machine layer below already draws every cone,
-   * so only the pin's ghosts, the marks and SAFEtrace's own flagged areas are
+   * so only the pin's ghosts, the marks and UNDERWATCH's own flagged areas are
    * added here.
    */
   private drawPlanSurveillance(ctx: CanvasRenderingContext2D, r: PlanReading, a: number): void {
@@ -644,7 +644,7 @@ export class Renderer {
     };
     ctx.save();
 
-    // SAFEtrace's own view of where things keep happening.
+    // UNDERWATCH's own view of where things keep happening.
     for (const ar of r.areas) {
       const c = at(ar.pos);
       const col = ar.level === 'REVIEW' ? PLAN_INK.hot : PLAN_INK.reading;
@@ -1059,7 +1059,7 @@ export class Renderer {
      * Third person is your body: you, the board, the pavement, and the camera
      * on the wall that is pointing at you. The plan view is the town drawn as
      * data, from above, because a plan is where structure is legible — and,
-     * once SAFEtrace VISION is unlocked, it is also where coverage, edges,
+     * once UNDERWATCH VISION is unlocked, it is also where coverage, edges,
      * forecast and evidence become readable. Holding PLAN crosses from one to
      * the other, which is what the peel has always been for.
      */
@@ -1825,7 +1825,7 @@ export class Renderer {
      * streets, buildings, the road graph — and a resident is entitled to that
      * from the first frame, on any device, by holding one control.
      *
-     * The second half is what SAFEtrace makes of the same town: who it can
+     * The second half is what UNDERWATCH makes of the same town: who it can
      * see, what it thinks they are doing, where it thinks they are going, and
      * what it is holding against them. That arrives when the story says so.
      * Unlocking VISION does not hand the player a new button; it fills in the

@@ -256,7 +256,7 @@ export class Sim {
    */
   private lastPursuit: PursuitState = 'NOT_PURSUING';
   /**
-   * Whether SAFEtrace VISION has been unlocked by the story.
+   * Whether UNDERWATCH VISION has been unlocked by the story.
    *
    * This is a *content* gate, not a control one. The plan view below opens on
    * every device from the first frame; what VISION changes is how much of the
@@ -266,7 +266,7 @@ export class Sim {
    */
   visionUnlocked = false;
   /**
-   * Whether the player has found out that SAFEtrace keeps a number on them.
+   * Whether the player has found out that UNDERWATCH keeps a number on them.
    *
    * The Community Safety Score used to be a permanent widget in the corner —
    * a scoreboard from the first frame, which is the opposite of what it is
@@ -409,7 +409,7 @@ export class Sim {
 
   /**
    * Priority defaults so the thirty-odd call sites do not each have to decide.
-   * A strongly emphasised line is something happening to the player; SAFEtrace
+   * A strongly emphasised line is something happening to the player; UNDERWATCH
    * CARE is the brand talking, which is texture; everything else is context.
    * Sites that need something else say so.
    */
@@ -419,7 +419,7 @@ export class Sim {
   ): void {
     const p: MessagePriority = priority
       ?? (emphasis === 'strong' ? 'critical' : register === 'CARE' ? 'ambient' : 'context');
-    this.bus.emit('safetrace:message', {
+    this.bus.emit('underwatch:message', {
       id: `MSG-${++msgId}`, register, lines, duration, emphasis, priority: p,
     });
   }
@@ -1668,7 +1668,7 @@ export class Sim {
    *
    * Only once it has something to say it to. Before Devon is stopped, the
    * machine's voice is CARE — the weather, a friend at school — and the
-   * first thing SAFEtrace CITY ever says to the player is the match. After
+   * first thing UNDERWATCH CITY ever says to the player is the match. After
    * that, a judgement is a card: said once, not again for a good while, and
    * never with a number on it. The number is something you find.
    */

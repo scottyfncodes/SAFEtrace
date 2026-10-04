@@ -106,7 +106,7 @@ describe('distract: a stone moves attention, until a place stops believing it', 
   it('after enough noise in one place, looks back up the throw at whoever made it', () => {
     const sim = makeUnlockedSim();
     const said: string[] = [];
-    sim.bus.on('safetrace:message', (m) => said.push(...m.lines));
+    sim.bus.on('underwatch:message', (m) => said.push(...m.lines));
     place(sim, THROW_FROM);
     let r = stoneInto(sim);
     for (let i = 0; i < 6 && !r.discounted; i++) r = stoneInto(sim);

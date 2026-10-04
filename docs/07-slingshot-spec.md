@@ -72,7 +72,7 @@ Every impact writes an `Evidence` record:
 { kind, position, tick, projectileVelocity, observedBy[] }
 ```
 
-SAFEtrace then reasons about it, over several seconds, in view of the player:
+UNDERWATCH then reasons about it, over several seconds, in view of the player:
 
 ```
 CAMERA OFFLINE — NODE CM-114

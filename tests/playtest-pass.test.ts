@@ -16,12 +16,12 @@ import type { Sim } from '../src/sim/sim';
 import { StoryDirector, type TalkView } from '../src/content/story';
 import { inChannel } from '../src/content/bellhaven';
 import { BEHAVIOUR_CEILING } from '../src/sim/surveillance/risk';
-import type { SafetraceMessage } from '../src/sim/events';
+import type { UnderwatchMessage } from '../src/sim/events';
 
 function directorFor(sim: Sim) {
   const said: string[] = [];
-  const cards: SafetraceMessage[] = [];
-  sim.bus.on('safetrace:message', (m) => cards.push(m));
+  const cards: UnderwatchMessage[] = [];
+  sim.bus.on('underwatch:message', (m) => cards.push(m));
   const director = new StoryDirector({
     sim,
     hud: { say: (lines: string[]) => said.push(lines.join(' ')), showTalk: (_v: TalkView | null) => {} } as never,

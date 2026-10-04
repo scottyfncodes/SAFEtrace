@@ -25,7 +25,7 @@ export interface Intent {
    * Hold the plan view open.
    *
    * Named for what it is: a *view*, available from the first frame on every
-   * device. SAFEtrace VISION is the story unlock that changes what is drawn
+   * device. UNDERWATCH VISION is the story unlock that changes what is drawn
    * inside it, and it is deliberately not this flag — conflating the two is
    * what grew a button on the HUD halfway through a session.
    */

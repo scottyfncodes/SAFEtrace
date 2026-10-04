@@ -15,7 +15,7 @@ import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
 
-/** The player's own accent, as the interface sheet's --own: amber SAFEtrace never uses. */
+/** The player's own accent, as the interface sheet's --own: amber UNDERWATCH never uses. */
 const OWN = '#F2C86B';
 import { taperedStroke as taper } from './veneer';
 
@@ -29,7 +29,7 @@ export class ControlsRenderer {
    * also be entered by the keyboard or by the story cracking the veneer. There
    * is no eye anywhere in here — the control that opens the plan view is PLAN,
    * it is a permanent part of the HUD from the first frame, and unlocking
-   * SAFEtrace VISION does not add anything to the glass.
+   * UNDERWATCH VISION does not add anything to the glass.
    */
   private planFade = 0;
   private homeFade = 0;
@@ -104,7 +104,7 @@ export class ControlsRenderer {
 
     if (mag > 0.02) {
       const ux = vector.x / mag, uy = vector.y / mag;
-      // The player's own thumb, in the player's own amber: never SAFEtrace's cyan.
+      // The player's own thumb, in the player's own amber: never UNDERWATCH's cyan.
       ctx.strokeStyle = alpha(OWN, (0.30 + mag * 0.45) * a);
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';

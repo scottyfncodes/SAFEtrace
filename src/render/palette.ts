@@ -1,5 +1,5 @@
 /**
- * The colour of SAFEtrace — the inked town (docs/40).
+ * The colour of UNDERWATCH — the inked town (docs/40).
  *
  * The street is printed, not lit: ink on paper, a few flat washes between
  * them, and screentone where a graphic novel would put it. That is the
@@ -19,7 +19,7 @@
  */
 
 /**
- * SAFEtrace's own accents. Everything the company makes, says or draws uses
+ * UNDERWATCH's own accents. Everything the company makes, says or draws uses
  * these and only these, and nothing in the physical town does.
  */
 export const TECH = {
@@ -34,7 +34,7 @@ export const TECH = {
    * player's amber — at #FF8B2B the two were nine degrees of hue apart.
    */
   orange: '#FF6326',
-  /** Hardware white: the housing of everything SAFEtrace installs. */
+  /** Hardware white: the housing of everything UNDERWATCH installs. */
   white: '#EEF2F3',
 };
 

@@ -209,7 +209,7 @@ Everything else that can take the screen, and why it is allowed to:
 | Sling zone ring | aim mode | **removed** |
 | Cold-start pad ring | first touch, retires after two board lengths | the hardest moment in the game had nothing to aim at |
 | Diagnostics | `F3` | keyboard only, off by default |
-| Story dialogue and SAFEtrace notifications | beats and the simulation | the game's voice, not screens |
+| Story dialogue and UNDERWATCH notifications | beats and the simulation | the game's voice, not screens |
 
 One piece of stale state was found and fixed: a drawn sling, an open node panel
 or a running interference could survive into the advertisement and be waiting on

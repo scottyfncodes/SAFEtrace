@@ -23,7 +23,7 @@ export type MessagePriority =
   /** The town talking to itself. Texture, and the first thing to be dropped. */
   | 'ambient';
 
-export interface SafetraceMessage {
+export interface UnderwatchMessage {
   id: string;
   /** SYSTEM = all-caps clinical register. CARE = warm consumer register. */
   register: 'SYSTEM' | 'CARE';
@@ -35,7 +35,7 @@ export interface SafetraceMessage {
 }
 
 export interface SimEvents extends Record<string, unknown> {
-  'safetrace:message': SafetraceMessage;
+  'underwatch:message': UnderwatchMessage;
   'sensor:offline': { sensorId: string; label: string };
   /** A camera has just acquired the player, close enough and slow enough to hear. */
   'sensor:noticed': { sensorId: string; pos: Vec2 };
@@ -97,7 +97,7 @@ export interface SimEvents extends Record<string, unknown> {
   'drone:spotlight': { droneId: string; on: boolean };
   'patrol:contact': { patrolId: string };
   'vision:unlocked': Record<string, never>;
-  /** The player has found the number SAFEtrace keeps on them. */
+  /** The player has found the number UNDERWATCH keeps on them. */
   'score:discovered': { where: string; score: number };
   'devon:met': Record<string, never>;
   'veneer:crack': { seconds: number };

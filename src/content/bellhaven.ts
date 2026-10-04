@@ -76,10 +76,10 @@ export function buildBellhaven(): WorldData {
    *
    * Nobody in that chain did anything wrong. That is the argument.
    */
-  b.service('SVC-VISION', 'SAFEtrace VISION — IDENTITY RECOGNITION', pt(392, 74), [
+  b.service('SVC-VISION', 'UNDERWATCH VISION — IDENTITY RECOGNITION', pt(392, 74), [
     'GALLERY: BELLHAVEN RESIDENTS (11,204)',
     'GALLERY: RIDGELINE SECONDARY — ENROLLED MINORS (812)',
-    'CONSENT BASIS: PARENT / GUARDIAN, SAFEtrace SCHOOL T&C 4.2',
+    'CONSENT BASIS: PARENT / GUARDIAN, UNDERWATCH SCHOOL T&C 4.2',
     'MATCH THRESHOLD: 97.0%',
     'FRAME 04:41:07 — FACE PARTIALLY OCCLUDED (HOOD), 34 DEG OFF AXIS',
     'RAW FACIAL SIMILARITY, ARAYA D.: 61.2%',
@@ -87,7 +87,7 @@ export function buildBellhaven(): WorldData {
     'THRESHOLD LAST REVISED: LOWERED FROM 99.0% — SEE REVIEW 11-04',
     'MATCH 04:41:07 — ARAYA, DEVON M. — 98.7%',
   ]);
-  b.service('SVC-REVIEW', 'SAFEtrace GOVERNANCE — REVIEW 11-04', pt(392, 66), [
+  b.service('SVC-REVIEW', 'UNDERWATCH GOVERNANCE — REVIEW 11-04', pt(392, 66), [
     'PETITIONED BY: BELLHAVEN SCHOOL COUNCIL (PARENTS, 214 SIGNATURES)',
     'CHANGE: MATCH THRESHOLD 99.0% -> 97.0%',
     'RATIONALE: TWO HARMS PREVENTED IN PILOT QUARTER',
@@ -95,7 +95,7 @@ export function buildBellhaven(): WorldData {
     'FALSE POSITIVE RATE: WITHIN TOLERANCE',
     'APPROVED: VENN, P. — REGIONAL OPERATIONS',
   ]);
-  b.service('SVC-PREDICT', 'SAFEtrace PREDICT — ASSOCIATION & FORECAST', pt(400, 74), [
+  b.service('SVC-PREDICT', 'UNDERWATCH PREDICT — ASSOCIATION & FORECAST', pt(400, 74), [
     'MODEL: ROUTE PRIOR v9',
     'INPUTS: LOCATION HISTORY, ASSOCIATES, TIME OF DAY, INCIDENT TYPE',
     'ARAYA, DEVON M. — NORTHGATE ASSOCIATION 0.97',
@@ -103,7 +103,7 @@ export function buildBellhaven(): WorldData {
     'ASSOCIATION APPLIED TO SVC-VISION SIMILARITY: 61.2% -> 98.7%',
     'ASSOCIATION IS NOT AN ACCUSATION.',
   ]);
-  b.service('SVC-RECORD', 'SAFEtrace RECORD — SUBJECT HISTORY', pt(384, 74), [
+  b.service('SVC-RECORD', 'UNDERWATCH RECORD — SUBJECT HISTORY', pt(384, 74), [
     'ARAYA, DEVON M. — CONTACT 04:52. NO FURTHER ACTION.',
     'ENTRY RETAINED: FACIAL MATCH 98.7%, INC-4100',
     'RETENTION: INDEFINITE',
@@ -276,7 +276,7 @@ export function buildBellhaven(): WorldData {
   b.prop('bin', pt(300, 124), 0);
   b.prop('hydrant', pt(268, 118));
   b.prop('hydrant', pt(452, 62));
-  b.prop('sign', pt(330, 132), 0, { tint: 'SAFEtrace CITY' });
+  b.prop('sign', pt(330, 132), 0, { tint: 'UNDERWATCH CITY' });
   b.prop('car', pt(285, 132), 0, { tint: '#4FA39B' });
   b.prop('car', pt(420, 132), Math.PI, { tint: '#C9576F' });
 
@@ -365,7 +365,7 @@ export function buildBellhaven(): WorldData {
   b.fence(pt(250, 292), pt(250, 404));
   b.fence(pt(490, 404), pt(490, 292));
   // The gaps in the fence: behind the bike racks, and either side of the
-  // grounds store. Not on any map SAFEtrace has, because they are not gates.
+  // grounds store. Not on any map UNDERWATCH has, because they are not gates.
   b.fence(pt(250, 292), pt(340, 292));
   b.fence(pt(356, 292), pt(462, 292));
   b.fence(pt(482, 292), pt(490, 292));
@@ -380,7 +380,7 @@ export function buildBellhaven(): WorldData {
   b.speaker(pt(349, 292), 'RIDGELINE — ANNOUNCEMENTS');
   b.junction(pt(452, 320), 'RIDGELINE JUNCTION', 'JX-R1');
   b.link('JX-R1', 'TX-1');
-  b.prop('sign', pt(349, 288), 0, { tint: 'SAFEtrace SCHOOL' });
+  b.prop('sign', pt(349, 288), 0, { tint: 'UNDERWATCH SCHOOL' });
   b.ledge(pt(280, 344), pt(324, 344));
   b.ledge(pt(376, 344), pt(420, 344));
   /*

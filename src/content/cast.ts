@@ -44,7 +44,7 @@ export function authorCast(b: TownBuilder): void {
     dwell: 6,
   });
   // The officer who stops Devon. Placed by the story when he is needed.
-  b.person('officer', 'Officer', 'SAFEtrace CITY Partner', pt(196, 400), 90, '#28374D', { visible: false, uniform: true });
+  b.person('officer', 'Officer', 'UNDERWATCH CITY Partner', pt(196, 400), 90, '#28374D', { visible: false, uniform: true });
 
   // ------------------------------------------------------------------ commons
   b.in('commons');
@@ -61,7 +61,7 @@ export function authorCast(b: TownBuilder): void {
   // The community centre's noticeboard: years of the town, one leaflet on top.
   b.sceneProp('sp-noticeboard', 'notice', pt(264, 130.3), { rot: 90, w: 1.2, z: 1.4, tint: '#E9E2D2', text: 'NOTICES' });
   b.place('p-noticeboard', pt(264, 132.6), 'Noticeboard', { reach: 2.8, sceneProp: 'sp-noticeboard' });
-  b.person('priya', 'Priya Venn', 'SAFEtrace Regional Operations', pt(257, 134.2), 90, '#7C5A8E', { visible: false });
+  b.person('priya', 'Priya Venn', 'UNDERWATCH Regional Operations', pt(257, 134.2), 90, '#7C5A8E', { visible: false });
 
   // ------------------------------------------------------------------ channel
   b.in('channel');

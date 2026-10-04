@@ -89,7 +89,7 @@ src/sim/         the game, as pure logic
 
 src/content/     data, not code
   bellhaven.ts   the town
-  copy.ts        every string SAFEtrace says
+  copy.ts        every string UNDERWATCH says
   story.ts       beat definitions and triggers
 
 src/render/      presentation
@@ -103,7 +103,7 @@ src/render/      presentation
 src/ui/          DOM
   ad.ts          the opening advertisement
   hud.ts         diegetic phone HUD
-  notifications.ts SAFEtrace message stack
+  notifications.ts UNDERWATCH message stack
   phone.ts       inspect/hack interface
 
 src/audio/       WebAudio, fully synthesised

@@ -1,4 +1,4 @@
-# 11 — SAFEtrace™ Brand & UI System
+# 11 — UNDERWATCH™ Brand & UI System
 
 > The accent colour moved from teal to electric cyan, with acid green and
 > warning orange beside it — see [39](39-near-future-urban-noir.md) §3. The rest
@@ -6,33 +6,33 @@
 
 ## 1. The brand must feel real
 
-If SAFEtrace looks like a video game evil corporation, the game does not work.
+If UNDERWATCH looks like a video game evil corporation, the game does not work.
 It must look like a company whose stock you might own.
 
-**Wordmark**: `SAFEtrace™` — `SAFE` in medium weight, `trace` in light, no
-space, teal. Lowercase second half signals approachability, which is the entire
-brand strategy: *we are not the government, we are a nice product*.
+**Wordmark**: `UNDERWATCH™` — `UNDER` in medium weight, `WATCH` in light, no
+space, teal. The light second half softens the word, which is the entire brand
+strategy: *we are not the government, we are a nice product*.
 
 **Mark**: a rounded-corner square containing three concentric arcs — a
 stylised field of view that also reads as a wifi symbol and a shield.
 
 **Voice**: calm, plain, second-person, present tense, never exclamatory.
-SAFEtrace never says "ALERT". It says "We noticed something."
+UNDERWATCH never says "ALERT". It says "We noticed something."
 
 ## 2. Product line
 
 ```
-SAFEtrace™ HOME     Protect your family.
-SAFEtrace™ SCHOOL   Safer classrooms. Smarter communities.
-SAFEtrace™ CITY     Predict. Prevent. Protect.
-SAFEtrace™ VISION   Advanced identity recognition.
-SAFEtrace™ PREDICT  Don't wait for danger.
-SAFEtrace™ CARE     Someone is always looking out.
+UNDERWATCH™ HOME     Protect your family.
+UNDERWATCH™ SCHOOL   Safer classrooms. Smarter communities.
+UNDERWATCH™ CITY     Predict. Prevent. Protect.
+UNDERWATCH™ VISION   Advanced identity recognition.
+UNDERWATCH™ PREDICT  Don't wait for danger.
+UNDERWATCH™ CARE     Someone is always looking out.
 ```
 
 These appear on signage, bus shelters, school announcement boards, the phone,
 and in the opening advertisement. **Their words never change across the game.**
-Only the player does. `SAFEtrace™ CARE — Someone is always looking out.` is
+Only the player does. `UNDERWATCH™ CARE — Someone is always looking out.` is
 warm in minute one and unbearable in hour four, and it is the same eleven
 characters.
 
@@ -48,7 +48,7 @@ every number the system reports. Numbers are the brand's real typeface: `98.7%`,
 **Almost every interface element is a thing in the fiction.**
 
 - Notifications are phone notifications, and they animate in as a phone would.
-- The risk score is the SAFEtrace app's own "Community Safety Score" widget,
+- The risk score is the UNDERWATCH app's own "Community Safety Score" widget,
   which every resident has, showing *your* number. It was always in the app. In
   Act I it is a friendly green 4%.
 - Ammunition is not an ammo counter; it is bearings visible in a pocket flap.
@@ -59,7 +59,7 @@ out permanently once the player has demonstrated the verb three times.
 
 ## 5. Message grammar
 
-SAFEtrace speaks in a strict register. All caps for system states, sentence case
+UNDERWATCH speaks in a strict register. All caps for system states, sentence case
 for consumer-facing care language.
 
 ```
@@ -87,7 +87,7 @@ The two registers belong to the same company and the game never comments on it.
 ## 6. Motion
 
 Everything eases with a soft, confident curve (`cubic-bezier(.16,1,.3,1)`),
-200–320 ms. Nothing in SAFEtrace's UI is ever urgent, jittery, or red-flashing —
+200–320 ms. Nothing in UNDERWATCH's UI is ever urgent, jittery, or red-flashing —
 not even INTERVENTION, which slides in as gently as a weather update. The
 calmness of the animation while a patrol converges on you is the design's
 sharpest tool.

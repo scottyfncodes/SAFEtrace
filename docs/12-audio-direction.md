@@ -13,13 +13,13 @@ Reasons: no asset pipeline, no licensing, tiny build, and — the important one 
 **motifs can be recontextualised parametrically**. The same synthesis call with
 a different reverb tail and a slower envelope is the same sound, aged.
 
-## 3. The SAFEtrace motif
+## 3. The UNDERWATCH motif
 
 A three-note rising figure (a fifth then a major third, on a soft triangle wave
 with a sine sub) with a gentle bell attack. It plays:
 
 - in the opening advertisement, over the wordmark,
-- on your phone whenever SAFEtrace tells you something,
+- on your phone whenever UNDERWATCH tells you something,
 - from public speakers in the Commons and at Ridgeline,
 - at the end of the game.
 
@@ -45,7 +45,7 @@ the first time a player *hears* a camera track them is a designed moment. Plate
 readers tick. Drones have a soft, pleasant rotor hum — deliberately pleasant.
 
 **Machine mode.** Entering VISION ducks the world bed by 18 dB and replaces it
-with a low harmonic drone tuned to the same root as the SAFEtrace motif, plus
+with a low harmonic drone tuned to the same root as the UNDERWATCH motif, plus
 sparse data ticks spatialised to actual nodes. You can *hear* how many cameras
 are near you. Leaving VISION brings the world back with a slight overshoot in
 brightness, so the real world sounds momentarily too loud and too alive.
@@ -63,7 +63,7 @@ gameplay. Its absence for hours is what makes its return land.
   stop, the mower stops, the wind drops. Silence is the tension system.
 - Flow adds a warm low harmonic and lifts the skating layer. Being good feels
   good.
-- INTERVENTION is scored with nothing at all except the SAFEtrace motif and
+- INTERVENTION is scored with nothing at all except the UNDERWATCH motif and
   footsteps.
 
 ## 7. Accessibility

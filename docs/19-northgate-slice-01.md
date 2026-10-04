@@ -1,7 +1,7 @@
 # 19 — Phase 8, Slice 01: Northgate
 
 **Built on:** `7044449`
-**Purpose:** prove SAFETRACE can grow through authored content without new architecture.
+**Purpose:** prove UNDERWATCH can grow through authored content without new architecture.
 **Scope:** capped by `18-phase-8-readiness.md` §11 and held to it.
 
 ---

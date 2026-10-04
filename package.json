@@ -1,9 +1,9 @@
 {
-  "name": "safetrace",
+  "name": "underwatch",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SAFETRACE - a game about a kid on a skateboard in a town that is already watching.",
+  "description": "UNDERWATCH - a game about a kid on a skateboard in a town that is already watching.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

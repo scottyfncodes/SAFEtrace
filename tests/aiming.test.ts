@@ -204,7 +204,7 @@ describe('drawing the sling does not stop the board', () => {
 describe('notifications are ranked before they are reduced', () => {
   /*
    * The first human to play found the notifications overwhelming. The problem
-   * was never the volume — SAFEtrace is supposed to be invasive — it was that
+   * was never the volume — UNDERWATCH is supposed to be invasive — it was that
    * an advert and an authorised intervention arrived as the same card in the
    * same stack, so nothing could be ranked at a glance.
    */
@@ -212,7 +212,7 @@ describe('notifications are ranked before they are reduced', () => {
   // the simulation free of side effects. Tests have to flush like the game does.
   const capture = (sim: Sim) => {
     const seen: Array<{ priority: string; lines: string[] }> = [];
-    sim.bus.on('safetrace:message', (m) => seen.push({ priority: m.priority, lines: m.lines }));
+    sim.bus.on('underwatch:message', (m) => seen.push({ priority: m.priority, lines: m.lines }));
     return { seen, flush: () => sim.bus.flush() };
   };
 

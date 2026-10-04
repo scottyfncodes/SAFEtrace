@@ -8,7 +8,7 @@
  *   going down into the Channel: 4417 and ARAYA, DEVON M.
  *
  *   At 04:41 a courier, hood up against the drizzle, carries a parcel up to
- *   14 Northgate Lane. The house is a SAFEtrace HOME "secure address": no porch
+ *   14 Northgate Lane. The house is an UNDERWATCH HOME "secure address": no porch
  *   drops. So the courier picks the parcel back up off the step and leaves it
  *   with the neighbour at No. 16. The doorbell sees an unrecognised adult take
  *   an item from the porch, and files a burglary on its owner's behalf.
@@ -32,7 +32,7 @@ export const THREADS: ThreadDef[] = [
   {
     id: 'where',
     question: 'Can anyone prove where Devon was at 4:41?',
-    answered: 'SAFEtrace can. It wrote it down itself.',
+    answered: 'UNDERWATCH can. It wrote it down itself.',
   },
   {
     id: 'burglary',
@@ -98,7 +98,7 @@ export const CLUES: ClueDef[] = [
   {
     id: 'c-autoreport', thread: 'burglary', source: 'place', where: "No. 14's front door",
     title: 'Reported on her behalf',
-    body: "The SAFEtrace HOME panel by No. 14's door, still lit: 'UNRECOGNISED ADULT REMOVED AN ITEM FROM YOUR PORCH — 04:41. INCIDENT REPORTED ON YOUR BEHALF.'",
+    body: "The UNDERWATCH HOME panel by No. 14's door, still lit: 'UNRECOGNISED ADULT REMOVED AN ITEM FROM YOUR PORCH — 04:41. INCIDENT REPORTED ON YOUR BEHALF.'",
   },
   {
     id: 'c-resident', thread: 'burglary', source: 'person', where: 'Mrs. Carvalho, No. 14',
@@ -113,7 +113,7 @@ export const CLUES: ClueDef[] = [
   {
     id: 'c-alert', thread: 'burglary', source: 'place', where: 'The Vine Street shelter',
     title: 'The community alert',
-    body: "The bus shelter screen is running a SAFEtrace CARE alert: Devon's school photo, PERSON OF INTEREST — NORTHGATE. Posted 04:43, to every phone on the Lane.",
+    body: "The bus shelter screen is running an UNDERWATCH CARE alert: Devon's school photo, PERSON OF INTEREST — NORTHGATE. Posted 04:43, to every phone on the Lane.",
   },
   {
     id: 'c-brennan', thread: 'burglary', source: 'person', where: 'Mr. Brennan, No. 12',
@@ -190,7 +190,7 @@ export const DEDUCTIONS: DeductionDef[] = [
   {
     id: 'd-alibi', thread: 'where', from: ['c-drainage', 'c-cm207'], key: true,
     title: 'Two places at once',
-    body: "SAFEtrace logged Devon entering the Channel at 04:39:52. Seventy-five seconds later CM-207 'saw' him on Northgate Lane, across town. Nobody put the two records side by side.",
+    body: "UNDERWATCH logged Devon entering the Channel at 04:39:52. Seventy-five seconds later CM-207 'saw' him on Northgate Lane, across town. Nobody put the two records side by side.",
   },
   {
     id: 'd-nobody-called', thread: 'burglary', from: ['c-resident', 'c-autoreport'],
@@ -270,7 +270,7 @@ export interface PlaceText { text: string; clue?: string }
 
 export const PLACES: Record<string, PlaceText> = {
   'p-panel': {
-    text: "A SAFEtrace HOME panel beside No. 14's door. The screen is still lit: 'UNRECOGNISED ADULT REMOVED AN ITEM FROM YOUR PORCH — 04:41. INCIDENT REPORTED ON YOUR BEHALF. Nothing more is needed from you.'",
+    text: "An UNDERWATCH HOME panel beside No. 14's door. The screen is still lit: 'UNRECOGNISED ADULT REMOVED AN ITEM FROM YOUR PORCH — 04:41. INCIDENT REPORTED ON YOUR BEHALF. Nothing more is needed from you.'",
     clue: 'c-autoreport',
   },
   'p-parcel': {
@@ -278,7 +278,7 @@ export const PLACES: Record<string, PlaceText> = {
     clue: 'c-parcel',
   },
   'p-tape': {
-    text: "Tape across No. 14's drive: INCIDENT SCENE — SAFEtrace CITY. There's nothing on the other side of it but a lawn.",
+    text: "Tape across No. 14's drive: INCIDENT SCENE — UNDERWATCH CITY. There's nothing on the other side of it but a lawn.",
   },
   'p-alert': {
     text: "The shelter screen is running a community alert on a loop. Devon's school photo — the one with the bad haircut. PERSON OF INTEREST — NORTHGATE. Posted 04:43.",
@@ -288,10 +288,10 @@ export const PLACES: Record<string, PlaceText> = {
     text: "Sprayed along the channel wall, old and sun-faded: SMILE — YOU'RE PREDICTED. Someone's written underneath it, newer: not down here.",
   },
   'p-dropin': {
-    text: "A SAFEtrace CARE poster on the noticeboard: COMMUNITY DROP-IN — TODAY, 5PM, BELLHAVEN COMMUNITY CENTRE. 'Meet Priya Venn, your Regional Operations lead. Your questions make us better.'",
+    text: "An UNDERWATCH CARE poster on the noticeboard: COMMUNITY DROP-IN — TODAY, 5PM, BELLHAVEN COMMUNITY CENTRE. 'Meet Priya Venn, your Regional Operations lead. Your questions make us better.'",
   },
   'p-enrol': {
-    text: "A laminated sign on the school gate: 'All Ridgeline pupils are enrolled in SAFEtrace SCHOOL. Opt-out forms are available from reception.' Someone's drawn a clock on it with the hands stuck at 'never'.",
+    text: "A laminated sign on the school gate: 'All Ridgeline pupils are enrolled in UNDERWATCH SCHOOL. Opt-out forms are available from reception.' Someone's drawn a clock on it with the hands stuck at 'never'.",
   },
   'p-window': {
     text: "Mara's shop window. A hand-lettered card between two decks: BOARDS FIXED. NO QUESTIONS ASKED.",
@@ -303,13 +303,13 @@ export const PLACES: Record<string, PlaceText> = {
     text: "Devon's board, leaning against his front step. There's fresh grip tape on the nose, and he's written on it in marker: NOT A MATCH.",
   },
   'p-noticeboard': {
-    text: "The community noticeboard. Piano lessons. A lost tortoise called Gerald. Over the top of all of it, newer than anything: a SAFEtrace CARE leaflet. 'See something? The app already has.'",
+    text: "The community noticeboard. Piano lessons. A lost tortoise called Gerald. Over the top of all of it, newer than anything: an UNDERWATCH CARE leaflet. 'See something? The app already has.'",
   },
   'p-ledge': {
     text: 'Names scratched into the wall under the footbridge, years of them. Initials, dates, a board company logo, a very bad drawing of a dog.',
   },
   'p-doorbell': {
-    text: "A SAFEtrace HOME doorbell on the corner house. A small green light, and a sticker: 'This home is protected.' It's angled at the pavement, not the door.",
+    text: "An UNDERWATCH HOME doorbell on the corner house. A small green light, and a sticker: 'This home is protected.' It's angled at the pavement, not the door.",
   },
 };
 
@@ -422,7 +422,7 @@ export interface Ending {
   title: string;
   /** What changed, a line at a time. */
   epilogue: string[];
-  /** The one line SAFEtrace says about it. */
+  /** The one line UNDERWATCH says about it. */
   system: string;
 }
 
@@ -456,7 +456,7 @@ export const ENDINGS: Record<EndingId, Ending> = {
     epilogue: [
       "Mara put the whole thing in her window, in marker and printouts: the frame, the face, the drainage log, the parcel.",
       'By the weekend half of Bellhaven had stopped to read it. By the council meeting, 380 people had signed to put the threshold back to 99%.',
-      'SAFEtrace issued community guidance about unverified claims. Your Community Safety Score dropped eleven points and never quite came back.',
+      'UNDERWATCH issued community guidance about unverified claims. Your Community Safety Score dropped eleven points and never quite came back.',
       "Devon keeps a photo of the window on his phone. He says it's the only record of him he likes.",
     ],
   },

@@ -60,7 +60,7 @@ Not by re-reading the code more carefully — that had already happened twice.
 The dev server was run, and both devices were driven through the real
 `main.ts` loop in a real browser:
 
-**Mouse**, via Playwright, reading `window.safetrace`'s dev hook directly —
+**Mouse**, via Playwright, reading `window.underwatch`'s dev hook directly —
 `draw` climbing every 100ms and a projectile appearing on release, both
 before and after the fix, to see the actual before/after rather than assume
 it from the diff:

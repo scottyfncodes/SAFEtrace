@@ -7,7 +7,7 @@ tile grid, no rhythm bar. The network is a *place* that overlaps the town, and
 hacking is navigating it.
 
 The phone is not a hacking device. It is a phone. Every resident of Bellhaven
-has the SAFEtrace app; it shows your own safety score, your family's location,
+has the UNDERWATCH app; it shows your own safety score, your family's location,
 and neighbourhood alerts. The player's version has been modified by Mara to
 show a little more than it should. That framing keeps the protagonist a kid with
 a phone rather than a cyberpunk operator.
@@ -64,7 +64,7 @@ The false-positive investigation is played entirely through the graph:
 2. `TRACE` from the incident to `CM-207` → it is on segment `S-N2`, uplink `TX-2`.
 3. `QUERY CM-207` → its feed is fine. Nothing is broken. That is the horror.
 4. `TRACE` to `SVC-VISION` → the match ran against a gallery that includes every
-   student at Ridgeline, because SAFEtrace SCHOOL enrolled them.
+   student at Ridgeline, because UNDERWATCH SCHOOL enrolled them.
 5. `QUERY SVC-PREDICT` on Devon → prior association: Devon's cousin lives in
    Northgate. Devon has been there many times. The prior was reasonable. The
    prior was decisive.

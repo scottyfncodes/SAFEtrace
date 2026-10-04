@@ -1,7 +1,7 @@
 /**
  * The notebook: the player's own notes, on the player's own phone.
  *
- * It is not SAFEtrace. It is lower-case, hand-kept, and it has no score in
+ * It is not UNDERWATCH. It is lower-case, hand-kept, and it has no score in
  * it. It shows three things: what you are trying to find out, what you have
  * seen and been told, and what you have worked out by putting two of those
  * next to each other. Connecting is the only verb, and a wrong pair costs

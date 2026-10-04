@@ -20,7 +20,7 @@ the town went back to being a town with nothing left in it.
 
 The answer to what happened on Northgate Lane is now a real one, and nobody
 says it in one breath. At 04:41 a courier, hood up in the drizzle, could not
-leave a parcel on a SAFEtrace HOME "secure address", picked it back up off
+leave a parcel on an UNDERWATCH HOME "secure address", picked it back up off
 the step and left it next door. The doorbell filed that as a burglary on its
 owner's behalf. CM-207's frame of the courier was 61% similar to a Ridgeline
 pupil; SVC-PREDICT weighted it by where each pupil usually goes, and Devon —
@@ -103,7 +103,7 @@ you are talking to, flies the advertisement's tour, and hands the last shot
 to the rider as a move rather than a cut.
 
 The player's own sounds are in E minor, a pencil and a pluck; everything
-SAFEtrace makes is still its bell in A. Districts have their own air.
+UNDERWATCH makes is still its bell in A. Districts have their own air.
 
 ## What was deliberately left alone
 

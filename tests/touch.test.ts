@@ -389,7 +389,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
   /*
    * The plan view is a view, and it is the same three-button HUD forever.
    *
-   * The engine has no idea SAFEtrace VISION exists — there is no setter for it
+   * The engine has no idea UNDERWATCH VISION exists — there is no setter for it
    * and nothing to unlock — which is the structural version of "the story does
    * not add a control". PLAN is in the list on the first frame of a brand new
    * engine and it is still exactly the same button after everything else the
