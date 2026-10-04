@@ -1026,6 +1026,7 @@ class Game {
     this.renderer.scoreLine = this.sim.scoreDiscovered
       ? PHONE.plan(Math.round(100 - this.sim.playerRisk), riskLabel(this.sim.playerRisk)) : null;
     this.renderer.seenPlaces = this.seenPlaces;
+    if (this.sim.planViewBlend > 0) this.renderer.freshPlaces = new Set(this.story.freshPlaces());
     // The hint retires itself the moment the player has travelled a board's
     // length or two under their own power. Nobody needs to be told twice.
     this.renderer.showControlHome = this.touchPrimary && this.sim.player.odometer < 12;

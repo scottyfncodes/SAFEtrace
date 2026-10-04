@@ -399,6 +399,34 @@ export class Renderer {
     return this.lastEye ? this.perspective.groundAt(this.lastEye, p.x, p.y, this.w, this.h) : null;
   }
 
+  /**
+   * The player's own mark on their own map: a short pencil check above a
+   * place's pin, meaning "you know something now — look again". Paper and
+   * graphite, slightly uneven, and never the system's teal or a badge: it is
+   * a note in a margin, not an alert, and it carries no number.
+   */
+  private pencilTick(ctx: CanvasRenderingContext2D, c: Vec2, a: number): void {
+    if (c.x < -40 || c.x > this.w + 40 || c.y < -40 || c.y > this.h + 40) return;
+    const x = c.x - 13, y = c.y - 12;
+    const stroke = () => {
+      ctx.beginPath();
+      ctx.moveTo(x, y + 1.5);
+      ctx.quadraticCurveTo(x + 2.2, y + 3.2, x + 3.2, y + 5.6);
+      ctx.quadraticCurveTo(x + 5.6, y - 0.6, x + 9.6, y - 3.4);
+      ctx.stroke();
+    };
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = alpha('#0B1117', 0.75 * a);
+    ctx.lineWidth = 4.2;
+    stroke();
+    ctx.strokeStyle = alpha('#F4EFE4', a);
+    ctx.lineWidth = 2;
+    stroke();
+    ctx.restore();
+  }
+
   /** Where the rider's hands are on the glass: the place a pull is drawn from. */
   riderScreen(): Vec2 | null {
     const eye = this.lastEye;
@@ -429,6 +457,8 @@ export class Renderer {
   metPeople: ReadonlySet<string> = new Set();
   /** Places the player has stopped and looked at, by id. Set by the host. */
   seenPlaces: ReadonlySet<string> = new Set();
+  /** Places already looked at that would read differently now: a pencil tick. */
+  freshPlaces: ReadonlySet<string> = new Set();
   /** Set by the host once SAFEtrace's number for the player has been found. */
   scoreLine: string | null = null;
 
@@ -532,7 +562,12 @@ export class Renderer {
     };
     for (const p of sim.people) if (p.visible && this.metPeople.has(p.id)) pin(p.pos, p.name, '#F2C86B');
     if (sim.devonVisible && sim.devonFollowing !== undefined && this.metPeople.has('devon')) pin(sim.devonPos, 'Devon', VENEER.friend);
-    for (const pl of sim.places) if (pl.visible && this.seenPlaces.has(pl.id)) pin(pl.pos, pl.label, '#BFD7D2');
+    for (const pl of sim.places) {
+      const fresh = this.freshPlaces.has(pl.id);
+      if (!pl.visible || !(fresh || this.seenPlaces.has(pl.id))) continue;
+      pin(pl.pos, pl.label, '#BFD7D2');
+      if (fresh) this.pencilTick(ctx, at(pl.pos), a);
+    }
 
     // The pin you put down.
     if (this.waypoint) {
