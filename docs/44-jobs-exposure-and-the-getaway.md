@@ -67,3 +67,20 @@ These combine into one total and a grade (S/A/B/C). A loud, fast, stylish run
 and a slow, unseen one can both grade well. GHOST jobs weight exposure. Bests
 are kept per job and per axis (`core/save.ts`), so the result card can say
 **BEST** next to the thing you did cleaner.
+
+## The kit (progression)
+
+Kept deliberately small (`sim/jobs/kit.ts`). **Rep** is computed from your
+per-job bests: one for finishing a job, plus 1/2/3 for a B/A/S. It can only go
+up, so replaying a job for a better grade is worth it. Each perk opens a way of
+skating rather than turning a number up:
+
+| Perk | Rep | What it opens |
+|---|---|---|
+| LONG LINE | 3 | Hook anchors from a third further away: longer arcs, new gaps. |
+| QUICK REEL | 7 | A full launch from a 60° swing instead of 90°, so launches come out of tighter corners. |
+| SOFT TRUCKS | 12 | Land 15° further off line without slamming: bigger, sloppier drops. |
+| QUIET BEARINGS | 18 | Pushes, pops and landings no longer turn cameras. Bails are still loud. |
+
+The board shows rep and the kit. The result card names any perk a run just
+earned. The afternoon and a fresh player skate the board exactly as tuned.

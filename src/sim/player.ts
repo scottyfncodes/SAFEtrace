@@ -372,6 +372,8 @@ export interface PlayerState {
    * across a car park deck has `z === ground`.
    */
   ground: number;
+  /** Degrees added to how far off line a landing can be and still be ridden away. */
+  landingBonusDeg: number;
   lastSurface: string;
   /**
    * An ollie asked for slightly too early is remembered, not thrown away.
@@ -435,6 +437,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
     odometer: 0,
     capBoost: 0,
     ground: 0,
+    landingBonusDeg: 0,
     ollieBuffer: 0,
     pushBuffer: 0,
     lastSurface: 'asphalt',
@@ -867,7 +870,7 @@ function integrate(p: PlayerState, world: World, dt: number): void {
       // A landing badly out of line with travel is a bail.
       const travel = angleOf(p.vel);
       const off = Math.abs(wrapAngle(travel - p.heading));
-      if (len(p.vel) > 4.5 && off > (TUNE.landingToleranceDeg * Math.PI) / 180) {
+      if (len(p.vel) > 4.5 && off > ((TUNE.landingToleranceDeg + p.landingBonusDeg) * Math.PI) / 180) {
         // A crash retracts the grab it just credited: holding on through a
         // slam is not landing it.
         p.grabbedThisTick = null;

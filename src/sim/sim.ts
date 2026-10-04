@@ -16,6 +16,7 @@ import { World } from './world';
 import type { SimEvents } from './events';
 import { GRABS, TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import { type Anchor, anchorsFor } from './traversal/anchors';
+import { KIT_EFFECT, NO_KIT, type Kit } from './jobs/kit';
 import { LINE, arrive, bleedBoost, hook, pickAnchor, release, stepLine, type SlingLine } from './traversal/slingline';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
@@ -222,6 +223,11 @@ export class Sim {
    * town (traversal/anchors.ts).
    */
   readonly anchors: Anchor[];
+  /**
+   * What a run's earned kit changes (sim/jobs/kit.ts). Nothing by default:
+   * the afternoon and a fresh player skate exactly the board as tuned.
+   */
+  kit: Kit = { ...NO_KIT };
   /** The line, while the rider is on one. */
   line: SlingLine | null = null;
   /** What a hook would catch right now. The HUD brackets it. */
@@ -594,10 +600,11 @@ export class Sim {
     }
 
     bleedBoost(p, dt);
-    this.anchorTarget = this.aimMode ? null : pickAnchor(p, this.anchors, this.world, skip);
+    const reach = this.kit.longLine ? KIT_EFFECT.longLine : 1;
+    this.anchorTarget = this.aimMode ? null : pickAnchor(p, this.anchors, this.world, skip, reach);
     if (this.hookBuffer > 0 && intent.hook && this.anchorTarget) {
       const a = this.anchorTarget;
-      this.line = hook(p, a);
+      this.line = hook(p, a, this.kit.quickReel ? KIT_EFFECT.quickReel : 1);
       this.hookBuffer = 0;
       this.anchorTarget = null;
       this.bus.emit('line:hook', { anchorId: a.id, kind: a.kind, pos: { ...a.pos }, z: a.z });
@@ -684,6 +691,8 @@ export class Sim {
     const p = this.player;
     const at = { x: p.pos.x, y: p.pos.y };
     if (p.bailedThisTick) { this.drawAttention(at, BOARD_NOISE.bail, 4.5, 1); return; }
+    // Quiet bearings: the board rolls, pops and lands without a lens turning.
+    if (this.kit.quietBearings) return;
     if (p.landedThisTick) {
       const flourish = p.trickedThisTick || p.grabbedThisTick ? BOARD_NOISE.flourish : 0;
       const reach = Math.min(BOARD_NOISE.landMax, BOARD_NOISE.land + p.speed * 0.45) + flourish;
@@ -2440,6 +2449,7 @@ export class Sim {
   resetForRun(spawn: Vec2, heading: number): void {
     Object.assign(this.player, makePlayer(spawn));
     this.player.heading = heading;
+    this.player.landingBonusDeg = this.kit.softTrucks ? KIT_EFFECT.softTrucks : 0;
     this.line = null;
     this.anchorTarget = null;
     this.lastAnchor = null;

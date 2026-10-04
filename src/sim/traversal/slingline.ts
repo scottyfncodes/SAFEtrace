@@ -75,6 +75,8 @@ export const LINE = {
 
 export interface SlingLine {
   anchor: Anchor;
+  /** Arc that makes a full charge on this line, radians. */
+  full: number;
   /** Current rope length, horizontal, metres. */
   len: number;
   /** Arc swept round the anchor so far, radians, unsigned. */
@@ -100,9 +102,9 @@ function travelDir(p: PlayerState): number {
 }
 
 /** Can this anchor be hooked from where the rider is? */
-export function canHook(p: PlayerState, a: Anchor, world: World): boolean {
+export function canHook(p: PlayerState, a: Anchor, world: World, reach = 1): boolean {
   const d = dist(p.pos, a.pos);
-  const range = a.kind === 'mast' ? LINE.mastRange : LINE.range;
+  const range = (a.kind === 'mast' ? LINE.mastRange : LINE.range) * reach;
   if (d < LINE.minRange || d > range) return false;
   // Hooked from above is not hooked: a line has to pull up as well as round.
   if (a.z < p.z + 1.2) return false;
@@ -153,7 +155,9 @@ function nearestOnPoly(poly: Vec2[], p: Vec2): Vec2 {
  * brackets is the one the player was already looking at. An anchor just let
  * go of is skipped, so a chain goes somewhere new.
  */
-export function pickAnchor(p: PlayerState, anchors: readonly Anchor[], world: World, skip: string | null = null): Anchor | null {
+export function pickAnchor(
+  p: PlayerState, anchors: readonly Anchor[], world: World, skip: string | null = null, reach = 1,
+): Anchor | null {
   if (!p.onBoard || p.stance === 'BAIL' || p.stance === 'FOOT') return null;
   const dir = travelDir(p);
   let best: Anchor | null = null;
@@ -162,22 +166,23 @@ export function pickAnchor(p: PlayerState, anchors: readonly Anchor[], world: Wo
     if (a.id === skip) continue;
     const dx = a.pos.x - p.pos.x, dy = a.pos.y - p.pos.y;
     // Cheap reject before the occlusion test.
-    if (Math.abs(dx) > LINE.mastRange || Math.abs(dy) > LINE.mastRange) continue;
+    if (Math.abs(dx) > LINE.mastRange * reach || Math.abs(dy) > LINE.mastRange * reach) continue;
     const d = Math.hypot(dx, dy);
     const off = Math.abs(wrapAngle(Math.atan2(dy, dx) - dir));
     const score = d * (1 + 0.45 * off);
     if (score >= bestScore) continue;
-    if (!canHook(p, a, world)) continue;
+    if (!canHook(p, a, world, reach)) continue;
     best = a;
     bestScore = score;
   }
   return best;
 }
 
-export function hook(p: PlayerState, a: Anchor): SlingLine {
+export function hook(p: PlayerState, a: Anchor, chargeArc = 1): SlingLine {
   const d = dist(p.pos, a.pos);
   return {
     anchor: a,
+    full: LINE.fullCharge * chargeArc,
     // Taut from the first frame, a touch shorter than the gap, so a hook
     // always takes up the slack at once and is felt.
     len: Math.max(LINE.minLen, d * 0.96),
@@ -188,7 +193,7 @@ export function hook(p: PlayerState, a: Anchor): SlingLine {
 }
 
 /** 0..1: how much of a full launch the arc so far has earned. */
-export const lineCharge = (l: SlingLine): number => clamp01(l.swept / LINE.fullCharge);
+export const lineCharge = (l: SlingLine): number => clamp01(l.swept / l.full);
 
 /** The speed over the board's own cap the rider is carrying, kept for the cap. */
 function holdBoost(p: PlayerState): void {
@@ -290,7 +295,7 @@ function zip(p: PlayerState, l: SlingLine, world: World, dt: number): 'hold' | '
   p.speed = len(p.vel);
   if (p.speed > 0.5) p.heading = angleOf(p.vel);
   p.turnRate = 0;
-  l.swept = Math.min(LINE.fullCharge, l.swept + (LINE.fullCharge / LINE.zipCharge) * dt);
+  l.swept = Math.min(l.full, l.swept + (l.full / LINE.zipCharge) * dt);
   p.flow = clamp01(p.flow + TUNE.flowRise * dt);
   holdBoost(p);
   if (inside && clear && dist(edge, p.pos) > 1.0) return 'arrive';

@@ -38,7 +38,8 @@ import { JOBS } from './content/jobs';
 import { JOB } from './content/copy';
 import { JobRun } from './sim/jobs/run';
 import type { JobDef } from './sim/jobs/types';
-import { JobBoard, JobHud, JobResults } from './ui/jobs';
+import { JobBoard, JobHud, JobResults, repOf } from './ui/jobs';
+import { PERKS, kitFor } from './sim/jobs/kit';
 import { loadJobRecords, recordJobRun } from './core/save';
 
 /**
@@ -359,6 +360,8 @@ class Game {
     this.results.hide();
     this.run?.dispose();
     this.clearTransientState();
+    // The kit is what the records have earned so far.
+    this.sim.kit = kitFor(repOf(loadJobRecords()));
     this.run = new JobRun(this.sim, def, JOB.run);
     this.resultIn = -1;
     this.renderer.chase.reset(this.sim);
@@ -393,6 +396,7 @@ class Game {
       if (this.resultIn <= 0 && !this.results.open && r.result) {
         this.resultIn = Infinity;
         const res = r.result;
+        const repBefore = repOf(loadJobRecords());
         const { record, bests } = recordJobRun(r.def.id, {
           total: res.total, grade: res.grade, time: res.time, style: res.style,
           exposure: res.exposure, flow: res.flow, ghost: res.ghost,
@@ -400,7 +404,7 @@ class Game {
         this.clearHeldInput();
         this.results.show(r.def, res, record, bests, JOBS.indexOf(r.def) < JOBS.length - 1, {
           launches: r.tally.launches, tricks: r.tally.tricks, roofs: r.tally.roofs, bestChain: r.tally.bestChain,
-        });
+        }, PERKS.filter((p) => p.rep > repBefore && p.rep <= repOf(loadJobRecords())));
         this.audio.hackDone();
       }
     }

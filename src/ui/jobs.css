@@ -196,3 +196,15 @@
 @media (max-width: 640px), (pointer: coarse) {
   html.jobs-mode #prompts { top: calc(var(--safe-top, 0px) + 172px); }
 }
+
+/* The kit strip on the board: rep, and what it has opened. */
+.jb-kit { display: flex; gap: 6px; flex-wrap: wrap; align-items: stretch; margin: 0 0 12px; }
+.jb-rep { display: flex; align-items: center; padding: 0 10px; font-size: 11px; letter-spacing: 0.1em; color: var(--ink-muted); border: 1px solid var(--ink-line); border-radius: var(--r-sm); }
+.jb-rep b { color: var(--own); margin-left: 6px; font-size: 14px; }
+.perk { flex: 1 1 120px; display: flex; flex-direction: column; gap: 2px; padding: 6px 9px; border: 1px dashed var(--ink-line-strong); border-radius: var(--r-sm); opacity: 0.55; }
+.perk b { font-size: 10.5px; letter-spacing: 0.08em; }
+.perk small { font-size: 10px; color: var(--ink-muted); font-family: var(--font-sans); }
+.perk.on { opacity: 1; border-style: solid; border-color: rgba(242, 200, 107, 0.5); background: var(--own-wash); }
+.perk.on b { color: var(--own); }
+.jr-unlock { font-size: 12px; margin: 0 0 8px; }
+.jr-unlock b { color: var(--own); }
