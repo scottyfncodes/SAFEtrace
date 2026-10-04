@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { markersFor, sightlinesFor, SIGHTLINE_MAX } from '../src/render/evidence';
-import { figure, type Build } from '../src/render/figures';
+import { ADULT, DEVON, RIDER, castLook, officerLook, pose, residentLook, wearable, type Look } from '../src/render/characters';
 import { INK, Ink, brushOutline } from '../src/render/ink';
 import { MACHINE, PRINT, SIGNAL, SKY, TECH, VENEER, weather } from '../src/render/palette';
 import { MATERIAL, streetDressingFor, terminalFor } from '../src/render/perspective';
@@ -168,21 +168,95 @@ describe('the ink has a hierarchy, and a person tops it', () => {
 });
 
 describe('people are told apart by outline first', () => {
-  const builds: Build[] = ['coat', 'hoodie', 'skirt', 'brim', 'satchel', 'officer', 'devon'];
-  const hatSpan = (b: Build) => Math.max(0, ...figure(b).shapes.filter((s) => s.fill === 'hat').flatMap((s) => s.pts.map(([u]) => Math.abs(u))));
-  const outline = (b: Build) => JSON.stringify(figure(b).shapes.map((s) => s.pts));
+  const KINDS = ['adult', 'child', 'dogWalker', 'jogger'] as const;
+  const residents: Look[] = [];
+  for (let i = 0; i < 60; i++) for (const k of KINDS) residents.push(residentLook(`npc-${i}`, k, VENEER.civilian[i % VENEER.civilian.length], i % 9 === 0));
+  const cast = ['mara', 'priya', 'courier', 'carvalho', 'brennan'].map((id) => castLook(id, '#E6C229')!);
+  const everyoneButDevon = [...residents, ...cast, officerLook('o1'), RIDER];
 
-  it('gives Devon the one wide brim in town, so he is Devon before he is green', () => {
-    for (const b of builds) if (b !== 'devon') expect(hatSpan('devon')).toBeGreaterThan(hatSpan(b));
-  });
-
-  it('gives every build its own outline', () => {
-    expect(new Set(builds.map(outline)).size).toBe(builds.length);
+  it('gives Devon the one bucket hat in town, so he is Devon before he is green', () => {
+    expect(DEVON.hat).toBe('bucket');
+    for (const l of everyoneButDevon) expect(l.hat).not.toBe('bucket');
   });
 
   it('keeps the officer the broadest-shouldered figure on the street', () => {
-    const shoulders = (b: Build) => Math.max(...figure(b).shapes.filter((s) => s.fill === 'garment').flatMap((s) => s.pts.filter(([, z]) => z > 1.3).map(([u]) => Math.abs(u))));
-    for (const b of builds) if (b !== 'officer') expect(shoulders('officer')).toBeGreaterThan(shoulders(b));
+    const o = officerLook('o1');
+    for (const l of [...residents, ...cast, DEVON, RIDER]) {
+      expect(o.body.shoulder * o.body.scale).toBeGreaterThan(l.body.shoulder * l.body.scale);
+    }
+  });
+
+  it('draws a child as a child', () => {
+    const child = residentLook('kid', 'child', '#4F8E9E');
+    expect(child.body.scale).toBeLessThan(0.75);
+    // A child's head is bigger for their size than a grown-up's.
+    expect(child.body.headR).toBeGreaterThan(ADULT.headR);
+  });
+
+  it('dresses nobody but the rider in a signal\'s colour', () => {
+    expect(RIDER.top).toBe(SIGNAL.player);
+    for (const l of [...residents, ...cast, DEVON, officerLook('o1')]) {
+      for (const c of [l.top, l.bottom, l.hatColour]) {
+        const { h, chroma } = hcl(c);
+        for (const sig of [SIGNAL.player, SIGNAL.warning]) {
+          if (chroma < 0.28) continue;
+          expect({ c, near: hueGap(h, hcl(sig).h) < 18 }).toEqual({ c, near: false });
+        }
+      }
+    }
+  });
+
+  it('takes a colour off a signal\'s hue and leaves others alone', () => {
+    expect(wearable('#E6C229')).not.toBe('#E6C229');   // the courier's yellow, beside amber
+    expect(wearable('#B5523F')).not.toBe('#B5523F');   // a rust, beside warning orange
+    expect(wearable('#806FA0')).toBe('#806FA0');       // a violet, near nothing
+  });
+
+  it('gives Priya, and only Priya, the system\'s cyan, as a badge', () => {
+    expect(castLook('priya', '#7C5A8E')!.badge).toBe(SIGNAL.system);
+    for (const l of [...residents, DEVON, RIDER, officerLook('o1')]) expect(l.badge).toBeUndefined();
+  });
+});
+
+describe('people are posed, not posted', () => {
+  const at = { x: 0, y: 0 };
+
+  it('walks with alternating feet, and the knees bend forward', () => {
+    const a = pose({ at, facing: 0, gait: 'walk', phase: Math.PI / 2, body: ADULT });
+    const b = pose({ at, facing: 0, gait: 'walk', phase: (3 * Math.PI) / 2, body: ADULT });
+    expect(a.footL.x).toBeGreaterThan(a.footR.x);
+    expect(b.footR.x).toBeGreaterThan(b.footL.x);
+    for (const j of [a, b]) {
+      for (const [hip, knee, foot] of [[j.hipL, j.kneeL, j.footL], [j.hipR, j.kneeR, j.footR]]) {
+        // Facing +x: the knee sits ahead of the line from hip to foot.
+        const t = (knee.z - hip.z) / (foot.z - hip.z);
+        expect(knee.x).toBeGreaterThanOrEqual(hip.x + (foot.x - hip.x) * t - 1e-6);
+      }
+    }
+  });
+
+  it('stands on the ground, head over shoulders over hips', () => {
+    const j = pose({ at, facing: 1.1, gait: 'stand', phase: 0, body: ADULT, seed: 3 });
+    expect(Math.max(j.footL.z, j.footR.z)).toBeLessThan(0.01);
+    expect(j.head.z).toBeGreaterThan(j.chest.z);
+    expect(j.chest.z).toBeGreaterThan(j.pelvis.z);
+  });
+
+  it('stands across a board to ride it, looking down it', () => {
+    // Facing +y means riding along +x: the feet are spread along the board.
+    const j = pose({ at, facing: Math.PI / 2, gait: 'ride', phase: 0, body: ADULT });
+    expect(Math.abs(j.footL.x - j.footR.x)).toBeGreaterThan(0.5);
+    expect(Math.abs(j.footL.y - j.footR.y)).toBeLessThan(0.05);
+    expect(Math.cos(j.look!)).toBeCloseTo(1, 5);
+  });
+
+  it('holds out a flat hand to stop you, and reaches for the radio when responding', () => {
+    const stop = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT, gesture: 'stop' });
+    const radio = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT, gesture: 'radio' });
+    const rest = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT });
+    expect(stop.handR.z).toBeGreaterThan(rest.handR.z + 0.4);
+    expect(stop.handR.x).toBeGreaterThan(rest.handR.x + 0.3);
+    expect(radio.handL.z).toBeGreaterThan(rest.handL.z + 0.4);
   });
 });
 

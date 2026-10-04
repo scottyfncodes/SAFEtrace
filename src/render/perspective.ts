@@ -26,7 +26,7 @@ import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
 import type { Building, Prop, WorldData } from '../sim/worldTypes';
 import { markersFor, sightlinesFor } from './evidence';
-import { buildFor, figure, riding, statureFor, type Figure, type Fill } from './figures';
+import { DEVON, DOG_COATS, RIDER, castLook, dogCollar, officerLook, paintDog, paintFigure, pose, residentLook, type Gait, type Gesture, type Joints, type Look } from './characters';
 import { INK, Ink, brushOutline, hash01, inkAt, seedOf } from './ink';
 import { CITY_INK, PRINT, SIGNAL, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 import { Tone, tone } from './tone';
@@ -171,6 +171,11 @@ interface Face {
    * behind its own wall or in front of the house next door.
    */
   decals?: Array<{ pts: CP[]; fill: string; text?: Face['text']; ink?: boolean }>;
+  /**
+   * Something that draws itself — a person — in this face's place in the
+   * sort. The face's own polygon is only where it stands, for the sort.
+   */
+  paint?: (ctx: CanvasRenderingContext2D) => void;
 }
 
 /** What each ground surface is printed in, in the street view. */
@@ -612,6 +617,7 @@ export class PerspectiveRenderer {
       const n = f.pts.length;
       if (n < 3) continue;
       if (!groundInk && f.layer !== Layer.Ground) { this.drawGroundInk(ctx, sim, cam); groundInk = true; }
+      if (f.paint) { f.paint(ctx); continue; }
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       ctx.beginPath();
       for (let i = 0; i < n; i++) {
@@ -1475,58 +1481,133 @@ export class PerspectiveRenderer {
     }
   }
 
+  /**
+   * How each person has been moving, measured from where they are drawn:
+   * distance covered drives the stride, and it is the renderer's alone.
+   */
+  private motion = new Map<string, { x: number; y: number; odo: number; tick: number; speed: number; facing: number }>();
+
+  private move(id: string, at: Vec2, heading: number | undefined, tick: number): { phase: number; speed: number; facing: number } {
+    let m = this.motion.get(id);
+    if (!m) { m = { x: at.x, y: at.y, odo: hashString(id) % 7, tick, speed: 0, facing: heading ?? 0 }; this.motion.set(id, m); }
+    const d = Math.hypot(at.x - m.x, at.y - m.y);
+    const dt = Math.max(1, tick - m.tick) / 60;
+    if (tick !== m.tick) {
+      // A teleport is not a stride.
+      if (d < 3) { m.odo += d; m.speed = m.speed * 0.6 + (d / dt) * 0.4; }
+      if (d > 0.01 && heading === undefined) m.facing = Math.atan2(at.y - m.y, at.x - m.x);
+      m.x = at.x; m.y = at.y; m.tick = tick;
+    }
+    if (heading !== undefined) m.facing = heading;
+    return { phase: m.odo, speed: m.speed, facing: m.facing };
+  }
+
+  /**
+   * A person, as one face in the sort: placed where they stand, painting
+   * the whole figure in one go so no part of them can sort behind another.
+   */
+  private personAt(
+    cam: Cam, id: string, at: Vec2, look: Look,
+    o: { heading?: number; tick: number; gait?: Gait; gesture?: Gesture; joints?: Joints; light?: string; dog?: string; sun: Vec2; bias?: number },
+  ): void {
+    const dist = Math.hypot(at.x - cam.pos.x, at.y - cam.pos.y);
+    if (dist > FAR || dist < 0.5) return;
+    const mv = this.move(id, at, o.heading, o.tick);
+    const gait: Gait = o.gait ?? (mv.speed < 0.3 ? 'stand' : mv.speed > 2.3 ? 'run' : 'walk');
+    const stride = gait === 'run' ? 2.6 : 1.45 * look.body.scale;
+    const phase = (mv.phase / stride) * Math.PI * 2;
+    const j = o.joints ?? pose({ at, facing: mv.facing, gait, phase, body: look.body, seed: hashString(id), gesture: o.gesture });
+    const dogAt = o.dog ? { x: at.x + Math.cos(mv.facing) * 1.5 + Math.cos(mv.facing + Math.PI / 2) * 0.5, y: at.y + Math.sin(mv.facing) * 1.5 + Math.sin(mv.facing + Math.PI / 2) * 0.5 } : null;
+    const was = this.inkAs;
+    this.inkAs = null;
+    const n = this.faces.length;
+    this.card(cam, at, 0.9 * look.body.scale, 0.05, 0.9 * look.body.scale, 'transparent');
+    const f = this.faces[n];
+    this.inkAs = was;
+    if (!f) return;
+    // Stood on a board: drawn after the deck it stands on.
+    if (o.bias) f.depth -= o.bias;
+    const proj = (x: number, y: number, z: number) => {
+      const cp = toCamera(cam, x, y, z);
+      if (cp.z <= NEAR) return null;
+      const pt = project(cam, cp);
+      return { x: pt.x, y: pt.y, s: cam.f / cp.z };
+    };
+    const ink = inkAt(Ink.Person, f.depth).width * 0.75;
+    const eye = { ...cam.pos };
+    const light = o.light;
+    f.paint = (ctx) => {
+      paintFigure(ctx, proj, j, look, { ink, sun: o.sun, eye, leash: dogAt && o.dog ? dogCollar(dogAt, mv.facing) : undefined });
+      if (light) {
+        const sh = proj(j.shL.x, j.shL.y, j.shL.z + 0.04);
+        if (sh) {
+          const r = Math.max(2, 0.08 * sh.s);
+          ctx.fillStyle = PRINT.ink; ctx.beginPath(); ctx.arc(sh.x, sh.y, r + 1.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = light; ctx.beginPath(); ctx.arc(sh.x, sh.y, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    };
+    if (dogAt && o.dog) {
+      const coat = o.dog;
+      const m = this.faces.length;
+      this.inkAs = null;
+      this.card(cam, dogAt, 0.3, 0.05, 0.3, 'transparent');
+      this.inkAs = was;
+      const df = this.faces[m];
+      if (df) df.paint = (ctx) => { paintDog(ctx, proj, dogAt, mv.facing, phase * 1.6, coat, { ink, sun: o.sun, eye }); };
+    }
+  }
+
   private collectPeople(sim: Sim, cam: Cam): void {
     /*
-     * Who is who, at the size a person actually is on the glass.
-     *
-     * Everybody used to be a grey-blue lozenge. A resident was #6D7A88, an
-     * officer #5A6470, and an officer only changed colour once he was already
-     * standing next to you — so through every stage of an actual pursuit he
-     * looked exactly like a neighbour, and all nineteen neighbours looked
-     * exactly like him. Measured over three minutes of ordinary skating an
-     * officer is in frame 0% of the time and a resident 31%, which means every
-     * report of "a cop is hunting me" was a person walking to the shops.
+     * Who is who, at the size a person actually is on the glass — by outline
+     * first, then colour. Residents are dressed by what kind of person they
+     * are (a child is a child; a jogger runs; a dog walker has a dog); the
+     * named cast are themselves; the officer is a uniform and a peaked cap
+     * whose shoulder light is dark unless he is doing something, and whose
+     * hands say what — one at the radio when responding, one held out flat
+     * when he is stopping you.
      */
+    const tick = sim.tick;
+    const sun = sim.sun;
     for (const n of sim.npcs) {
-      // Their own clothes, and the same clothes every time you pass them.
       const wear = VENEER.civilian[hashString(n.id) % VENEER.civilian.length];
-      this.resident(cam, n.pos, n.id, wear);
+      const look = residentLook(n.id, n.kind, wear);
+      this.personAt(cam, n.id, n.pos, look, {
+        heading: n.heading, tick, sun,
+        gait: n.kind === 'jogger' && n.waitTicks <= 0 ? 'run' : undefined,
+        dog: n.kind === 'dogWalker' ? DOG_COATS[hashString(n.id + ':dog') % DOG_COATS.length] : undefined,
+      });
     }
     for (const p of sim.patrols) {
-      // A uniform and a peaked cap, so an officer is an officer at a hundred
-      // metres — and a shoulder light that is dark unless he is actually
-      // doing something, so "is he coming for me" is answered by looking.
       const light = p.state === 'INTERVENING' ? VENEER.intervening
         : p.state === 'RESPONDING' ? VENEER.responding
         : undefined;
-      this.officer(cam, p.pos, p.id, light);
+      const gesture: Gesture = p.state === 'INTERVENING' ? 'stop' : p.state === 'RESPONDING' ? 'radio' : null;
+      this.personAt(cam, p.id, p.pos, officerLook(p.id), { heading: p.heading, tick, sun, gesture, light });
     }
     for (const p of sim.people) {
       if (!p.visible) continue;
-      if (p.uniform) this.officer(cam, p.pos, p.id);
-      else this.resident(cam, p.pos, p.id, p.tint, p.hood ? 'hoodie' : undefined);
+      const look = p.uniform ? officerLook(p.id) : castLook(p.id, p.tint) ?? residentLook(p.id, 'adult', p.tint, !!p.hood);
+      this.personAt(cam, p.id, p.pos, look, { heading: p.heading, tick, sun });
     }
     /*
      * Devon rides when he is riding. Stopped — by the officer, or at his own
-     * front door — he is a boy standing up with his board beside him, which is
-     * a different picture and the right one: during the stop he used to vanish
-     * from the town entirely.
+     * front door — he is a boy standing up with his board in his hand, which
+     * is a different picture and the right one.
      */
     if (sim.devonVisible) {
-      const paint = (f: Fill): string => f === 'garment' ? VENEER.friend
-        : f === 'hat' ? VENEER.friendHat
-        : f === 'legs' ? VENEER.trousers[0]
-        : f === 'skin' ? VENEER.skin
-        : shade(VENEER.friend, -0.3);
-      this.seedBy(hashString('devon'));
       if (sim.devonFollowing && !sim.devonStopped) {
-        this.skater(cam, sim.devonPos, sim.devon.vel, VENEER.friend);
-        this.figureAt(cam, sim.devonPos, riding('devon'), 1, false, paint, 0.1);
+        const v = sim.devon.vel;
+        const heading = Math.hypot(v.x, v.y) > 0.35 ? Math.atan2(v.y, v.x) : 0;
+        this.skater(cam, sim.devonPos, v, VENEER.friend);
+        const look = { ...DEVON, carry: 'none' as const };
+        // Across the board: the body faces off the board's side.
+        const j = pose({ at: sim.devonPos, z: 0.1, facing: heading + Math.PI / 2, gait: 'ride', phase: tick * 0.05, body: look.body });
+        this.personAt(cam, 'devon', sim.devonPos, look, { tick, sun, joints: j, bias: 0.25 });
       } else {
-        this.figureAt(cam, sim.devonPos, figure('devon'), 1, false, paint);
-        this.card(cam, { x: sim.devonPos.x + 0.45, y: sim.devonPos.y + 0.2 }, 0.45, 0.1, 0.42, shade(VENEER.friend, -0.45));
+        this.personAt(cam, 'devon', sim.devonPos, DEVON, { tick, sun, gait: 'stand' });
       }
-      this.seedBy(null);
     }
     // A drone is SAFEtrace's, and inked as something you can act on; its
     // shadow is a flat card at ground height and gets no line at all.
@@ -1791,67 +1872,6 @@ export class PerspectiveRenderer {
   }
 
   /**
-   * A figure from the silhouette library, stood up facing the eye.
-   *
-   * Every shape of one figure shares the figure's depth, nudged in drawing
-   * order, so a head can never sort behind its own coat however the person
-   * stands against the camera.
-   */
-  private figureAt(
-    cam: Cam, p: Vec2, fig: Figure, scale: number, flip: boolean,
-    paint: (f: Fill) => string, lift = 0,
-  ): void {
-    const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
-    if (d > FAR || d < 0.25) return;
-    const k = flip ? -1 : 1;
-    const ux = (-(p.y - cam.pos.y) / d) * k, uy = ((p.x - cam.pos.x) / d) * k;
-    const base = toCamera(cam, p.x, p.y, 1).z;
-    for (let i = 0; i < fig.shapes.length; i++) {
-      const sh = fig.shapes[i];
-      const f = this.push(cam, sh.pts.map(([u, z]) => ({
-        x: p.x + ux * u * scale, y: p.y + uy * u * scale, z: lift + z * scale,
-      })), paint(sh.fill));
-      if (f) f.depth = base - i * 0.0004;
-    }
-  }
-
-  /** Somebody who lives here: their build, their height, their clothes. */
-  private resident(cam: Cam, pos: Vec2, id: string, wear: string, build?: ReturnType<typeof buildFor>): void {
-    const st = statureFor(id);
-    const skin = VENEER.skinTones[hashString(id + ':skin') % VENEER.skinTones.length];
-    const legs = VENEER.trousers[hashString(id + ':legs') % VENEER.trousers.length];
-    const hair = hairFor(id);
-    this.seedBy(hashString(id));
-    this.figureAt(cam, pos, figure(build ?? buildFor(id)), st.scale, st.flip, (f) =>
-      f === 'garment' ? wear
-        : f === 'garmentDark' ? shade(wear, -0.28)
-        : f === 'skin' ? skin
-        : f === 'legs' ? legs
-        : f === 'hair' ? hair
-        : f === 'hat' ? shade(wear, -0.5)
-        : PRINT.door);
-    this.seedBy(null);
-  }
-
-  /** The uniform. The shoulder light, when lit, sits on top of the figure. */
-  private officer(cam: Cam, pos: Vec2, id: string, light?: string): void {
-    const skin = VENEER.skinTones[hashString(id + ':skin') % VENEER.skinTones.length];
-    this.seedBy(hashString(id));
-    this.figureAt(cam, pos, figure('officer'), 1, false, (f) =>
-      f === 'garment' ? VENEER.uniform : f === 'skin' ? skin : VENEER.uniformDark);
-    this.seedBy(null);
-    if (light) {
-      const was = this.inkAs;
-      this.inkAs = null;
-      const n = this.faces.length;
-      this.card(cam, pos, 1.44, 0.12, 0.1, light);
-      const f = this.faces[n];
-      if (f) f.depth = toCamera(cam, pos.x, pos.y, 1).z - 0.01;
-      this.inkAs = was;
-    }
-  }
-
-  /**
    * The board under somebody riding, which is what Devon has been the whole
    * time; the body over it is a figure, crouched (`riding`).
    *
@@ -2096,10 +2116,18 @@ export class PerspectiveRenderer {
 
     const hipL = at(running ? 0 : 0.13, -0.09);
     const hipR = at(running ? 0 : -0.11, 0.09);
-    this.twoBone(cam, hipL, hipZ, leftFoot, leftZ, LEG_UPPER, LEG_LOWER, toe, 0.072, legCol);
-    this.twoBone(cam, hipR, hipZ, rightFoot, rightZ, LEG_UPPER, LEG_LOWER, toe, 0.072, legCol);
-    this.card(cam, rightFoot, rightZ + 0.02, 0.10, 0.045, PRINT.ink);
-    this.card(cam, leftFoot, leftZ + 0.02, 0.10, 0.045, PRINT.ink);
+    /*
+     * The pose above is the rider's own — push, carve, pop, flip, grab, the
+     * sling — and none of it changes. What changed is the drawing: the
+     * joints are handed to the same character painter as everybody else
+     * (characters.ts), so the rider is drawn as a person, not as sticks.
+     */
+    const P3at = (q: Vec2, qz: number) => ({ x: q.x, y: q.y, z: qz });
+    const hipL3 = P3at(hipL, hipZ), hipR3 = P3at(hipR, hipZ);
+    const footL3 = P3at(leftFoot, leftZ), footR3 = P3at(rightFoot, rightZ);
+    const kneeL3 = solveTwoBone(hipL3, footL3, LEG_UPPER, LEG_LOWER, toe);
+    const kneeR3 = solveTwoBone(hipR3, footR3, LEG_UPPER, LEG_LOWER, toe);
+    void legCol;
 
     /*
      * The rider is where the carve actually reads. Weight goes over the edge
@@ -2113,7 +2141,6 @@ export class PerspectiveRenderer {
     // Torso: taller than it is wide, sitting straight on top of the hips, so
     // the body reads as a body and not as a bar floating over a pair of legs.
     const torsoH = 0.28 - dip * 0.5;
-    this.card(cam, bodyAt, hipZ + torsoH, 0.18, torsoH, VENEER.player);
 
     /*
      * Arms, with elbows in them.
@@ -2156,9 +2183,10 @@ export class PerspectiveRenderer {
     const back2 = 0.10 + clamp01(sp.draw) * 0.38;
     const pullHand = { x: forkHand.x - ax * back2 + rx * 0.05, y: forkHand.y - ay * back2 + ry * 0.05 };
     const pullZ = forkZ + 0.02;
+    const arms: Record<number, { sh: { x: number; y: number; z: number }; el: { x: number; y: number; z: number }; hand: { x: number; y: number; z: number } }> = {};
     for (const side of [1, -1]) {
       // The shoulder is on the torso, not floating beside it.
-      const shoulder = at(bodyF, side * 0.15 + lean * 0.30);
+      const shoulder = at(bodyF, side * 0.17 + lean * 0.30);
       /*
        * A grab sends one hand to the deck instead of out for balance —
        * `onBoard` is the same function the trick above turns the deck through,
@@ -2175,10 +2203,10 @@ export class PerspectiveRenderer {
         : grabPoint
           ? grabPoint.z
           : shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
-      this.twoBone(cam, shoulder, shoulderZ, hand, handZ, ARM_UPPER, ARM_LOWER, elbowTo, 0.048, sleeve);
-      // A hand, so the arm ends in something.
-      this.card(cam, hand, handZ, 0.05, 0.05, VENEER.skin);
+      const sh3 = P3at(shoulder, shoulderZ), hand3 = P3at(hand, handZ);
+      arms[side] = { sh: sh3, el: solveTwoBone(sh3, hand3, ARM_UPPER, ARM_LOWER, elbowTo), hand: hand3 };
     }
+    void sleeve;
     if (slingOn) {
       const onGlass = (q: Vec2, qz: number) => {
         const cp = toCamera(cam, q.x, q.y, qz);
@@ -2190,36 +2218,23 @@ export class PerspectiveRenderer {
       const pull = onGlass(pullHand, pullZ);
       if (fork && pull) this.slingHands = { fork, pull };
     }
-    /*
-     * The head, from behind: a dark beanie over it and the hood bunched at
-     * the neck. Seen from the chase camera the back of a head is most of
-     * what the rider's silhouette is, and a plain skin-coloured disc read as
-     * nobody in particular.
-     */
-    const head = this.faces.length;
-    this.card(cam, bodyAt, shoulderZ + 0.16, 0.125, 0.125, VENEER.skin);
-    this.card(cam, bodyAt, shoulderZ + 0.235, 0.132, 0.072, PRINT.ink);
-    this.card(cam, bodyAt, shoulderZ + 0.035, 0.165, 0.06, shade(VENEER.player, -0.22));
-    for (let i = head + 1; i < this.faces.length; i++) this.faces[i].depth -= 0.003 * (i - head);
+    // Facing the toe edge: a skater stands across the board, not along it.
+    const facing = Math.atan2(toe.y, toe.x);
+    const joints: Joints = {
+      pelvis: { x: (hipL.x + hipR.x) / 2, y: (hipL.y + hipR.y) / 2, z: hipZ },
+      chest: { ...bodyAt, z: shoulderZ - 0.02 },
+      head: { ...bodyAt, z: shoulderZ + 0.17 },
+      // Left is the rider's front foot; in the body's own frame that is its
+      // left hand side only when facing the toe edge, which it is.
+      hipL: hipL3, hipR: hipR3, kneeL: kneeL3, kneeR: kneeR3, footL: footL3, footR: footR3,
+      shL: arms[-1].sh, elL: arms[-1].el, handL: arms[-1].hand,
+      shR: arms[1].sh, elR: arms[1].el, handR: arms[1].hand,
+      facing, toes: running ? h : facing,
+      // Looking where they are going: from the chase camera, the back of the head.
+      look: h,
+    };
     this.seedBy(null);
-  }
-
-  /**
-   * Draw a two-bone limb: hip → knee → ankle, or shoulder → elbow → hand.
-   *
-   * The joint comes from `solveTwoBone`, which is geometry and lives with the
-   * rest of it. All this does is put two quads where the triangle says.
-   */
-  private twoBone(
-    cam: Cam, root: Vec2, rootZ: number, end: Vec2, endZ: number,
-    upper: number, lower: number, bendTo: Vec2, wide: number, fill: string,
-  ): void {
-    const j = solveTwoBone(
-      { x: root.x, y: root.y, z: rootZ }, { x: end.x, y: end.y, z: endZ },
-      upper, lower, bendTo,
-    );
-    this.limb(cam, root, rootZ, j, j.z, wide, fill);
-    this.limb(cam, j, j.z, end, endZ, wide * 0.9, shade(fill, 0.06));
+    this.personAt(cam, 'rider', p.pos, RIDER, { tick: sim.tick, sun: sim.sun, joints, bias: 0.25 });
   }
 
   /** A leg: a narrow quad from a foot on the ground up to the hip. */
@@ -3037,9 +3052,6 @@ function polyDist(q: Vec2, poly: Vec2[]): number {
   return best;
 }
 
-function hairFor(id: string): string {
-  return VENEER.hair[hashString(id + ':hair') % VENEER.hair.length];
-}
 
 function segDist(x: number, y: number, a: Vec2, b: Vec2): number {
   const dx = b.x - a.x, dy = b.y - a.y;

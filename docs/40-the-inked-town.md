@@ -148,21 +148,66 @@ frame — and residents now vary in skin tone and trouser colour per person. The
 rider wears an amber hoodie, dark trousers and a dark beanie: from the chase
 camera the back of the head and the top half are most of the silhouette.
 
-## 5. People: silhouette first
+## 5. People: posed, dressed and inked
 
-People were three stacked rectangles. They are now **figures** (`figures.ts`):
-a handful of flat shapes in the person's own plane, stood up facing the eye and
-inked as a person. Five resident builds — long coat, hood up, skirt, brimmed
-hat, jacket with a bag on a strap — chosen per person, with per-person height
-and handedness, so two people in the same build still differ.
+The first pass of this document drew people as flat cut-outs facing the lens:
+no arms, no stride, every passer-by the same adult, the rider a scribble of
+sticks. That was the weakest thing in the frame and it is replaced
+(`characters.ts`), with one system for everybody on the street, the rider
+included.
 
-- **Devon** has the only wide brim in town (a pale bucket hat), a long green
-  tee and shorts. He is Devon before he is green — tested by hat span.
-- **The officer** is the broadest-shouldered figure (tested), with a belt and
-  a peaked cap; the shoulder light sits on top of the figure.
+| Before | After |
+|---|---|
+| ![](art/40/before-people.jpg) | ![](art/40/after-people.jpg) |
 
-Every shape of a figure shares the figure's depth, nudged in drawing order, so
-a head can never sort behind its own coat.
+- **A skeleton in the world.** Hips, knees, feet, shoulders, elbows, hands
+  and head are placed in three dimensions, facing where the person is
+  actually heading, and posed by gait: standing with the weight on one leg,
+  walking (opposite arm and leg, the coming-through foot lifted), running
+  (leaning in, arms bent), riding (across the board, knees bent, arms out,
+  looking down it). Stride is driven by distance actually covered, so feet
+  don't slide. Knees and elbows come from the same two-bone solver the rider
+  has always used.
+- **Kinds are drawn as kinds.** The simulation always knew who was a child,
+  a jogger or a dog walker; now the picture does too. A child is two-thirds
+  height with a bigger head and a backpack; a jogger runs in a tee, shorts
+  and a headband; a dog walker has a dog on a lead, trotting.
+- **Looks.** A garment with its own outline (long coat, dress, apron,
+  uniform, cardigan, hoodie, long tee), a hat that is a shape (bucket,
+  peaked, brimmed, beanie, cap, hood, headband), hair that covers more of the
+  head from behind than in front, and what they carry (bag, satchel and
+  strap, handbag, parcel, board).
+- **The named cast are themselves.** Mara in a work apron with her hair tied
+  up; Priya in a long tailored coat with a lanyard badge in the system's own
+  cyan — the only person in town who wears it; the courier in a cap with a
+  parcel in both hands; Mrs. Carvalho a little stooped with a handbag;
+  Mr. Brennan in a long coat and a brimmed hat.
+- **Devon** has the only bucket hat in town (tested), pale against
+  everything, a long green tee and shorts, and his board in his hand when he
+  is not on it.
+- **The officer** is the broadest figure on the street (tested), belted, in a
+  peaked cap — and his hands act: one at the radio when **responding**, one
+  held out flat when **intervening**. The shoulder light sits on top.
+- **The rider** keeps every bit of its own animation (push, carve, pop,
+  flip, grab, the sling); only the drawing changed. Amber hoodie, dark
+  trousers, dark beanie, light shoes; from the chase camera the head looks
+  down the board, so you see the back of the beanie, not a face.
+- **Ink, the way a person is inked.** One heavy outline round the whole
+  figure first, so the silhouette is one shape; colour inside it; a thin line
+  only where a near arm crosses the body. Torso and head are split into a lit
+  and a shadow side by the town's sun. Under about 30 px tall a figure drops
+  hands, shoes, straps and face marks — detail that would only be specks.
+- **Clothes can't be signals.** Several authored colours (a mustard coat,
+  two rusts, the courier's yellow, Mara's shirt) sat within a few degrees of
+  amber or warning orange, and on a 20 px figure hue is read first: the
+  courier read as a second player. Clothing near either hue is desaturated
+  toward its own grey (`wearable()`, tested); the rider is the only amber
+  figure in town.
+
+A whole person is one entry in the depth sort, placed where they stand, that
+paints itself — so no part of a person can sort behind another part of them.
+
+![Devon riding, the rider mid-trick](art/40/after-riding.jpg)
 
 ## 6. Evidence as visual language
 
@@ -195,7 +240,7 @@ touched**; `src/sim` still imports nothing from `render` (tested).
 |---|---|
 | `ink.ts` | the line hierarchy table, the brush stroke, the seeding |
 | `tone.ts` | the three screentones, built once per canvas at device resolution |
-| `figures.ts` | the silhouette library and which build a resident gets |
+| `characters.ts` | people: pose by gait, the catalogue of looks, the figure and dog painters |
 | `evidence.ts` | which markers and sightlines the street shows (pure, tested) |
 | `palette.ts` | adds `SIGNAL` (the three meanings) and `PRINT` (the street) |
 
@@ -203,7 +248,8 @@ touched**; `src/sim` still imports nothing from `render` (tested).
 - `perspective.ts` — consumes all of the above. Faces carry an ink class, an
   optional tone and a stable seed. The draw loop is fill → tone → decals →
   brush ink. New: paper sky and skyline, the ground pen pass, evidence,
-  figures, eaves, chimneys, coping, hull shadows, back-face culling.
+  people as self-painting faces with a stride tracker, eaves, chimneys,
+  coping, hull shadows, back-face culling.
 - `renderer.ts` — passes the places the player has seen to the street view;
   routes "a camera has you" and an intervening officer in the plan through
   `SIGNAL.warning`. No layout or logic change.
@@ -214,6 +260,8 @@ touched**; `src/sim` still imports nothing from `render` (tested).
 - `scripts/shots.mjs` — the harness: boots the dev build, skips the
   advertisement, hides every piece of HUD, frames the slice at 390×844 and
   1280×760, and measures world-draw cost with and without 4× CPU throttling.
+- `scripts/lineup.mjs` — stands one of every kind of person, the named cast,
+  the officer and Devon in a row in front of the rider, for character work.
 
 ### Not changed
 Gameplay, simulation state, collision, sightlines, the camera (height,
@@ -228,8 +276,10 @@ distance, lens, follow), controls, the plan view, machine vision, the record UI.
 
 - The rider reads first in every frame: amber against a black road.
 - Devon reads as Devon at the far end of Maple Court by his hat alone.
-- Officer vs resident reads by colour, and up close by outline too (cap,
-  shoulders); at the far end of a street the outline alone is not enough yet.
+- Officer vs resident reads by colour and by outline (peaked cap, the
+  broadest shoulders, a belt), and his hands say what he is doing.
+- Children, joggers and dog walkers read as what they are at the chase
+  camera's distance.
 - The evidence tent reads as an amber marker at 40 m; its number reads close
   up. The pencil ring reads from the chase camera.
 - **Weakest at phone scale:** the bottom 40–45% of an upright frame is ground
@@ -251,14 +301,19 @@ after the ground rather than as sorted faces, and one hull shadow per building.
 One idea was measured and **reverted**: batching ground marks into one path
 made paint twice as slow in Skia.
 
+The character system was measured separately: painting every person costs
+about 0.7 ms a frame with 9–13 people in view, and the committed street before
+it and after it measured the same within noise when run interleaved in one
+session (6.1–6.4 ms against 6.1–6.3 ms on a machine that was slower that day
+than for the table above).
+
 ## 9. What is still scaffolding
 
-- **All geometry.** Footprints, extrusions, billboarded figures and boxes are
-  the prototype's. The rendering makes them read as drawn; it does not make
+- **All geometry.** Footprints, extrusions and boxes are the prototype's. The rendering makes them read as drawn; it does not make
   them designed.
-- **Characters** are flat silhouettes facing the eye, with no turn, no walk
-  cycle, no faces. The rider's rig is the prototype's IK rig recoloured, with a
-  beanie and a hood.
+- **Characters** are procedural: posed skeletons with drawn volumes, not
+  authored art. There are no faces beyond a brow and a nose close up, no
+  expressions, hands are dots, and the walk is one cycle for everybody.
 - **The screentone is screen-space.** On a page that is invisible; in motion
   the tone stays put while walls slide under it ("shower door"). At this pitch
   it reads as print. If playtests say otherwise, world-anchored hatching on
@@ -268,10 +323,11 @@ made paint twice as slow in Skia.
 
 ## 10. What the final art direction still needs
 
-1. **Character art.** Authored silhouettes per named character (Priya, Mara,
-   the officer who stops Devon), turnarounds so figures are not always
-   face-on, a walk, and a rider drawn to the same language rather than
-   recoloured. This is the largest gap and needs an artist.
+1. **Character art.** The system now poses, dresses and inks everybody;
+   what it needs from an artist is per-character design — model sheets for
+   the rider, Devon, Mara, Priya and the officer, faces for close-ups and
+   conversations, and walks with personality rather than one shared cycle.
+   The look catalogue in `characters.ts` is where that design would land.
 2. **Authored buildings.** A small kit of facade types per district — the
    parade, the terraces, the school, the depot — rather than one
    extrude-and-dress routine. Porches, bay windows, shopfront depth.
