@@ -1,20 +1,21 @@
 /**
- * Three colour systems — near-future urban noir (docs/39).
+ * The colour of SAFEtrace — the inked town (docs/40).
  *
- * The veneer is the town as it is: concrete, asphalt, faded paint, weathered
- * brick, a sky that is mostly cloud. Muted, textured, human, slightly worn. It
- * is still a place you would want to skate; it is no longer a brochure.
+ * The street is printed, not lit: ink on paper, a few flat washes between
+ * them, and screentone where a graphic novel would put it. That is the
+ * environment, and it is deliberately quiet — muted, dirty, weathered, in
+ * large graphic fields.
  *
- * The machine is the opposite on purpose: clean, sharp, precise, and
- * attractive. Electric cyan, acid green, warning orange — and nothing else.
- * The system is not presented as evil, it is presented as trustworthy, which
- * is worse. The contrast between the two is the game's premise in one image:
- * a messy, ambiguous world, and a system that is extremely confident about it.
+ * Three colours mean something and nothing else may wear them (`SIGNAL`):
+ * amber is the player and the player's own marks, cyan is the system and
+ * the plan, orange is a warning. The people on screen are the only other
+ * saturated things, because telling them apart is gameplay
+ * (tests/legibility.test.ts) and because in a printed town a person is the
+ * warmest thing in the frame.
  *
- * The people on screen are the exception to the muting. The rider, Devon and
- * the uniform keep their full colour, because telling them apart at a glance
- * is gameplay (tests/legibility.test.ts), and because in a grey city a person
- * is the warmest thing in the frame.
+ * Machine vision (`MACHINE`) is unchanged by the print: it is a second
+ * renderer reading the same records, and it is supposed to look like a
+ * different product from the town it is reading.
  */
 
 /**
@@ -28,10 +29,94 @@ export const TECH = {
   cyanInk: '#0B7F8E',
   /** Acid green: a match, a forecast, a confident conclusion. */
   acid: '#B6F23A',
-  /** Warning orange: attention, never alarm. */
-  orange: '#FF8B2B',
+  /**
+   * Warning orange: attention, never alarm. Pushed toward red, away from the
+   * player's amber — at #FF8B2B the two were nine degrees of hue apart.
+   */
+  orange: '#FF6326',
   /** Hardware white: the housing of everything SAFEtrace installs. */
   white: '#EEF2F3',
+};
+
+/**
+ * The three meanings. Sacred: the environment may not borrow these hues, and
+ * nothing may use one of them to mean something else (tests/art-direction).
+ */
+export const SIGNAL = {
+  /** The player: the board, the hoodie, the flow ring, the player's own marks. */
+  player: '#F2BE3C',
+  /** The system and the plan. */
+  system: TECH.cyan,
+  /** A warning: a camera that has you, an officer coming for you. */
+  warning: TECH.orange,
+};
+
+/**
+ * The print: what the street view is drawn with.
+ *
+ * Paper and ink, and a short ramp of washes between them. Every value the
+ * street uses comes from here or from `weather()` over authored paint, so a
+ * future artist can retune the whole town from this one table.
+ */
+export const PRINT = {
+  /** Unprinted stock: the sky, and the far distance fading into it. */
+  paper: '#D7D0C0',
+  /**
+   * The ground past the edge of the modelled town. A verge's wash, a little
+   * lighter for distance — paler than that and it reads as a band of fog.
+   */
+  paperShade: '#8A8976',
+  /** The ink. Slightly blue, never pure black. */
+  ink: '#16181D',
+  /** The town past the modelled edge, as a flat silhouette under the sky. */
+  skyline: '#9E9786',
+  /** Ink at the weight a scratch or a rule is drawn on paper. */
+  rule: 'rgba(22,24,29,0.5)',
+
+  // The ground, from darkest to lightest. Roads are the graphic dark shape.
+  road: '#2B2C2F',
+  roadScratch: 'rgba(215,208,192,0.30)',
+  roadPatch: '#34353A',
+  laneMark: 'rgba(222,214,196,0.72)',
+  footway: '#B2AB9C',
+  forecourt: '#A39C8E',
+  tile: '#A0968A',
+  verge: '#7A7B68',
+  vergeTick: 'rgba(30,33,26,0.55)',
+  vergeHatch: 'rgba(30,33,26,0.38)',
+  bareEarth: '#978A74',
+  gravel: '#9A9385',
+  dirt: '#8A7A66',
+  water: '#5D6F73',
+
+  /** Cast shadow: a flat wash of ink, hatched over (see tone.ts). */
+  shadow: 'rgba(22,24,29,0.30)',
+  /** Wood: poles, a bench, a tree's trunk. */
+  timber: '#4D4239',
+  /** Painted steel: sign posts, fence posts, railings. */
+  steel: '#5E6266',
+  treeDark: '#2E3830',
+  treeLight: '#55604F',
+  /** Glass by day, glass with a lamp behind it. */
+  glass: '#262C31',
+  /** A lit window: unprinted paper in the dark, not lamp-yellow — that hue is the player's. */
+  glassLit: '#CBC4AE',
+  door: '#3E332B',
+  signBoard: '#CFC8B6',
+  signInk: '#24292E',
+  /** The street-name blades: an old municipal green, faded. */
+  bladeGreen: '#3B5547',
+  /** Bins: council green-grey. */
+  bin: '#4A574F',
+  /**
+   * A hydrant, a cone, a post box. Street furniture that is bright in life
+   * is printed dull here: red and orange are too near the warning, and a
+   * saturated blue box is too near the system.
+   */
+  hydrant: '#7A5C58',
+  cone: '#8F7B70',
+  mailbox: '#3E4C5A',
+  crate: '#8D806C',
 };
 
 /**
@@ -40,19 +125,19 @@ export const TECH = {
  * the skyline reads as silhouette. Depth comes from value, not fog.
  */
 export const SKY = {
-  top: '#2C333A',
-  mid: '#565F66',
-  horizon: '#8C8676',
-  /** The faint far-field wash; kept light-handed so it never reads as fog. */
-  haze: '#6E7473',
-  ground: '#3A3E33',
+  top: '#CEC7B6',
+  mid: '#D4CDBD',
+  horizon: '#D7D0C0',
+  /** The far field: distance is printed lighter, fading into the paper. */
+  haze: '#D7D0C0',
+  ground: '#8A8976',
 };
 
 /**
  * The town's ink: a building's edges, a kerb, a slab joint. Lighter and
  * thinner than the ink on people, so a person is always the strongest edge.
  */
-export const CITY_INK = '#0E1114';
+export const CITY_INK = '#16181D';
 
 /**
  * Wear a colour down into the town.
@@ -96,12 +181,12 @@ export const VENEER = {
   roadMark: 'rgba(222,216,196,0.42)',
   accent: TECH.cyanInk,
   /**
-   * The town's and the player's amber — the flow ring, a stone's ripple, the
-   * ammo cache. Not SAFEtrace's warning orange, which nothing outside the
-   * system may wear.
+   * The player's amber — the flow ring, a stone's ripple, the ammo cache.
+   * It is the same colour as the player, because they are the player's: the
+   * name is kept for the plan view, which predates the signal table.
    */
-  warning: '#E8A33D',
-  player: '#E8563F',
+  warning: SIGNAL.player,
+  player: SIGNAL.player,
   /*
    * Devon was blue. The uniform, below, is also blue — darker and greyer, but
    * this is a game about being watched by the police, and "blue figure,
@@ -112,7 +197,7 @@ export const VENEER = {
    * So blue is the uniform's alone now. Devon gets a colour from nowhere near
    * it: not the civilian palette below (he is a named character, not one more
    * resident), not amber or red (those are the officer's own alert states),
-   * not the player's orange (that would read as a second player). Green is
+   * not the player's amber (that would read as a second player). Green is
    * the one hue nothing else in a person's silhouette uses.
    */
   friend: '#5FBF52',
@@ -134,6 +219,12 @@ export const VENEER = {
     '#A8624C', '#73905E', '#C29548', '#806FA0',
     '#4F8E9E', '#A87E90', '#8F8775', '#B5523F',
   ],
+  /** Trousers, skirts' tights, the dark half of a figure: picked per person. */
+  trousers: ['#2F343C', '#3D3A36', '#4A4E55', '#5B5446', '#2B2F2A'],
+  /** Skin, per resident and stable for them. */
+  skinTones: ['#F0D2B6', '#D8A883', '#B47E58', '#7E5239', '#E6BE9C', '#9A6747'],
+  /** Devon's bucket hat: pale, so the one shape that is his reads at distance. */
+  friendHat: '#D9D1BC',
   /** Hair, and the ink line every figure is drawn with: graphic-novel, not photo. */
   hair: ['#1E1A17', '#3A2A20', '#5A3E28', '#8A6A44', '#C9B79A', '#2B2B33'],
   ink: '#14181D',
@@ -141,8 +232,8 @@ export const VENEER = {
   uniform: '#28374D',
   uniformDark: '#1A2432',
   /** Worn at the shoulder, and only when a unit is actually doing something. */
-  responding: '#E8A33D',
-  intervening: '#FF5C47',
+  responding: SIGNAL.warning,
+  intervening: '#E0303A',
   skin: '#F2D3B8',
   treeLight: '#3F4C3B',
   glass: 'rgba(70,88,98,0.88)',

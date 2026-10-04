@@ -18,7 +18,7 @@ import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspe
 import { MachineRenderer } from './machine';
 import { readPlan, type PlanReading } from './plan';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
-import { MACHINE, VENEER, alpha, mix, riskColour, shade } from './palette';
+import { MACHINE, SIGNAL, VENEER, alpha, mix, riskColour, shade } from './palette';
 
 /** The plan's own inks: the player's sketch, not the machine's colours. */
 const PLAN_INK = {
@@ -654,7 +654,7 @@ export class Renderer {
     if (!vision) {
       for (const c of r.cameras) {
         const half = c.fov / 2;
-        const ink = c.seeing ? VENEER.player : PLAN_INK.camera;
+        const ink = c.seeing ? SIGNAL.warning : PLAN_INK.camera;
         if (!c.live) {
           const o = at(c.pos);
           ctx.strokeStyle = alpha(PLAN_INK.dead, 0.8 * a);
@@ -689,7 +689,7 @@ export class Renderer {
       for (const c of r.cameras) {
         if (!c.seeing) continue;
         wedge(c.pos, c.facing, c.fov / 2, c.range);
-        ctx.strokeStyle = alpha(VENEER.player, 0.9 * a);
+        ctx.strokeStyle = alpha(SIGNAL.warning, 0.9 * a);
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -1062,6 +1062,8 @@ export class Renderer {
       this.lastEye = eye;
       this.perspective.lens = 1;
       this.perspective.slingPose = this.slingPose();
+      this.perspective.seen = this.seenPlaces;
+      this.perspective.fresh = this.freshPlaces;
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawParticles(ctx, eye);
       this.drawStreaks(ctx, eye);
@@ -1637,8 +1639,8 @@ export class Renderer {
     // The top edge warms when a lens actually has you. Deliberately not a
     // meter: you are being looked at, not scored.
     const g = ctx.createLinearGradient(0, 0, 0, this.h);
-    g.addColorStop(0, alpha(VENEER.player, 0.16));
-    g.addColorStop(0.3, alpha(VENEER.player, 0));
+    g.addColorStop(0, alpha(SIGNAL.warning, 0.16));
+    g.addColorStop(0.3, alpha(SIGNAL.warning, 0));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, this.h);
   }
@@ -1863,7 +1865,7 @@ export class Renderer {
     }
 
     for (const p of sim.patrols) {
-      this.drawPerson(ctx, p.pos, p.heading, p.state === 'INTERVENING' ? '#E8A33D' : '#5A6470', 0, machine);
+      this.drawPerson(ctx, p.pos, p.heading, p.state === 'INTERVENING' ? SIGNAL.warning : '#5A6470', 0, machine);
     }
 
     this.drawPlayer(ctx);
