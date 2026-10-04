@@ -17,6 +17,7 @@ import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
 import { readPlan, type PlanReading } from './plan';
+import { moodOf } from './mood';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, SIGNAL, VENEER, alpha, mix, riskColour, shade } from './palette';
 
@@ -459,6 +460,13 @@ export class Renderer {
   seenPlaces: ReadonlySet<string> = new Set();
   /** Places already looked at that would read differently now: a pencil tick. */
   freshPlaces: ReadonlySet<string> = new Set();
+  /**
+   * The town's mood (mood.ts), eased: the system's hold rises in a moment
+   * and the picture takes a couple of seconds to agree, so a looped node
+   * brightens the street rather than switching it. A harness may pin it.
+   */
+  private mood = 0;
+  moodOverride: number | null = null;
   /** Set by the host once SAFEtrace's number for the player has been found. */
   scoreLine: string | null = null;
 
@@ -1064,6 +1072,9 @@ export class Renderer {
       this.perspective.slingPose = this.slingPose();
       this.perspective.seen = this.seenPlaces;
       this.perspective.fresh = this.freshPlaces;
+      const want = this.moodOverride ?? moodOf(sim).control;
+      this.mood += (want - this.mood) * (1 - Math.exp(-dt / 1.6));
+      this.perspective.mood = this.mood;
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawParticles(ctx, eye);
       this.drawStreaks(ctx, eye);

@@ -574,6 +574,13 @@ export class PerspectiveRenderer {
     return { x: cam.pos.x + dx * t, y: cam.pos.y + dy * t };
   }
 
+  /**
+   * The mood of the town (mood.ts), -1 lit .. +1 owned, eased by the host.
+   * Read once per frame into `page`: the paper, the rules, the wash.
+   */
+  mood = 0;
+  private page = pageFor(0);
+
   /** Places the player has looked at, in the order they found them. Set by the host. */
   seen: Iterable<string> = [];
   /** Places that would read differently now. Set by the host. */
@@ -585,6 +592,7 @@ export class PerspectiveRenderer {
 
   draw(ctx: CanvasRenderingContext2D, sim: Sim, state: CamState, w: number, h: number, firstPerson: boolean): void {
     const cam = this.cam(state, w, h);
+    this.page = pageFor(this.mood);
     this.drawSkyAndGround(ctx, cam);
     this.faces.length = 0;
     this.collectSurfaces(sim, cam);
@@ -631,7 +639,7 @@ export class PerspectiveRenderer {
       ctx.fillStyle = f.fill;
       ctx.fill();
       if (f.tone !== undefined) {
-        const pat = tone(ctx, f.tone);
+        const pat = tone(ctx, f.tone, this.page.owned > 0.45);
         if (pat) { ctx.fillStyle = pat; ctx.fill(); }
       }
       if (f.stroke) { ctx.strokeStyle = f.stroke; ctx.lineWidth = f.wide ?? 1; ctx.stroke(); }
@@ -725,12 +733,43 @@ export class PerspectiveRenderer {
     // image the street has, and a heavy wash turns it into fog.
     const band = cam.h * 0.06;
     const top = Math.max(0, horizon - 2);
+    const pg = this.page;
     const g = ctx.createLinearGradient(0, top, 0, horizon + band);
-    g.addColorStop(0, alpha(PRINT.paper, 0.4));
-    g.addColorStop(0.4, alpha(PRINT.paper, 0.12));
-    g.addColorStop(1, alpha(PRINT.paper, 0));
+    g.addColorStop(0, alpha(pg.paper, 0.4));
+    g.addColorStop(0.4, alpha(pg.paper, 0.12));
+    g.addColorStop(1, alpha(pg.paper, 0));
     ctx.fillStyle = g;
     ctx.fillRect(0, top, cam.w, horizon + band - top);
+    /*
+     * The town's mood, as a wash over the whole page (mood.ts).
+     *
+     * Owned: the page is dirtier. A multiply wash in a cool grey takes the
+     * paper and every wash on it down together, blacks stay black, and a
+     * second wash of ink closes in from the top and bottom edges. The rider
+     * is in the dark with everything else — that is what being owned looks
+     * like — but stays the warmest thing on the page.
+     *
+     * Lit: the page is cleaner. A thin warm screen lifts the washes a touch
+     * and the edges open up. Neither wash is ever more than a tint: the
+     * structural changes (the sky, the shadows, the windows, what stands in
+     * the street) carry the mood, and the wash only agrees with them.
+     */
+    if (pg.owned > 0.01) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = pg.wash;
+      ctx.fillRect(0, 0, cam.w, cam.h);
+      ctx.globalCompositeOperation = 'source-over';
+      const t = ctx.createLinearGradient(0, 0, 0, cam.h * 0.3);
+      t.addColorStop(0, alpha(PRINT.ink, 0.42 * pg.owned));
+      t.addColorStop(1, alpha(PRINT.ink, 0));
+      ctx.fillStyle = t;
+      ctx.fillRect(0, 0, cam.w, cam.h * 0.3);
+    } else if (pg.lit > 0.01) {
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = alpha('#FFF0CC', 0.24 * pg.lit);
+      ctx.fillRect(0, 0, cam.w, cam.h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
     /*
      * And the near ground goes down into shadow. The chase camera keeps a
      * lot of road behind the rider on an upright phone; a noir panel would
@@ -741,7 +780,7 @@ export class PerspectiveRenderer {
     const v0 = cam.h * 0.68;
     const v = ctx.createLinearGradient(0, v0, 0, cam.h);
     v.addColorStop(0, alpha(PRINT.ink, 0));
-    v.addColorStop(1, alpha(PRINT.ink, 0.38));
+    v.addColorStop(1, alpha(PRINT.ink, 0.38 + pg.owned * 0.3 - pg.lit * 0.16));
     ctx.fillStyle = v;
     ctx.fillRect(0, v0, cam.w, cam.h - v0);
   }
@@ -754,29 +793,31 @@ export class PerspectiveRenderer {
      * horizontal rules, closer together toward the horizon, that slide as
      * the rider turns so the sky still has a direction.
      */
-    ctx.fillStyle = PRINT.paper;
+    const pg = this.page;
+    ctx.fillStyle = pg.paper;
     ctx.fillRect(0, 0, cam.w, Math.max(0, horizon));
     if (horizon > 8) {
-      ctx.fillStyle = PRINT.rule;
+      // An owned town has a lower, heavier sky: more rules, closer, darker.
+      ctx.fillStyle = alpha(PRINT.ink, pg.ruleAlpha);
       const pan = (cam.yaw * cam.f) % 997;
-      for (let k = 1; k <= 6; k++) {
-        const y = horizon - 8 - k * k * 3.2;
+      for (let k = 1; k <= pg.rules; k++) {
+        const y = horizon - 8 - k * k * (3.2 - pg.owned * 1.2);
         if (y < 2) break;
-        const th = Math.max(0.5, 1.3 - k * 0.1);
-        ctx.globalAlpha = Math.max(0.15, 0.9 - k * 0.09);
+        const th = Math.max(0.5, 1.3 - k * 0.1) + pg.owned * 1.4;
+        ctx.globalAlpha = Math.max(0.15, 0.9 - k * 0.09 + pg.owned * 0.25);
         // Strokes of a seeded length along the rule, with gaps between them.
         let x = -((pan * (0.6 + k * 0.05)) % 140) - 140;
         let i = 0;
         while (x < cam.w) {
           const len = 18 + hash01(k * 131 + i) * 80;
           const gap = 30 + hash01(k * 71 + i * 3) * (70 + k * 30);
-          if (hash01(k * 17 + i * 5) > 0.35) ctx.fillRect(x, y, len, th);
+          if (hash01(k * 17 + i * 5) > 0.35 - pg.owned * 0.25) ctx.fillRect(x, y, len, th);
           x += len + gap; i++;
         }
       }
       ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = PRINT.paperShade;
+    ctx.fillStyle = pg.paperShade;
     ctx.fillRect(0, Math.max(0, horizon), cam.w, cam.h - Math.max(0, horizon));
     this.drawSkyline(ctx, cam, horizon);
   }
@@ -1070,7 +1111,20 @@ export class PerspectiveRenderer {
         face.decals = [];
         for (const d of decals) {
           const cp = clipNear(d.pts.map((p) => toCamera(cam, p.x, p.y, p.z)));
-          if (cp.length >= 3) face.decals.push({ pts: cp, fill: d.fill, text: d.text, ink: d.ink });
+          if (cp.length < 3) continue;
+          let fill = d.fill, text = d.text;
+          /*
+           * Windows answer the mood. In an owned town the lamps go out and
+           * the curtains close; in a lit one more rooms have somebody home.
+           */
+          if (d.lit) {
+            const pg = this.page;
+            if (d.lit === 2 && pg.owned > 0) fill = mix(GLASS_WARM, GLASS, Math.min(1, pg.owned * 1.4));
+            else if (d.lit === 1 && pg.lit > 0.15) fill = mix(GLASS_LIT, GLASS_WARM, Math.min(1, (pg.lit - 0.15) * 1.3));
+          }
+          // A tag is louder in a lit town and painted out in an owned one.
+          if (d.tag && text) text = { ...text, colour: alpha(d.tag.col, d.tag.a * clamp(1 + 0.45 * this.page.lit - 0.7 * this.page.owned, 0.15, 1)) };
+          face.decals.push({ pts: cp, fill, text, ink: d.ink });
         }
       }
     }
@@ -1087,13 +1141,33 @@ export class PerspectiveRenderer {
       if (dr.chimney) {
         const ch = dr.chimney;
         this.boxAt(cam, ch.at, ch.rot, 0.55, 0.7, ch.z0, ch.z1, shade(dr.wall, -0.18));
+        if (dr.aerial && near < 70) {
+          // A TV aerial lashed to the chimney: a post and a crossbar.
+          const was = this.inkAs;
+          this.inkAs = null;
+          this.boxAt(cam, { x: ch.at.x + 0.3, y: ch.at.y }, ch.rot, 0.04, 0.04, ch.z1, ch.z1 + 1.3, PRINT.ink);
+          this.boxAt(cam, { x: ch.at.x + 0.3, y: ch.at.y }, ch.rot, 0.03, 0.9, ch.z1 + 1.2, ch.z1 + 1.24, PRINT.ink);
+          this.inkAs = was;
+        }
       }
     } else {
       this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), dr.roof);
       // A flat roof is where the plant goes: a parapet line and a unit or two.
       for (const u of dr.plant) this.boxAt(cam, u.at, u.rot, u.w, u.d, eave, eave + u.h, PRINT.steel);
     }
-    void near;
+    if (dr.porch && near < 90) {
+      // A step up to the door, and a canopy over it on two posts.
+      const po = dr.porch;
+      const nx = Math.cos(po.rot), ny = Math.sin(po.rot);
+      const step = { x: po.at.x + nx * 0.35, y: po.at.y + ny * 0.35 };
+      this.boxAt(cam, step, po.rot, 0.7, 1.4, 0, 0.17, shade(PRINT.footway, -0.08));
+      const roof = { x: po.at.x + nx * 0.5, y: po.at.y + ny * 0.5 };
+      this.boxAt(cam, roof, po.rot, 1.0, 1.7, 2.3, 2.42, shade(dr.wall, -0.4));
+      for (const side of [-0.7, 0.7]) {
+        const post = { x: po.at.x + nx * 0.92 - ny * side, y: po.at.y + ny * 0.92 + nx * side };
+        this.boxAt(cam, post, po.rot, 0.08, 0.08, 0, 2.3, shade(dr.wall, -0.35));
+      }
+    }
   }
 
   /**
@@ -1113,7 +1187,8 @@ export class PerspectiveRenderer {
       if (b.height < 1.2) continue;
       const c = b.poly[0];
       if (Math.hypot(c.x - cam.pos.x, c.y - cam.pos.y) > 120) continue;
-      const k = b.height * 0.55;
+      // Longer when the town is owned: late in the afternoon, and later.
+      const k = b.height * (0.55 + this.page.owned * 0.4);
       const off = { x: sun.x * k, y: sun.y * k };
       // One shape — the footprint swept along the light — so overlapping
       // pieces never stack into a darker blotch under the hatching.
@@ -1155,6 +1230,33 @@ export class PerspectiveRenderer {
     const sensors = sim.sensors
       .filter((x) => near(x.data.pos, 100))
       .map((x) => ({ id: x.data.id, pos: x.data.pos, facing: x.facing, range: x.data.range }));
+    /*
+     * When the system owns the town it draws its own lines on it: a cyan
+     * wedge on the ground in front of every working camera, the way the
+     * plan draws coverage — the machine's register, leaking into the street.
+     * They come up with the mood and go the moment the town is cut loose.
+     */
+    const owned = this.page.owned;
+    if (owned > 0.3) {
+      const k = Math.min(1, (owned - 0.3) / 0.45);
+      const seeing = new Set(sim.sensorsSeeingPlayer().map((x) => x.data.id));
+      for (const sx of sim.sensors) {
+        const d = sx.data;
+        if (!(sx.state === 'ONLINE' || sx.state === 'DEGRADED') || !near(d.pos, 80)) continue;
+        const r = Math.min(14, d.range * 0.4);
+        const half = d.fov / 2;
+        const pts: Vec2[] = [{ x: d.pos.x, y: d.pos.y }];
+        for (let i = 0; i <= 6; i++) {
+          const a = sx.facing - half + (i / 6) * d.fov;
+          pts.push({ x: d.pos.x + Math.cos(a) * r, y: d.pos.y + Math.sin(a) * r });
+        }
+        const hot = seeing.has(d.id);
+        flat(pts, alpha(hot ? SIGNAL.warning : TECH.cyan, (hot ? 0.3 : 0.2) * k), 60);
+        for (const a of [sx.facing - half, sx.facing + half]) {
+          stroke({ x: d.pos.x, y: d.pos.y }, { x: d.pos.x + Math.cos(a) * r, y: d.pos.y + Math.sin(a) * r }, 0.12, alpha(hot ? SIGNAL.warning : TECH.cyan, 0.8 * k), 60);
+        }
+      }
+    }
     const rule = alpha(PRINT.ink, 0.6);
     for (const sl of sightlinesFor(sensors, sim.knownSensors)) {
       const dx = sl.to.x - sl.from.x, dy = sl.to.y - sl.from.y;
@@ -1283,6 +1385,17 @@ export class PerspectiveRenderer {
         this.card(cam, { x: lx, y: ly }, z, r, r, alpha(watching ? SIGNAL.warning : SIGNAL.player, 0.45));
         this.inkAs = was;
       } else if (live) {
+        // In an owned town every lens glows: the system is awake everywhere,
+        // and in the dark the cyan points are the first thing you see.
+        if (this.page.owned > 0.25) {
+          const wasInk = this.inkAs;
+          this.inkAs = null;
+          const k = Math.min(1, (this.page.owned - 0.25) / 0.5);
+          const r = (0.22 + dist * 0.004) * k;
+          this.card(cam, { x: lx, y: ly }, z, r * 1.6, r * 1.6, alpha(TECH.cyan, 0.18 * k));
+          this.card(cam, { x: lx, y: ly }, z, r, r, alpha(TECH.cyan, 0.45 * k));
+          this.inkAs = wasInk;
+        }
         // At rest, a SAFEtrace lens shows one thin line of cyan under the
         // housing: the product working, calmly, the way it is meant to look.
         for (const side of [1, -1]) {
@@ -1413,6 +1526,13 @@ export class PerspectiveRenderer {
       if (!near(m.c, 90)) continue;
       this.push(cam, m.poly.map((q) => ({ x: q.x, y: q.y, z: 0 })), m.fill, undefined, undefined, Layer.Ground, 20);
     }
+    if (this.page.lit > 0.05) {
+      const chalk = alpha('#F4EEE0', 0.9 * Math.min(1, this.page.lit * 1.4));
+      for (const c of sd.chalk) {
+        if (!near(c.c, 95)) continue;
+        this.push(cam, c.poly.map((q) => ({ x: q.x, y: q.y, z: 0 })), chalk, undefined, undefined, Layer.Ground, 22);
+      }
+    }
     const joint = alpha(CITY_INK, 0.32);
     for (const j of sd.joints) {
       if (!near(j.c, 45)) continue;
@@ -1424,8 +1544,26 @@ export class PerspectiveRenderer {
      * lawn. Close to the eye only; past that a verge is a flat wash.
      */
     this.inkAs = Ink.Furniture;
+    let poleN = 0;
     for (const p of sd.poles) {
+      poleN++;
       if (!near(p.at, 130)) continue;
+      /*
+       * SAFEtrace's plates go up on the poles as the system takes hold: a
+       * white plate with the wordmark and one cyan band, at eye height,
+       * first on one pole in ten and then on most of them. They come down
+       * again as the town is cut loose. Nothing in the world data moves.
+       */
+      if (hash01(poleN * 7919) < this.page.owned * 1.15 && near(p.at, 60)) {
+        const nx = Math.cos(p.rot + Math.PI / 2), ny = Math.sin(p.rot + Math.PI / 2);
+        const at = { x: p.at.x + nx * 0.16, y: p.at.y + ny * 0.16 };
+        const inkBefore: Ink | null = this.inkAs;
+        this.inkAs = Ink.Interactable;
+        this.panel(cam, at, p.rot + Math.PI / 2, 0.5, 0.7, 3.1, TECH.white, { str: 'SAFEtrace', colour: TECH.cyanInk, aspect: 0.71, weight: 600 }, 0.03);
+        this.inkAs = null;
+        this.panel(cam, at, p.rot + Math.PI / 2, 0.5, 0.07, 2.73, TECH.cyan, undefined, 0.035);
+        this.inkAs = inkBefore;
+      }
       /*
        * Creosote-dark timber, a crossarm, insulators, and on some a
        * transformer can. A little taller and heavier in the arm than life:
@@ -1465,6 +1603,29 @@ export class PerspectiveRenderer {
           { x: a.x, y: a.y, z: z0 - ha }, { x: b.x, y: b.y, z: z1 - hb },
           { x: b.x, y: b.y, z: z1 + hb }, { x: a.x, y: a.y, z: z0 + ha },
         ], PRINT.ink);
+      }
+    }
+    /*
+     * Birds on the wires. A lit town has them; an owned one is a quiet,
+     * empty place, and the first thing to leave is the thing that would
+     * have sat on the wire anyway. Each wire has a few seeded perches, and
+     * the mood decides how many are taken.
+     */
+    const roost = 0.4 - this.page.owned * 0.6 + this.page.lit * 0.7;
+    if (roost > 0) {
+      let wn = 0;
+      for (const w of sd.wires) {
+        wn++;
+        // Measured from the wire's middle: its ends are poles thirty metres
+        // apart, and the eye is forty metres behind the rider.
+        if (!near({ x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 }, 95)) continue;
+        for (let i = 0; i < 4; i++) {
+          const h = hash01(wn * 131 + i * 17);
+          if (h > roost) continue;
+          const t = 0.2 + hash01(wn * 37 + i * 101) * 0.6;
+          const z = w.z - Math.sin(t * Math.PI) * w.sag;
+          this.bird(cam, { x: lerp(w.a.x, w.b.x, t), y: lerp(w.a.y, w.b.y, t) }, z, (wn + i) % 2 === 0);
+        }
       }
     }
     this.inkAs = wasInking;
@@ -1572,7 +1733,9 @@ export class PerspectiveRenderer {
     const sun = sim.sun;
     for (const n of sim.npcs) {
       const wear = VENEER.civilian[hashString(n.id) % VENEER.civilian.length];
-      const look = residentLook(n.id, n.kind, wear);
+      // In an owned town more hoods go up and heads go down.
+      const hood = n.kind !== 'jogger' && n.kind !== 'child' && hash01(hashString(n.id) & 0xffff) < this.page.owned * 0.7;
+      const look = residentLook(n.id, n.kind, wear, hood);
       this.personAt(cam, n.id, n.pos, look, {
         heading: n.heading, tick, sun,
         gait: n.kind === 'jogger' && n.waitTicks <= 0 ? 'run' : undefined,
@@ -1702,6 +1865,16 @@ export class PerspectiveRenderer {
     }
     ctx.stroke();
     ctx.restore();
+  }
+
+  /** A small bird, sat on a wire, as an ink silhouette facing the eye. */
+  private bird(cam: Cam, p: Vec2, z: number, flip: boolean): void {
+    const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
+    if (d > FAR || d < 0.25) return;
+    const k = flip ? -1 : 1;
+    const ux = (-(p.y - cam.pos.y) / d) * k, uy = ((p.x - cam.pos.x) / d) * k;
+    const pts: P3[] = BIRD.map(([u, dz]) => ({ x: p.x + ux * u, y: p.y + uy * u, z: z + dz }));
+    this.push(cam, pts, PRINT.ink);
   }
 
   /** A round, lumpy billboard: a tree's crown. */
@@ -2263,7 +2436,13 @@ export class PerspectiveRenderer {
 
 // ------------------------------------------------------------------- dressing
 
-interface Decal { pts: P3[]; fill: string; text?: Face['text']; ink?: boolean }
+interface Decal {
+  pts: P3[]; fill: string; text?: Face['text']; ink?: boolean;
+  /** A window: 1 = might be lit, 2 = somebody is home. The mood decides. */
+  lit?: 1 | 2;
+  /** A sprayed tag: its colour and how fresh it is. The mood decides how loud. */
+  tag?: { col: string; a: number };
+}
 interface Dressing {
   /** Per wall edge (indexed like the edge's first vertex), what hangs on it. */
   walls: Decal[][];
@@ -2282,6 +2461,10 @@ interface Dressing {
   } | null;
   /** A chimney astride the ridge, on some houses. */
   chimney: { at: Vec2; rot: number; z0: number; z1: number } | null;
+  /** A TV aerial on the chimney, on some of those. */
+  aerial: boolean;
+  /** A step and a canopy at a house's front door. */
+  porch: { at: Vec2; rot: number } | null;
   /** The building's own paint and roof, weathered down into the town. */
   wall: string;
   roof: string;
@@ -2386,6 +2569,7 @@ function dress(b: Building, sim: Sim): Dressing {
   const walls: Decal[][] = [];
   const sunlit: number[] = [];
   const normals: Vec2[] = [];
+  let porch: Dressing['porch'] = null;
   const houseLike = b.kind === 'house';
   const sign = signFor(b);
   const floors = b.height >= 5 ? Math.max(1, Math.floor((b.height - 0.6) / 2.9)) : 0;
@@ -2415,6 +2599,14 @@ function dress(b: Building, sim: Sim): Dressing {
      */
     if (e.len > 1.5) {
       out.push(rect(0, e.len, 0.0, 0.45, shade(wall, -0.2), undefined, 0.02));
+      // A drainpipe down one end of most walls: the cheapest vertical a
+      // facade can have, and the one every terrace actually has.
+      if (e.len > 4 && (seed + k) % 3 !== 2) {
+        const t = (seed + k) % 2 ? 0.22 : e.len - 0.32;
+        const pipe = rect(t, t + 0.1, 0.1, b.height - 0.12, shade(wall, -0.42), undefined, 0.045);
+        pipe.ink = true;
+        out.push(pipe);
+      }
       // A flat roof's coping: a dark band along the top of every wall, which
       // is what gives a block its roofline from the far end of the street.
       if (b.kind !== 'house') out.push(rect(0, e.len, b.height - 0.32, b.height, shade(wall, -0.55), undefined, 0.03));
@@ -2439,8 +2631,10 @@ function dress(b: Building, sim: Sim): Dressing {
       const t0 = ((seed + k * 31) % 100) / 100 * (e.len - w);
       const z0 = 0.55 + ((seed + k) % 3) * 0.15;
       const fresh = (seed + k) % 4 === 0;
-      out.push(rect(t0, t0 + w, z0, z0 + 0.95, alpha(col, 0.001),
-        { str: tag, colour: alpha(col, fresh ? 0.92 : 0.6), aspect: w / 0.95, weight: 900 }, 0.03));
+      const sprayed = rect(t0, t0 + w, z0, z0 + 0.95, alpha(col, 0.001),
+        { str: tag, colour: alpha(col, fresh ? 0.92 : 0.6), aspect: w / 0.95, weight: 900 }, 0.03);
+      sprayed.tag = { col, a: fresh ? 0.92 : 0.6 };
+      out.push(sprayed);
     }
 
     if (b.kind === 'shop' && isFront) {
@@ -2464,6 +2658,7 @@ function dress(b: Building, sim: Sim): Dressing {
           const pane = (w + f + k + seed) % 7 === 0 ? GLASS_WARM : (w + f + k) % 3 === 0 ? GLASS_LIT : GLASS;
           const win = rect(t - 0.6, t + 0.6, z0, z0 + 1.25, pane);
           win.ink = true;
+          if (pane === GLASS_WARM) win.lit = 2; else if (pane === GLASS_LIT) win.lit = 1;
           out.push(win);
         }
       }
@@ -2471,6 +2666,7 @@ function dress(b: Building, sim: Sim): Dressing {
         const door = rect(e.len * 0.62 - 0.5, e.len * 0.62 + 0.5, 0.02, 2.15, DOOR);
         door.ink = true;
         out.push(door);
+        porch = { at: { x: e.a.x + along.x * e.len * 0.62 + e.nx * 0.02, y: e.a.y + along.y * e.len * 0.62 + e.ny * 0.02 }, rot: Math.atan2(e.ny, e.nx) };
         // A number by the door, where the street has numbers.
         const num = b.label?.match(/^(\d+) /)?.[1];
         if (num) out.push(rect(e.len * 0.62 + 0.75, e.len * 0.62 + 1.35, 1.55, 2.0, SIGN,
@@ -2549,10 +2745,15 @@ function dress(b: Building, sim: Sim): Dressing {
       });
     }
   }
-  return { walls, sunlit, normals, ridge, chimney, wall, roof, plant };
+  return { walls, sunlit, normals, ridge, chimney, aerial: !!chimney && seed % 3 === 0, porch, wall, roof, plant };
 }
 
 const POLE_H = 8.6;
+
+/** A bird's outline, across and up from its perch: tail, back, head, beak, breast. */
+const BIRD: ReadonlyArray<readonly [number, number]> = [
+  [-0.26, 0.06], [-0.16, 0.16], [0.03, 0.21], [0.14, 0.25], [0.24, 0.18], [0.16, 0.14], [0.13, 0.05], [-0.03, 0.0], [-0.19, 0.0],
+];
 
 /** A tuft's outline, across and up: three blades from one root. */
 const TUFT: ReadonlyArray<readonly [number, number]> = [
@@ -2572,6 +2773,8 @@ export interface StreetDressing {
   marks: Array<{ c: Vec2; poly: Vec2[]; fill: string }>;
   /** Footway slab joints: fine, and only drawn close to the eye. */
   joints: Array<{ c: Vec2; poly: Vec2[] }>;
+  /** Kids' chalk on the footway, shown as the town is lit. */
+  chalk: Array<{ c: Vec2; poly: Vec2[] }>;
   /** Grass, as a few pen strokes standing up where a verge meets something. */
   tufts: Array<{ at: Vec2; s: number; seed: number }>;
   /** Grass, as short strokes laid flat in drifts across a lawn: a, b. */
@@ -2589,7 +2792,7 @@ const streetCache = new WeakMap<object, StreetDressing>();
 export function streetDressingFor(data: WorldData): StreetDressing {
   const hit = streetCache.get(data);
   if (hit) return hit;
-  const out: StreetDressing = { poles: [], wires: [], signs: [], marks: [], joints: [], tufts: [], hatch: [] };
+  const out: StreetDressing = { poles: [], wires: [], signs: [], marks: [], joints: [], tufts: [], hatch: [], chalk: [] };
   const nodes = new Map(data.roadNodes.map((r) => [r.id, r.pos]));
   const edges = data.roadEdges
     .map((e) => ({ e, a: nodes.get(e.a), b: nodes.get(e.b) }))
@@ -2906,6 +3109,58 @@ export function streetDressingFor(data: WorldData): StreetDressing {
     }
   }
 
+  /*
+   * Chalk. A hopscotch grid, or a sun with rays, on a footway every so often:
+   * the thing a lit town has on its pavements and an owned one does not.
+   * Drawn only when the mood is on the kid's side.
+   */
+  {
+    let ch = 0x7f4a7c15;
+    const r = () => { ch = (ch * 1103515245 + 12345) >>> 0; return (ch >>> 8) / 16777216; };
+    const bar = (a: Vec2, b: Vec2, w: number): Vec2[] => {
+      const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const nx = -(b.y - a.y) / l * w / 2, ny = (b.x - a.x) / l * w / 2;
+      return [{ x: a.x + nx, y: a.y + ny }, { x: b.x + nx, y: b.y + ny }, { x: b.x - nx, y: b.y - ny }, { x: a.x - nx, y: a.y - ny }];
+    };
+    for (const { e, a, b } of edges) {
+      if (e.surface !== 'asphalt') continue;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 30) continue;
+      const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len, nx = -uy, ny = ux;
+      for (let d = 8 + r() * 14; d < len - 8; d += 20 + r() * 22) {
+        const side = r() < 0.5 ? 1 : -1;
+        const c = { x: a.x + ux * d + nx * side * (e.width / 2 + 1.1), y: a.y + uy * d + ny * side * (e.width / 2 + 1.1) };
+        const top = topSurface(c);
+        // A footway, of either concrete, and not an open forecourt.
+        if (!top || (top.kind !== 'smoothConcrete' && top.kind !== 'roughConcrete')) continue;
+        let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+        for (const q of top.poly) { bx0 = Math.min(bx0, q.x); by0 = Math.min(by0, q.y); bx1 = Math.max(bx1, q.x); by1 = Math.max(by1, q.y); }
+        if ((bx1 - bx0) * (by1 - by0) >= 400 && Math.min(bx1 - bx0, by1 - by0) > 6) continue;
+        if (r() < 0.5) {
+          // Hopscotch: a column of squares up the footway, two side by side now and then.
+          for (let i = 0; i < 6; i++) {
+            const o = { x: c.x + ux * (i * 0.95 - 2.4), y: c.y + uy * (i * 0.95 - 2.4) };
+            const squares = i === 2 || i === 5 ? [-0.5, 0.5] : [0];
+            for (const q of squares) {
+              const s0 = { x: o.x + nx * q * 0.95, y: o.y + ny * q * 0.95 };
+              const cs = [
+                { x: s0.x - ux * 0.42 - nx * 0.42, y: s0.y - uy * 0.42 - ny * 0.42 }, { x: s0.x + ux * 0.42 - nx * 0.42, y: s0.y + uy * 0.42 - ny * 0.42 },
+                { x: s0.x + ux * 0.42 + nx * 0.42, y: s0.y + uy * 0.42 + ny * 0.42 }, { x: s0.x - ux * 0.42 + nx * 0.42, y: s0.y - uy * 0.42 + ny * 0.42 },
+              ];
+              for (let j = 0; j < 4; j++) out.chalk.push({ c, poly: bar(cs[j], cs[(j + 1) % 4], 0.07) });
+            }
+          }
+        } else {
+          // A sun: a ring of short rays.
+          for (let i = 0; i < 9; i++) {
+            const ang = (i / 9) * Math.PI * 2 + r() * 0.2;
+            out.chalk.push({ c, poly: bar({ x: c.x + Math.cos(ang) * 0.35, y: c.y + Math.sin(ang) * 0.35 }, { x: c.x + Math.cos(ang) * (0.7 + r() * 0.3), y: c.y + Math.sin(ang) * (0.7 + r() * 0.3) }, 0.09) });
+          }
+        }
+      }
+    }
+  }
+
   // Street-name blades where one named street runs into another.
   const streets = data.streets ?? [];
   const dirAt = (pts: Vec2[], q: Vec2) => {
@@ -3058,4 +3313,32 @@ function segDist(x: number, y: number, a: Vec2, b: Vec2): number {
   const l2 = dx * dx + dy * dy || 1;
   const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
   return Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+}
+
+/**
+ * The page for a mood (mood.ts): the paper, the sky's rules, the wash.
+ *
+ * Owned (control > 0): the paper goes down toward a cold slate, the rules
+ * come closer and darker, and the multiply wash takes everything with it.
+ * Lit (control < 0): the paper warms and brightens a touch, and the rules
+ * thin out. In between is the ordinary afternoon the rest of this file was
+ * drawn for.
+ */
+interface Page {
+  owned: number; lit: number;
+  paper: string; paperShade: string;
+  rules: number; ruleAlpha: number;
+  /** The multiply wash over the whole page while owned: white at 0. */
+  wash: string;
+}
+function pageFor(control: number): Page {
+  const owned = clamp01(control), lit = clamp01(-control);
+  return {
+    owned, lit,
+    paper: owned > 0 ? mix(PRINT.paper, '#6A6C72', owned * 0.55) : mix(PRINT.paper, '#F5ECD4', lit * 0.85),
+    paperShade: owned > 0 ? mix(PRINT.paperShade, '#4A4B50', owned * 0.5) : mix(PRINT.paperShade, '#9C9A84', lit * 0.5),
+    rules: Math.round(6 + owned * 5 - lit * 3),
+    ruleAlpha: 0.5 + owned * 0.3 - lit * 0.2,
+    wash: mix('#FFFFFF', '#A9AEB8', owned * 0.85),
+  };
 }

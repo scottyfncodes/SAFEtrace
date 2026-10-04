@@ -23,50 +23,53 @@ export const enum Tone {
   Dots = 2,
 }
 
-const cache = new WeakMap<CanvasRenderingContext2D, Map<Tone, CanvasPattern | null>>();
+const cache = new WeakMap<CanvasRenderingContext2D, Map<number, CanvasPattern | null>>();
 
 /**
  * The pattern for a tone, on this context. Built on first use at the
  * context's device scale and pinned to device pixels, so a hatch line is one
  * crisp line on a phone's glass rather than a blurred two.
  */
-export function tone(ctx: CanvasRenderingContext2D, t: Tone): CanvasPattern | null {
+export function tone(ctx: CanvasRenderingContext2D, t: Tone, dense = false): CanvasPattern | null {
   let m = cache.get(ctx);
   if (!m) { m = new Map(); cache.set(ctx, m); }
-  if (m.has(t)) return m.get(t)!;
+  const key = t * 2 + (dense ? 1 : 0);
+  if (m.has(key)) return m.get(key)!;
   let p: CanvasPattern | null = null;
-  try { p = build(ctx, t); } catch { p = null; }
-  m.set(t, p);
+  try { p = build(ctx, t, dense); } catch { p = null; }
+  m.set(key, p);
   return p;
 }
 
-function build(ctx: CanvasRenderingContext2D, t: Tone): CanvasPattern | null {
+/** `dense`: the owned town's tone — a finer pitch and a heavier line (docs/41). */
+function build(ctx: CanvasRenderingContext2D, t: Tone, dense: boolean): CanvasPattern | null {
   if (typeof document === 'undefined') return null;
   const dpr = Math.max(1, Math.round(ctx.getTransform().a));
   const c = document.createElement('canvas');
   const g = c.getContext('2d');
   if (!g) return null;
   // Tile sizes in CSS pixels; drawn at device resolution.
-  const size = t === Tone.Dots ? 6 : t === Tone.Shadow ? 7 : 5;
+  const size = (t === Tone.Dots ? 6 : t === Tone.Shadow ? 7 : 5) - (dense ? 1 : 0);
+  const weight = dense ? 0.16 : 0;
   const S = size * dpr;
   c.width = S; c.height = S;
   g.scale(dpr, dpr);
   g.lineCap = 'square';
   if (t === Tone.Hatch) {
     // One diagonal per tile, wrapped so the lines are continuous.
-    g.strokeStyle = alpha(PRINT.ink, 0.42);
-    g.lineWidth = 0.9;
+    g.strokeStyle = alpha(PRINT.ink, 0.42 + weight);
+    g.lineWidth = 0.9 + weight;
     for (const o of [-size, 0, size]) {
       g.beginPath(); g.moveTo(o, size); g.lineTo(o + size, 0); g.stroke();
     }
   } else if (t === Tone.Shadow) {
-    g.strokeStyle = alpha(PRINT.ink, 0.5);
-    g.lineWidth = 0.8;
+    g.strokeStyle = alpha(PRINT.ink, 0.5 + weight);
+    g.lineWidth = 0.8 + weight;
     for (const o of [-size, 0, size]) {
       g.beginPath(); g.moveTo(o, 0); g.lineTo(o + size, size); g.stroke();
     }
   } else {
-    g.fillStyle = alpha(PRINT.ink, 0.38);
+    g.fillStyle = alpha(PRINT.ink, 0.38 + weight);
     for (const [x, y] of [[1.5, 1.5], [4.5, 4.5]]) {
       g.beginPath(); g.arc(x, y, 0.95, 0, Math.PI * 2); g.fill();
     }
