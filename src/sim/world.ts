@@ -22,15 +22,22 @@ import type {
 
 export interface SurfaceProps { friction: number; grip: number; bailRisk: number; }
 
+/*
+ * Rolling resistance, m/s². The off-road numbers were real-world honest —
+ * grass at 6.2 stopped a board from full speed in a second and a half and
+ * very nearly cancelled pushing — and playtesting said it felt like glue.
+ * Rough ground still costs you (you can feel the lawn, and a line on the
+ * paving is still the fast one), but it no longer ends a run.
+ */
 export const SURFACE: Record<SurfaceKind, SurfaceProps> = {
   asphalt:        { friction: 0.55, grip: 1.00, bailRisk: 0.00 },
   smoothConcrete: { friction: 0.38, grip: 1.04, bailRisk: 0.00 },
-  roughConcrete:  { friction: 0.95, grip: 0.98, bailRisk: 0.00 },
-  tile:           { friction: 0.62, grip: 0.92, bailRisk: 0.01 },
-  grass:          { friction: 6.20, grip: 0.70, bailRisk: 0.00 },
-  gravel:         { friction: 4.00, grip: 0.55, bailRisk: 0.05 },
-  dirt:           { friction: 2.60, grip: 0.72, bailRisk: 0.01 },
-  water:          { friction: 9.00, grip: 0.40, bailRisk: 0.00 },
+  roughConcrete:  { friction: 0.70, grip: 0.98, bailRisk: 0.00 },
+  tile:           { friction: 0.55, grip: 0.92, bailRisk: 0.01 },
+  grass:          { friction: 1.60, grip: 0.80, bailRisk: 0.00 },
+  gravel:         { friction: 1.40, grip: 0.70, bailRisk: 0.05 },
+  dirt:           { friction: 1.20, grip: 0.80, bailRisk: 0.01 },
+  water:          { friction: 3.00, grip: 0.50, bailRisk: 0.00 },
 };
 
 interface RoadAdj { to: string; edge: RoadEdge; }

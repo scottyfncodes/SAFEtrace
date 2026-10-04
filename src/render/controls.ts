@@ -168,10 +168,14 @@ export class ControlsRenderer {
 
       ctx.fillStyle = alpha(on && secondary ? MACHINE.data : '#F6F4EE',
         (on ? 1 : secondary ? 0.72 : 0.9) * a * dim);
+      this.raised = v.slingOut;
       this.glyph(ctx, b.id, b.pos.x, b.pos.y, b.radius);
     }
     ctx.restore();
   }
+
+  /** Whether the sling is raised, for SLING's label. */
+  private raised = false;
 
   private glyph(ctx: CanvasRenderingContext2D, id: ControlButton['id'], x: number, y: number, r: number): void {
     /*
@@ -259,7 +263,8 @@ export class ControlsRenderer {
       ctx.beginPath();
       ctx.arc(x, dip - s * 0.1, s * 0.15, 0, Math.PI * 2);
       ctx.fill();
-      label('SLING');
+      // Raised, it is the trigger: hold to draw, let go to throw.
+      label(this.raised ? 'THROW' : 'SLING');
       return;
     }
 

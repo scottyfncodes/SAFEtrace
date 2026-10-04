@@ -176,7 +176,11 @@ describe('the friend behind you reads as a friend', () => {
     for (let i = 0; i < 60 * 33; i++) sim.step(TICK_DT, emptyIntent(), null);
 
     let closest = Infinity;
-    for (let i = 0; i < 60 * 20; i++) {
+    // Twelve seconds: long enough to be going somewhere, short enough not to
+    // reach the Channel wall at the bottom of the field. Grass no longer bogs
+    // a board down, so the stop below is a brake rather than a long coast
+    // into that wall.
+    for (let i = 0; i < 60 * 12; i++) {
       sim.step(TICK_DT, push(), null);
       // They start on the same spot. Devon rides a real board now, so he
       // cannot leave it at twelve metres a second the way the old point
@@ -190,10 +194,11 @@ describe('the friend behind you reads as a friend', () => {
     // ...without ever arriving in their personal space on the way.
     expect(closest).toBeGreaterThan(3.5);
 
-    // And once the player has rolled to a halt, so has he. He keeps station
-    // through the coast, which is right — a board does not stop when you stop
-    // pushing — and then both of them are simply standing there.
-    for (let i = 0; i < 60 * 20; i++) sim.step(TICK_DT, emptyIntent(), null);
+    // And once the player has come to a halt, so has he: he keeps station
+    // through the stop, and then both of them are simply standing there.
+    const brake = () => { const i = emptyIntent(); i.brake = true; return i; };
+    for (let i = 0; i < 60 * 4; i++) sim.step(TICK_DT, brake(), null);
+    for (let i = 0; i < 60 * 16; i++) sim.step(TICK_DT, emptyIntent(), null);
     expect(sim.player.speed).toBe(0);
     expect(sim.devon.speed).toBe(0);
 

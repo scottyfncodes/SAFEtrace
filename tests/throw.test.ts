@@ -51,13 +51,14 @@ describe('taking the sling out is not a mode', () => {
     for (const b of e.buttonLayout()) expect(e.zoneAt(b.pos.x, b.pos.y)).toBe(b.id);
   });
 
-  it('leaves a drag on the plan to the plan, even with the sling out', () => {
+  it('turns open glass into the camera with the sling out, and never a throw', () => {
+    // Raised, the middle of the glass is the aim and a drag turns the rig;
+    // the throw is THROW, held. Open glass is never a pull.
     const e = engine();
     e.setSlingOut(true);
+    expect(e.zoneAt(280, 300)).toBe('idle');
     e.setPlanOpen(true);
     expect(e.zoneAt(280, 300)).not.toBe('throw');
-    e.setPlanOpen(false);
-    expect(e.zoneAt(280, 300)).toBe('throw');
   });
 
   it('puts the sling away when there is nothing to throw with', () => {
@@ -69,11 +70,13 @@ describe('taking the sling out is not a mode', () => {
   });
 });
 
+/** Where SLING sits: the flick-back throw starts on the button itself. */
+const slingAt = (e: TouchEngine) => e.buttonLayout().find((b) => b.id === 'sling')!.pos;
+
 describe('pulling back', () => {
-  it('reads a drag on the right of the glass as a pull, pointing the other way', () => {
+  it('reads a drag off the SLING button as a pull, pointing the other way', () => {
     const e = engine();
-    e.setSlingOut(true);
-    pull(e, { x: 280, y: 300 }, { x: -20, y: 80 });
+    pull(e, slingAt(e), { x: -20, y: 80 });
     const i = e.sample();
     expect(i.aim).toBe(true);
     expect(i.throwVector!.x).toBeCloseTo(20, 5);
@@ -83,22 +86,22 @@ describe('pulling back', () => {
   });
 
   it('draws harder the further back it comes', () => {
-    const a = engine(); a.setSlingOut(true);
-    pull(a, { x: 280, y: 300 }, { x: 0, y: 40 });
-    const b = engine(); b.setSlingOut(true);
-    pull(b, { x: 280, y: 300 }, { x: 0, y: 110 });
+    const a = engine();
+    pull(a, slingAt(a), { x: 0, y: 40 });
+    const b = engine();
+    pull(b, slingAt(b), { x: 0, y: 110 });
     expect(b.sample().drawAmount!).toBeGreaterThan(a.sample().drawAmount!);
   });
 
   it('throws on release, along the pull as it was just before the thumb came off', () => {
     const e = engine();
-    e.setSlingOut(true);
+    const s0 = slingAt(e);
     // A steady pull straight back, then the thumb smears sideways as it lifts.
-    pull(e, { x: 280, y: 300 }, { x: 0, y: 100 }, 3, 10, 30);
+    pull(e, s0, { x: 0, y: 100 }, 3, 10, 30);
     e.sample();
-    clock += 20; e.handle('move', at(300, 402, 3));
-    clock += 20; e.handle('move', at(318, 404, 3));
-    clock += 10; e.handle('up', at(322, 404, 3));
+    clock += 20; e.handle('move', at(s0.x + 20, s0.y + 102, 3));
+    clock += 20; e.handle('move', at(s0.x + 38, s0.y + 104, 3));
+    clock += 10; e.handle('up', at(s0.x + 42, s0.y + 104, 3));
     const i = e.sample();
     expect(i.fire).toBe(true);
     expect(i.firePressed).toBe(true);

@@ -311,7 +311,29 @@ export class ChaseCamera {
     this.freeLook = 0;
   }
 
+  /**
+   * The sling raised, on a phone: the rig goes over the rider's shoulder and
+   * the middle of the glass is where the stone goes. The player turns the
+   * rig (and so the aim) with a drag; `aimPitch` is how far up or down it
+   * looks. Set by the host each frame; eased in and out here.
+   */
+  aimMode = false;
+  aimPitch = -0.06;
+  private aimBlend = 0;
+
+  /** Swing the aim up or down while the sling is raised. */
+  tilt(radians: number): void {
+    this.aimPitch = Math.max(-0.5, Math.min(0.4, this.aimPitch + radians));
+  }
+
+  /** True while the over-the-shoulder aim is (mostly) in. */
+  get aiming(): boolean { return this.aimBlend > 0.5; }
+
   update(sim: Sim, dt: number): void {
+    this.aimBlend = damp(this.aimBlend, this.aimMode ? 1 : 0, 0.08, dt);
+    // Aiming, the rig stays where the player put it rather than settling
+    // back behind the board.
+    if (this.aimMode) this.freeLook = Math.max(this.freeLook, 0.3);
     this.cineTime += dt;
     if (this.cinematic) {
       // A slow orbit: nothing in the advertisement is ever still.
@@ -489,7 +511,7 @@ export class ChaseCamera {
     const p = sim.player;
     const back = { x: -Math.cos(this.yaw), y: -Math.sin(this.yaw) };
     const dist = this.dist * this.reach;
-    const live: CamState = {
+    let live: CamState = {
       pos: {
         x: this.look.x + back.x * dist,
         y: this.look.y + back.y * dist,
@@ -498,6 +520,34 @@ export class ChaseCamera {
       yaw: this.yaw,
       pitch: this.pitch,
     };
+    if (this.aimBlend > 0.001) {
+      // Over the right shoulder, close and low, looking along the aim.
+      const right = { x: -back.y, y: back.x };
+      const k = this.aimBlend;
+      // Pulled in toward the rider until the eye is not inside a wall.
+      const eyeZ = p.z + 3.4;
+      let reachK = 1;
+      for (const r of [1, 0.8, 0.6, 0.45, 0.3, 0.18]) {
+        reachK = r;
+        const q = { x: p.pos.x + (back.x * 7.5 + right.x * 1.6) * r, y: p.pos.y + (back.y * 7.5 + right.y * 1.6) * r };
+        const b = sim.world.buildingAt(q);
+        if (!b || b.height < eyeZ - 0.3) break;
+      }
+      const over: CamState = {
+        pos: {
+          x: p.pos.x + (back.x * 7.5 + right.x * 1.6) * reachK,
+          y: p.pos.y + (back.y * 7.5 + right.y * 1.6) * reachK,
+          z: eyeZ,
+        },
+        yaw: this.yaw,
+        pitch: this.aimPitch,
+      };
+      live = {
+        pos: { x: lerp(live.pos.x, over.pos.x, k), y: lerp(live.pos.y, over.pos.y, k), z: lerp(live.pos.z, over.pos.z, k) },
+        yaw: live.yaw,
+        pitch: lerp(live.pitch, over.pitch, k),
+      };
+    }
     if (!this.handoff) { this.lastState = live; return live; }
     const k = easeHandoff(this.handoff.t);
     const a = this.handoff.from;

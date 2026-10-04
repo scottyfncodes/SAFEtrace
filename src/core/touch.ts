@@ -177,9 +177,13 @@ export const TOUCH_TUNING = {
   releaseRewindMs: 80,
   /** Below this the band has only been touched, not pulled. Small, so a short pull still counts. */
   pullMin: 10,
+  /** THROW, with the sling raised: let go quicker than this and it was a tap, which lowers it. */
+  lowerTapMs: 170,
+  /** ...and held this long is a full draw. */
+  drawFullMs: 750,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'grind' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'grind' | 'aim' | 'pull' | 'look' | 'throw' | 'draw' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -194,6 +198,8 @@ interface Track {
   moved: number;
   /** A TRICK held long enough has already become a grab. */
   grabbed?: boolean;
+  /** A throw that began on the SLING button itself: a tap there raises the sling. */
+  fromSling?: boolean;
   /** Recent positions, for reading a pull from just before the lift. */
   history?: Array<{ x: number; y: number; t: number }>;
   /**
@@ -267,6 +273,8 @@ export class TouchEngine {
   private throwMode = false;
   private slingOut = false;
   private firedVector: { x: number; y: number } | null = null;
+  /** The last shot was from the raised sling: it goes where the middle of the glass is. */
+  private firedCentre = false;
   readonly tuning = { ...TOUCH_TUNING };
 
   /** True while any finger is on the screen; used to keep audio awake. */
@@ -450,9 +458,8 @@ export class TouchEngine {
     for (const b of this.buttonLayout()) {
       if (Math.hypot(x - b.pos.x, y - b.pos.y) <= b.hit) return b.id;
     }
-    // Sling put out from outside (the host): anywhere on the right is
-    // somewhere to pull from. Not over the plan: there a drag moves the map.
-    if (this.slingOut && !this.planOn && x >= this.viewport.w * 0.4 && y > this.viewport.safe.top + 24) return 'throw';
+    // With the sling raised, open glass is the camera: a drag turns the rig,
+    // and the aim with it (an idle finger that moves becomes 'look').
     if (y < this.padTop()) return 'idle';
     return x < this.padRight() ? 'stick' : 'idle';
   }
@@ -475,7 +482,17 @@ export class TouchEngine {
      * slides — over TRICK, over PLAN, off the bottom of the glass — until it
      * lifts. Roles belong to the finger, so nothing it passes over is pressed.
      */
-    if (role === 'sling') role = this.canSling ? 'throw' : 'idle';
+    /*
+     * SLING, raised: the button is THROW — hold to draw, let go to throw at
+     * the middle of the glass. Lowered: a tap raises it, and a drag off it
+     * is still the old flick-back throw.
+     */
+    let fromSling = false;
+    if (role === 'sling') {
+      if (!this.canSling) role = 'idle';
+      else if (this.slingOut) role = 'draw';
+      else { role = 'throw'; fromSling = true; }
+    }
     if ((role === 'stick' || role === 'aim' || role === 'pull' || role === 'throw')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
 
@@ -489,6 +506,7 @@ export class TouchEngine {
       anchor: { x: s.x, y: s.y },
       cur: { x: s.x, y: s.y, t: s.t },
       moved: 0,
+      fromSling,
     });
   }
 
@@ -586,12 +604,24 @@ export class TouchEngine {
           this.firedDraw = Math.max(0.02, clamp01((len - this.tuning.throwMin) / (this.tuning.throwFull - this.tuning.throwMin)));
           this.firedVector = v;
           this.pendingFire = true;
+        } else if (isTap && track.fromSling) {
+          // A tap on SLING raises it: over the shoulder, aim in the middle.
+          if (this.throwMode && this.canSling) this.slingOut = true;
         } else if (isTap) {
           // Not a pull at all: a tap on the world, the same as ever — and,
           // like any tap on open glass, it skips a scene or a line.
           this.pendingTap = { x: s.x, y: s.y };
           this.pendingSkip = true;
         }
+        break;
+      }
+      case 'draw': {
+        if (cancelled) break;
+        // A quick tap on THROW puts the sling away; a hold was a draw.
+        if (held < this.tuning.lowerTapMs && track.moved <= this.tuning.tapSlop * 2) { this.slingOut = false; break; }
+        this.firedDraw = drawForHold(held);
+        this.firedCentre = true;
+        this.pendingFire = true;
         break;
       }
       case 'trick':
@@ -689,6 +719,28 @@ export class TouchEngine {
       if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }
       if (this.pendingSkip) { i.skip = true; this.pendingSkip = false; }
       return i;
+    }
+
+    // The raised sling: THROW held is a draw, aimed at the middle of the glass.
+    const centre = { x: this.viewport.w / 2, y: this.viewport.h / 2 };
+    for (const tr of this.tracks.values()) {
+      if (tr.role !== 'draw') continue;
+      const heldMs = Math.max(tr.cur.t - tr.start.t, (tr.frames ?? 0) * (1000 / 60));
+      if (heldMs < this.tuning.lowerTapMs) continue;
+      i.aim = true;
+      i.drawAmount = drawForHold(heldMs);
+      i.pointer = centre;
+      i.pointerActive = true;
+    }
+    if (this.pendingFire && this.firedCentre) {
+      i.aim = true;
+      i.fire = true;
+      i.firePressed = true;
+      i.drawAmount = this.firedDraw;
+      i.pointer = centre;
+      i.pointerActive = true;
+      this.pendingFire = false;
+      this.firedCentre = false;
     }
 
     // A pull in progress, in the drag-back scheme.
@@ -831,7 +883,7 @@ export class TouchEngine {
         vector,
       },
       buttons: this.buttonLayout().map((b) => ({
-        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) || (b.id === 'sling' && held.has('throw')),
+        ...b, pressed: held.has(b.id) || (b.id === 'plan' && this.planOn) || (b.id === 'sling' && (held.has('throw') || held.has('draw'))),
       })),
       aiming: this.aiming,
       slingOut: this.slingOut,
@@ -937,4 +989,10 @@ export class TouchAdapter {
 export function isTouchPrimary(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia?.('(pointer: coarse)').matches ?? ('ontouchstart' in window);
+}
+
+/** How drawn the raised sling is after being held this long: quick at first, harder at the end. */
+export function drawForHold(ms: number): number {
+  const t = clamp01((ms - TOUCH_TUNING.lowerTapMs * 0.5) / (TOUCH_TUNING.drawFullMs - TOUCH_TUNING.lowerTapMs * 0.5));
+  return Math.max(0.05, 1 - (1 - t) * (1 - t));
 }

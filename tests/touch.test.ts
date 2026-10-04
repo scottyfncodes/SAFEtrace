@@ -999,3 +999,67 @@ describe('a thumb drives the simulation', () => {
     expect(Math.abs(sim.player.heading + Math.PI / 2)).toBeLessThan(0.5);
   });
 });
+
+describe('the raised sling: the camera is the aim', () => {
+  let e: TouchEngine;
+  beforeEach(() => { e = make(); e.setThrowMode(true); });
+  const hold = (ms: number, id = 3) => {
+    const s0 = button(e, 'sling');
+    e.handle('down', at(s0, id, clock));
+    for (let t = 0; t < ms; t += 16) { clock += 16; e.handle('move', at(s0, id, clock)); e.sample(); }
+    return s0;
+  };
+
+  it('raises on a tap of SLING, and the button becomes the trigger', () => {
+    tap(e, button(e, 'sling'));
+    expect(e.isSlingOut).toBe(true);
+    expect(e.visual.slingOut).toBe(true);
+  });
+
+  it('draws while THROW is held, aimed at the middle of the glass', () => {
+    tap(e, button(e, 'sling'));
+    hold(400);
+    const i = e.sample();
+    expect(i.aim).toBe(true);
+    expect(i.drawAmount!).toBeGreaterThan(0.3);
+    expect(i.pointerActive).toBe(true);
+    expect(i.pointer).toEqual({ x: VIEWPORT.w / 2, y: VIEWPORT.h / 2 });
+  });
+
+  it('throws on letting go, harder for a longer hold, and stays raised', () => {
+    const shot = (ms: number) => {
+      tap(e, button(e, 'sling'));
+      const s0 = hold(ms);
+      e.handle('up', at(s0, 3, clock));
+      const i = e.sample();
+      e.setSlingOut(false);
+      return i;
+    };
+    const short = shot(250), long = shot(900);
+    expect(short.firePressed).toBe(true);
+    expect(long.firePressed).toBe(true);
+    expect(long.drawAmount!).toBeGreaterThan(short.drawAmount!);
+    expect(long.pointer).toEqual({ x: VIEWPORT.w / 2, y: VIEWPORT.h / 2 });
+  });
+
+  it('puts the sling away on a quick tap of THROW, without throwing', () => {
+    tap(e, button(e, 'sling'));
+    tap(e, button(e, 'sling'));
+    expect(e.isSlingOut).toBe(false);
+    expect(e.sample().fire).toBe(false);
+  });
+
+  it('turns a drag on open glass into camera look while raised', () => {
+    tap(e, button(e, 'sling'));
+    drag(e, 4, [{ x: 200, y: 300 }, { x: 230, y: 300 }, { x: 260, y: 290 }]);
+    const look = e.takeLookDrag();
+    expect(look.x).toBeGreaterThan(40);
+    expect(e.sample().fire).toBe(false);
+  });
+
+  it('still steers with the left thumb while raised', () => {
+    tap(e, button(e, 'sling'));
+    drag(e, 5, [STICK, { x: STICK.x, y: STICK.y - 60 }]);
+    expect(e.sample().moveVector).not.toBeNull();
+  });
+});
