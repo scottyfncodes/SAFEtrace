@@ -14,6 +14,9 @@ import { clamp01, smoothstep } from '../core/math';
 import type { ControlButton, ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { MACHINE, VENEER, alpha } from './palette';
+
+/** The player's own accent, as the interface sheet's --own: amber SAFEtrace never uses. */
+const OWN = '#F2C86B';
 import { taperedStroke as taper } from './veneer';
 
 
@@ -101,7 +104,8 @@ export class ControlsRenderer {
 
     if (mag > 0.02) {
       const ux = vector.x / mag, uy = vector.y / mag;
-      ctx.strokeStyle = alpha(VENEER.accent, (0.30 + mag * 0.45) * a);
+      // The player's own thumb, in the player's own amber: never SAFEtrace's cyan.
+      ctx.strokeStyle = alpha(OWN, (0.30 + mag * 0.45) * a);
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
       ctx.beginPath();

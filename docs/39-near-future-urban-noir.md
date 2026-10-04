@@ -62,7 +62,14 @@ Acid green      #B6F23A   the system being sure: MATCH, CONFIDENCE, the forecast
 Warning orange  #FF8B2B   attention — never alarm
 Hardware white  #EEF2F3   every housing SAFEtrace installs
 ```
-Nothing in the physical town uses any of these. Risk-high stays a red
+Nothing in the physical town or the player's own things uses any of these
+(tested). The town's and the player's amber (`VENEER.warning`, `#E8A33D` — the
+flow ring, a stone's ripple, the ammo cache) and the player's thumb control
+(`#F2C86B`) are deliberately not warning orange or cyan. A traffic cone is a
+weathered orange, and graffiti avoids the accent hues. The plan view and its
+button use cyan because the plan is drawn in the system's register; a
+camera turned toward a noise still shows the older amber status light, part
+of the gameplay vocabulary in [37](37-the-feel-pass.md). Risk-high stays a red
 (`#FF4A3D`) because a colour-blind-safe ramp needs a third step, but it is the
 only colour the machine has that is not one of the three.
 
@@ -80,9 +87,11 @@ so no collision, sightline, forecast or test result moves.
 - **Overhead wire.** Timber poles on the verge outside the footway, about every
   thirty metres, with two sagging wires between them and a transformer can on
   some. They nudge round driveways and bins, cross to the far verge rather than
-  stand in anyone's way, and never stand on a carriageway, a footway, a
-  building or a skate feature (tested).
-- **Street-name blades** at the corners where one named street meets another.
+  stand in anyone's way, and never stand on a carriageway, on any modelled
+  surface (footway, plaza, forecourt), in a building or on a skate feature.
+  Where the only verge is a forecourt — the Northgate parade — there are none.
+- **Street-name blades** on the verge at the corners where one named street
+  meets another, past both footways. A corner with no clear verge gets no sign.
 - **Road wear.** Irregular tar patches and oil stains, and a dashed centre line
   worn half away — only where asphalt is the top surface.
 - **Wall wear.** A splash band along the base of every wall, rain streaks from
@@ -100,11 +109,13 @@ so no collision, sightline, forecast or test result moves.
 - **Cameras** are hardware white with a thin cyan line under the housing while
   they are working. The lens still goes the rider's red when it has them and
   amber when it is turned toward a noise; that vocabulary is unchanged.
-- **Street cabinets.** Junctions, service points and uplinks — the nodes a
-  player walks up to and reads — are now visible objects: a white cabinet on
-  the verge, a dark glass face, the wordmark, and one band of cyan. The band
-  goes orange when the node has been looped or tampered with and dark when it
-  is down. Placed well inside the reach for reading it.
+- **Street cabinets.** A street junction is drawn as a white cabinet on the
+  verge: a dark glass face, the wordmark, and one band of cyan. The band goes
+  orange when the node has been looped or tampered with and dark when it is
+  down. It stands within 12 m of the node (reach is 16 m) and under the same
+  placement rules as the poles; a junction with no clear verge is not drawn,
+  as before. Services and uplinks are never drawn: they are records and
+  relays, and a record has no place to stand next to.
 - **Drones** are the same white with a cyan line.
 
 ## 6. Characters
@@ -129,7 +140,8 @@ The interface reads as an institutional system, not a game HUD.
   added. `tests/art-direction.test.ts` keeps CSS and canvas on the same values.
 - **Records.** In a node's record, any percentage is set in acid green: 98.7%
   should look like a fact. A single scan line passes down the record as it
-  opens — once, never looped, and not at all with reduced motion.
+  opens — once, never looped, and removed entirely (not merely shortened) with
+  reduced motion, whether that comes from the OS or the in-game setting.
 - **World-space labels** in VISION and on the plan sit on a quiet dark plate
   with a short hairline in the label's colour, and `MATCH` and `CONFIDENCE`
   lines are acid green. A plate is what makes text read as a record rather

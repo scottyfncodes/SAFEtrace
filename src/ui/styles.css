@@ -384,6 +384,8 @@ kbd {
 }
 #inspect.show::after { animation: st-scan 760ms var(--ease) 1; }
 @keyframes st-scan { 0% { top: 0; opacity: 0.85; } 100% { top: 100%; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #inspect.show::after { animation: none; } }
+html.reduce-motion #inspect.show::after { animation: none; }
 #inspect .node-id { color: var(--st-teal-bright); font-size: calc(13px * var(--text-scale)); font-weight: 500; letter-spacing: 0.08em; }
 #inspect .rec { color: var(--st-record); }
 /* The line the case turns on: the same document, in a hand you can read. */

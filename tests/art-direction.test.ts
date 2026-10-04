@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { MACHINE, TECH, VENEER, weather } from '../src/render/palette';
-import { streetDressingFor } from '../src/render/perspective';
+import { streetDressingFor, terminalFor } from '../src/render/perspective';
 import type { Vec2 } from '../src/core/math';
 
 /*
@@ -63,6 +63,22 @@ describe('the town is muted and the machine is not', () => {
     expect(MACHINE.riskMid).toBe(TECH.orange);
   });
 
+  it('lends none of its accents to the town or the player', () => {
+    // The flow ring, a stone's ripple and the ammo cache are the player's;
+    // a sign's lettering may be SAFEtrace's, and is its ink cyan, not the light.
+    const owned = new Set<string>([TECH.cyan, TECH.acid, TECH.orange].map((c) => c.toLowerCase()));
+    for (const [k, v] of Object.entries(VENEER)) {
+      if (k === 'accent') continue;
+      for (const c of Array.isArray(v) ? v : [v]) expect({ k, owned: owned.has(String(c).toLowerCase()) }).toEqual({ k, owned: false });
+    }
+  });
+
+  it('removes the record scan line entirely under reduced motion', () => {
+    const css = readFileSync('src/ui/styles.css', 'utf8');
+    expect(css).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*#inspect\.show::after\s*\{\s*animation:\s*none/);
+    expect(css).toMatch(/html\.reduce-motion #inspect\.show::after\s*\{\s*animation:\s*none/);
+  });
+
   it('keeps the interface and the canvas on the same cyan', () => {
     // A DOM panel and a world-space label for the same system must not be two
     // slightly different products.
@@ -95,23 +111,50 @@ describe('the dressing stays out of the way', () => {
   it('dresses the town: poles, wire between them, and street names at the corners', () => {
     expect(dressing.poles.length).toBeGreaterThan(40);
     expect(dressing.wires.length).toBeGreaterThan(40);
-    expect(dressing.signs.length).toBeGreaterThan(8);
+    expect(dressing.signs.length).toBeGreaterThan(6);
   });
 
-  it('never stands a pole or a sign on a carriageway or a footway', () => {
-    for (const thing of [...dressing.poles, ...dressing.signs]) {
+  const cabinets = world.network.nodes
+    .filter((n) => n.kind === 'JUNCTION')
+    .map((n) => terminalFor(world, n.id, n.pos))
+    .filter((t): t is NonNullable<typeof t> => !!t);
+  const standing = () => [
+    ...dressing.poles.map((p) => ({ what: 'pole', at: p.at })),
+    ...dressing.signs.map((p) => ({ what: 'sign', at: p.at })),
+    ...cabinets.map((c) => ({ what: 'cabinet', at: c.at })),
+  ];
+
+  it('never stands anything on a carriageway', () => {
+    for (const t of standing()) {
       for (const e of world.roadEdges) {
         const a = nodes.get(e.a)!, b = nodes.get(e.b)!;
-        // Half the carriageway, plus the 2.2 m footway every road is laid with.
-        expect(segDist(thing.at, a, b)).toBeGreaterThan(e.width / 2 + 0.3);
+        expect({ ...t, clear: segDist(t.at, a, b) > e.width / 2 + 2.2 }).toEqual({ ...t, clear: true });
       }
     }
   });
 
-  it('never stands one inside a building or on a skate feature', () => {
-    for (const thing of [...dressing.poles, ...dressing.signs]) {
-      for (const b of world.buildings) expect(inside(thing.at, b.poly)).toBe(false);
-      for (const f of world.features) expect(inside(thing.at, f.poly)).toBe(false);
+  it('never stands anything on a footway, a plaza or a forecourt', () => {
+    // Modelled surfaces are exactly where people are expected to move.
+    for (const t of standing()) {
+      const on = world.surfaces.filter((s) => s.modelled && inside(t.at, s.poly)).map((s) => s.id);
+      expect({ ...t, on }).toEqual({ ...t, on: [] });
+    }
+  });
+
+  it('never stands anything inside a building or on a skate feature', () => {
+    for (const t of standing()) {
+      for (const b of world.buildings) expect({ ...t, b: b.id, inside: inside(t.at, b.poly) }).toEqual({ ...t, b: b.id, inside: false });
+      for (const f of world.features) expect({ ...t, f: f.id, inside: inside(t.at, f.poly) }).toEqual({ ...t, f: f.id, inside: false });
+    }
+  });
+
+  it('draws a cabinet only for a street junction, within reach of reading it', () => {
+    expect(cabinets.length).toBeGreaterThan(0);
+    for (const n of world.network.nodes) {
+      const t = terminalFor(world, n.id, n.pos);
+      if (n.kind !== 'JUNCTION') continue;
+      // NODE_REACH is 16 m; the cabinet must be comfortably inside it.
+      if (t) expect(Math.hypot(t.at.x - n.pos.x, t.at.y - n.pos.y)).toBeLessThan(12);
     }
   });
 

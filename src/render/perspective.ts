@@ -1003,7 +1003,9 @@ export class PerspectiveRenderer {
    */
   private collectTerminals(sim: Sim, cam: Cam): void {
     for (const n of sim.network.nodes.values()) {
-      if (n.kind !== 'JUNCTION' && n.kind !== 'SERVICE' && n.kind !== 'UPLINK') continue;
+      // Street junctions only. Services and uplinks are records and relays,
+      // not things on a pavement: a record has no place to stand next to.
+      if (n.kind !== 'JUNCTION') continue;
       if (Math.hypot(n.pos.x - cam.pos.x, n.pos.y - cam.pos.y) > 100) continue;
       const t = terminalFor(sim.world.data, n.id, n.pos);
       if (!t) continue;
@@ -1193,6 +1195,9 @@ export class PerspectiveRenderer {
         this.card(cam, { x: sim.devonPos.x + 0.45, y: sim.devonPos.y + 0.2 }, 0.45, 0.1, 0.42, shade(VENEER.friend, -0.45));
       }
     }
+    // Ink is for people. A drone's shadow is a flat card at ground height,
+    // and an outline turns it into a hard black line across the street.
+    this.inking = false;
     for (const d of sim.drones) {
       if (d.state === 'DESTABILISED') continue;
       this.card(cam, d.pos, d.z, 1.3, 0.45, TECH.white);
@@ -1307,9 +1312,9 @@ export class PerspectiveRenderer {
         if (p.knocked) {
           const t = clamp01(age / 0.4);
           const at = { x: p.pos.x + kx * 1.2 * t, y: p.pos.y + ky * 1.2 * t };
-          this.card(cam, at, lerp(0.3, 0.12, t), lerp(0.14, 0.3, t), lerp(0.3, 0.12, t), '#E8773A');
+          this.card(cam, at, lerp(0.3, 0.12, t), lerp(0.14, 0.3, t), lerp(0.3, 0.12, t), CONE);
         } else {
-          this.card(cam, p.pos, 0.3, 0.14, 0.3, '#E8773A');
+          this.card(cam, p.pos, 0.3, 0.14, 0.3, CONE);
         }
         return;
       case 'sign': {
@@ -1802,7 +1807,7 @@ const MATERIAL: Partial<Record<Building['kind'], string[]>> & { house: string[] 
 };
 
 const TAGS = ['KEZ', 'RONK', 'DV8', 'LOTUS', 'MOTH', 'SK8', 'OKAY?', 'NOVA', 'BRIX', 'ZEPH', 'TUFF', 'GHOST'];
-const SPRAY = ['#C9C2B0', '#D2643F', '#5E86A8', '#E0C34C', '#9E5A8C', '#2B2B2B', '#7FA35A'];
+const SPRAY = ['#C9C2B0', '#A8473D', '#5E86A8', '#E0C34C', '#9E5A8C', '#2B2B2B', '#7FA35A'];
 
 const GLASS = '#3B4850';
 const GLASS_LIT = '#566B77';
@@ -2000,6 +2005,12 @@ function dress(b: Building, sim: Sim): Dressing {
 
 const POLE_H = 8.2;
 
+/*
+ * A traffic cone is the town's, not SAFEtrace's, so it is a faded, dirty
+ * orange: still a cone at a glance, never mistaken for warning orange.
+ */
+const CONE = weather('#E8773A', 0.6);
+
 export interface StreetDressing {
   poles: Array<{ at: Vec2; rot: number; can: boolean }>;
   wires: Array<{ a: Vec2; b: Vec2; z: number; sag: number }>;
@@ -2027,6 +2038,8 @@ export function streetDressingFor(data: WorldData): StreetDressing {
   const onRoad = (q: Vec2, pad: number) => edges.some(({ e, a, b }) => segDist(q.x, q.y, a, b) < e.width / 2 + pad);
   const nearThing = (q: Vec2, r: number) => data.props.some((p) => Math.hypot(p.pos.x - q.x, p.pos.y - q.y) < r + (p.kind === 'fenceGate' ? p.scale / 2 : 0))
     || data.features.some((f) => pointInPoly(q, f.poly) || polyDist(q, f.poly) < r);
+  // Footways, plazas, forecourts: anywhere a planner expects people to move.
+  const onModelled = (q: Vec2, pad: number) => data.surfaces.some((sf) => sf.modelled && (pointInPoly(q, sf.poly) || polyDist(q, sf.poly) < pad));
   const topSurface = (q: Vec2) => {
     let best: typeof data.surfaces[number] | null = null;
     for (const sf of data.surfaces) if (pointInPoly(q, sf.poly) && (!best || sf.priority >= best.priority)) best = sf;
@@ -2057,7 +2070,7 @@ export function streetDressingFor(data: WorldData): StreetDressing {
         for (const side of [1, -1]) {
           for (const shift of [0, 2.5, -2.5, 5, -5]) {
             const q = { x: a.x + ux * (d + shift) + nx * off * side, y: a.y + uy * (d + shift) + ny * off * side };
-            if (!inBuilding(q, 0.8) && !onRoad(q, 2.4) && !nearThing(q, 1.0)) { at = q; break; }
+            if (!inBuilding(q, 0.8) && !onRoad(q, 2.4) && !onModelled(q, 0.3) && !nearThing(q, 1.0)) { at = q; break; }
           }
           if (at) break;
         }
@@ -2164,15 +2177,17 @@ export function streetDressingFor(data: WorldData): StreetDressing {
   for (const jn of junctions) {
     const ra = dirAt(jn.a.pts, jn.at).rot, rb = dirAt(jn.b.pts, jn.at).rot;
     const w = Math.max(...edges.filter(({ a, b }) => segDist(jn.at.x, jn.at.y, a, b) < 6).map(({ e }) => e.width), 7) / 2;
-    // Stand it on whichever corner is clear: out past both kerbs.
+    // Stand it on whichever corner is clear: out past both kerbs and both
+    // footways, on the verge. No clear corner, no sign.
     let at: Vec2 | null = null;
+    const reach = w + 2.2 + 0.7;
     for (const sa of [1, -1]) for (const sb of [1, -1]) {
       if (at) break;
       const c = {
-        x: jn.at.x + Math.cos(ra + Math.PI / 2) * sa * (w + 1.4) + Math.cos(rb + Math.PI / 2) * sb * (w + 1.4),
-        y: jn.at.y + Math.sin(ra + Math.PI / 2) * sa * (w + 1.4) + Math.sin(rb + Math.PI / 2) * sb * (w + 1.4),
+        x: jn.at.x + Math.cos(ra + Math.PI / 2) * sa * reach + Math.cos(rb + Math.PI / 2) * sb * reach,
+        y: jn.at.y + Math.sin(ra + Math.PI / 2) * sa * reach + Math.sin(rb + Math.PI / 2) * sb * reach,
       };
-      if (!inBuilding(c, 0.6) && !onRoad(c, 0.4) && !nearThing(c, 1.0)) at = c;
+      if (!inBuilding(c, 0.6) && !onRoad(c, 2.4) && !onModelled(c, 0.3) && !nearThing(c, 1.0)) at = c;
     }
     if (at) out.signs.push({ at, blades: [{ name: jn.a.name, rot: ra }, { name: jn.b.name, rot: rb }] });
   }
@@ -2182,7 +2197,7 @@ export function streetDressingFor(data: WorldData): StreetDressing {
 
 const terminals = new WeakMap<object, Map<string, { at: Vec2; rot: number } | null>>();
 /** Where a node's cabinet stands, facing the nearest street; null inside a building. */
-function terminalFor(data: WorldData, id: string, pos: Vec2): { at: Vec2; rot: number } | null {
+export function terminalFor(data: WorldData, id: string, pos: Vec2): { at: Vec2; rot: number } | null {
   let m = terminals.get(data);
   if (!m) { m = new Map(); terminals.set(data, m); }
   if (m.has(id)) return m.get(id)!;
@@ -2207,7 +2222,9 @@ function terminalFor(data: WorldData, id: string, pos: Vec2): { at: Vec2; rot: n
     if (d < best) { best = d; near = { q, nx: -dy / l, ny: dx / l, hw: e.width / 2 }; }
   }
   const blocked = (c: Vec2) => data.buildings.some((b) => pointInPoly(c, b.poly) || polyDist(c, b.poly) < 0.7)
-    || data.props.some((p) => Math.hypot(p.pos.x - c.x, p.pos.y - c.y) < 1.2);
+    || data.props.some((p) => Math.hypot(p.pos.x - c.x, p.pos.y - c.y) < 1.2)
+    || data.features.some((f) => pointInPoly(c, f.poly) || polyDist(c, f.poly) < 0.8)
+    || data.surfaces.some((sf) => sf.modelled && (pointInPoly(c, sf.poly) || polyDist(c, sf.poly) < 0.5));
   if (near && best < 12) {
     const pref = (pos.x - near.q.x) * near.nx + (pos.y - near.q.y) * near.ny >= 0 ? 1 : -1;
     for (const side of [pref, -pref]) {
@@ -2215,8 +2232,6 @@ function terminalFor(data: WorldData, id: string, pos: Vec2): { at: Vec2; rot: n
       const c = { x: near.q.x + near.nx * side * off, y: near.q.y + near.ny * side * off };
       if (!blocked(c)) { t = { at: c, rot: Math.atan2(-near.ny * side, -near.nx * side) }; break; }
     }
-  } else if (!data.buildings.some((b) => pointInPoly(pos, b.poly))) {
-    t = { at: pos, rot: 0 };
   }
   m.set(id, t);
   return t;

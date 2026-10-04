@@ -75,7 +75,12 @@ export const VENEER = {
   line: 'rgba(20,24,30,0.36)',
   roadMark: 'rgba(222,216,196,0.42)',
   accent: TECH.cyanInk,
-  warning: TECH.orange,
+  /**
+   * The town's and the player's amber — the flow ring, a stone's ripple, the
+   * ammo cache. Not SAFEtrace's warning orange, which nothing outside the
+   * system may wear.
+   */
+  warning: '#E8A33D',
   player: '#E8563F',
   /*
    * Devon was blue. The uniform, below, is also blue — darker and greyer, but
