@@ -24,7 +24,8 @@ import { VERBS, verbsFor, type HackVerb, type NetworkNode } from '../sim/surveil
 const KEY_STAGES: Array<{ until: number; html: string }> = [
   { until: 30, html: '<span><kbd>W</kbd>push</span><span><kbd>A D</kbd>carve</span>' },
   { until: 110, html: '<span><kbd>Space</kbd>ollie</span><span><kbd>R</kbd>trick</span><span><kbd>S</kbd>slide</span>' },
-  { until: 230, html: '<span><kbd>LMB</kbd>pull back · throw</span><span><kbd>Q</kbd>plan</span><span><kbd>E</kbd>talk / look</span>' },
+  { until: 200, html: '<span><kbd>C</kbd>hold: hook the bracketed pole</span><span>let go: launch</span>' },
+  { until: 320, html: '<span><kbd>LMB</kbd>pull back · throw</span><span><kbd>Q</kbd>plan</span><span><kbd>E</kbd>talk / look</span>' },
 ];
 /*
  * On a phone the hint is one line at the top, out from under the thumbs, and
@@ -34,6 +35,7 @@ const KEY_STAGES: Array<{ until: number; html: string }> = [
 const TOUCH_STAGES: Array<{ until: number; html: string }> = [
   { until: 30, html: '<span>Left thumb: hold to roll, push to steer</span>' },
   { until: 110, html: '<span>TRICK: tap to flip, hold to grab</span>' },
+  { until: 220, html: '<span>HOOK: hold to swing round the bracketed pole, let go to launch</span>' },
   { until: Infinity, html: '<span>SLING: press, slide down, let go</span>' },
 ];
 import { riskLabel } from '../sim/surveillance/risk';

@@ -99,6 +99,16 @@ export const TOUCH_TUNING = {
   planOffset: { x: -80, y: -64 },
   slingOffset: { x: 0, y: -112 },
   /**
+   * HOOK: the sling line. Held for the whole swing and let go to launch, so
+   * it wants to be a press the right thumb can find and keep — up and to the
+   * left of SLING, the next step along the arc a thumb already sweeps from
+   * the corner. Inside the reach a 320 px phone leaves the cluster, so the
+   * movement pad keeps its width.
+   */
+  hookOffset: { x: -86, y: -158 },
+  hookRadius: 25,
+  hookHit: 38,
+  /**
    * Holding TRICK this long is a grab instead of a flip.
    *
    * There was a fourth button for it, and it was the one button in the
@@ -159,7 +169,7 @@ export const TOUCH_TUNING = {
   pullMin: 10,
 };
 
-export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
+export type TouchRole = 'stick' | 'sling' | 'trick' | 'plan' | 'hook' | 'aim' | 'pull' | 'look' | 'throw' | 'idle';
 
 /** How much weight a control carries, which decides how it is drawn. */
 export type ControlWeight = 'primary' | 'secondary';
@@ -184,7 +194,7 @@ interface Track {
 }
 
 export interface ControlButton {
-  id: 'sling' | 'trick' | 'plan';
+  id: 'sling' | 'trick' | 'plan' | 'hook';
   pos: { x: number; y: number };
   /** What is drawn. */
   radius: number;
@@ -267,6 +277,12 @@ export class TouchEngine {
     this.lookDrag.y = 0;
   }
 
+  /** Whether there is anything to hook. It dims HOOK; it never hides it. */
+  setHookReady(on: boolean): void { this.hookReady = on; }
+  private hookReady = false;
+  /** HOOK went down this frame. */
+  private pendingHook = false;
+
   setSlingAvailable(on: boolean): void { this.canSling = on; if (!on) this.slingOut = false; }
 
   /** Choose the drag-back scheme (true) or the classic aiming mode (false). */
@@ -285,6 +301,7 @@ export class TouchEngine {
     this.pendingGrab = false;
     this.pendingAimMode = false;
     this.pendingFire = false;
+    this.pendingHook = false;
     this.aimDrag.x = 0;
     this.aimDrag.y = 0;
   }
@@ -326,6 +343,7 @@ export class TouchEngine {
     const ceiling = safe.top + t.secondaryHit + 12;
     const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
     const slingY = Math.max(ceiling, anchor.y + t.slingOffset.y);
+    const hookY = Math.max(safe.top + t.hookHit + 12, anchor.y + t.hookOffset.y);
 
     return [
       {
@@ -342,6 +360,11 @@ export class TouchEngine {
         id: 'plan', pos: { x: anchor.x + t.planOffset.x, y: planY },
         radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
         pressed: this.planOn, enabled: true,
+      },
+      {
+        id: 'hook', pos: { x: anchor.x + t.hookOffset.x, y: hookY },
+        radius: t.hookRadius, hit: t.hookHit, weight: 'secondary',
+        pressed: [...this.tracks.values()].some((tr) => tr.role === 'hook'), enabled: this.hookReady,
       },
     ];
   }
@@ -441,6 +464,10 @@ export class TouchEngine {
     if ((role === 'stick' || role === 'aim' || role === 'pull' || role === 'throw')
       && [...this.tracks.values()].some((t) => t.role === role)) role = 'idle';
 
+    if (role === 'hook') {
+      if ([...this.tracks.values()].some((t) => t.role === 'hook')) role = 'idle';
+      else this.pendingHook = true;
+    }
     this.tracks.set(s.id, {
       id: s.id, role,
       start: { x: s.x, y: s.y, t: s.t },
@@ -699,6 +726,9 @@ export class TouchEngine {
       }
     }
     if (this.planOn) i.planView = true;
+    // HOOK is held for the swing: down is the hook, up is the launch.
+    for (const tr of this.tracks.values()) if (tr.role === 'hook') i.hook = true;
+    if (this.pendingHook) { i.hook = true; i.hookPressed = true; this.pendingHook = false; }
     if (this.pendingTrick) { i.trickPressed = true; this.pendingTrick = false; }
     if (this.pendingGrab) { i.grabPressed = true; this.pendingGrab = false; }
     if (this.pendingAimMode) { i.aimModePressed = true; this.pendingAimMode = false; }

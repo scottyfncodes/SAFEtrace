@@ -19,6 +19,7 @@ export interface MenuActions {
 
 const KEYS: Array<[string, string]> = [
   ['W', 'push (hold to keep pushing)'], ['A D', 'carve'], ['Space', 'ollie (hold to load)'], ['S', 'brake / slide'],
+  ['C (hold)', 'sling line: hook the bracketed pole, swing round it, let go to launch'],
   ['R', 'trick'], ['G', 'grab'], ['Shift', 'step off the board'], ['Right mouse drag', 'look around'],
   ['Left mouse', 'slingshot: drag back from anywhere and let go — or point at a thing and hold'],
   ['F', 'steady aim: stand still and look down the sling (mouse or A D W S to aim)'],
@@ -28,6 +29,7 @@ const KEYS: Array<[string, string]> = [
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
   ['TRICK', 'tap to flip the board, hold to grab it'],
+  ['HOOK', 'hold to hook the bracketed pole and swing round it; let go to launch'],
   ['SLING', 'press it, slide down to pull back, let go to throw'],
   ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],

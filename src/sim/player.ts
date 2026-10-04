@@ -359,11 +359,19 @@ export interface PlayerState {
   /** Metres travelled; used only for telemetry and story pacing. */
   odometer: number;
   /**
-   * Extra speed over the cap, m/s. Zero for the player, always. A rider
-   * keeping station on somebody is allowed to be a little quicker than them,
-   * which is the whole of how a friend catches up without ever teleporting.
+   * Extra speed over the cap, m/s. A rider keeping station on somebody is
+   * allowed to be a little quicker than them, which is the whole of how a
+   * friend catches up without ever teleporting. For the player it is only
+   * ever what a sling line has flung them to, and it bleeds off once the
+   * wheels are down again (traversal/slingline.ts). Pushing never earns it.
    */
   capBoost: number;
+  /**
+   * The height of whatever is under the wheels: zero in the street, a roof's
+   * height on a roof. `z` is measured from the street, so a rider rolling
+   * across a car park deck has `z === ground`.
+   */
+  ground: number;
   lastSurface: string;
   /**
    * An ollie asked for slightly too early is remembered, not thrown away.
@@ -426,6 +434,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
     drawHeld: 0,
     odometer: 0,
     capBoost: 0,
+    ground: 0,
     ollieBuffer: 0,
     pushBuffer: 0,
     lastSurface: 'asphalt',
@@ -469,7 +478,7 @@ export function pushProfile(phase: number): number {
  */
 function popNow(p: PlayerState, charge: number): void {
   p.vz = TUNE.ollieImpulse * (0.7 + clamp01(charge) * 0.3);
-  p.z = 0.001;
+  p.z += 0.001;
   p.stance = 'AIR';
   p.ollieLoad = -1;
   p.ollieBuffer = 0;
@@ -522,7 +531,9 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
 
   if (!p.onBoard) { updateFoot(p, intent, world, dt); return; }
 
-  const surf = SURFACE[world.surfaceAt(p.pos) as keyof typeof SURFACE] ?? SURFACE.asphalt;
+  // A roof is a deck of smooth membrane and concrete, whatever the street below is.
+  const surf = p.ground > 0 ? SURFACE.smoothConcrete
+    : SURFACE[world.surfaceAt(p.pos) as keyof typeof SURFACE] ?? SURFACE.asphalt;
   const speed = len(p.vel);
   const cap = maxSpeedFor(p);
 
@@ -822,10 +833,14 @@ function applyFriction(p: PlayerState, a: number, dt: number): void {
 
 function integrate(p: PlayerState, world: World, dt: number): void {
   if (p.stance === 'AIR') {
+    // Whatever is under the board now, judged from where it was: a roof
+    // above the rider is not one they can land on.
+    const below = world.supportAt(p.pos, p.z);
     p.vz -= TUNE.gravity * dt;
     p.z += p.vz * dt;
-    if (p.z <= 0) {
-      p.z = 0;
+    if (p.z <= below) {
+      p.z = below;
+      p.ground = below;
       p.vz = 0;
       p.stance = 'ROLL';
       p.landedThisTick = true;
@@ -876,6 +891,26 @@ function integrate(p: PlayerState, world: World, dt: number): void {
 
   p.pos = world.clampToBounds(resolved);
   p.odometer += got;
+
+  /*
+   * Off the edge of a roof. Rolling, the board simply carries on into the
+   * air and comes down where gravity says; anything else is put down.
+   */
+  if (p.stance !== 'AIR') {
+    const under = p.z > 0 ? world.supportAt(p.pos, p.z) : 0;
+    p.ground = under;
+    if (p.z > under + 0.05) {
+      if (p.onBoard && (p.stance === 'ROLL' || p.stance === 'SLIDE')) {
+        p.stance = 'AIR';
+        p.vz = 0;
+        if (p.ollieLoad >= 0) p.ollieLoad = -1;
+      } else {
+        p.z = under;
+      }
+    } else {
+      p.z = under;
+    }
+  }
 }
 
 function bail(p: PlayerState): void {
@@ -892,7 +927,7 @@ function bail(p: PlayerState): void {
   p.vel.x *= 0.25;
   p.vel.y *= 0.25;
   p.vz = 0;
-  p.z = 0;
+  p.z = p.ground;
   p.flow = 0;
 }
 

@@ -31,6 +31,8 @@ import { TUNE as SKATE, type PlayerState } from '../sim/player';
 import { INK, Ink, brushOutline, hash01, inkAt, seedOf } from './ink';
 import { CITY_INK, PRINT, SIGNAL, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 import { Tone, tone } from './tone';
+import { POLE_H, poleLineFor } from '../sim/traversal/poleLine';
+import { MAST_RISE } from '../sim/traversal/anchors';
 
 
 /** Eye height of a teenager standing on a board. */
@@ -1609,6 +1611,27 @@ export class PerspectiveRenderer {
       }
       if (p.can) this.boxAt(cam, { x: p.at.x + across.x * 0.34, y: p.at.y + across.y * 0.34 }, p.rot, 0.46, 0.46, POLE_H - 2.5, POLE_H - 1.3, PRINT.steel);
     }
+    /*
+     * Roof masts: a steel aerial on every flat roof tall enough to be worth
+     * getting onto, with a band of the player's colour at the hook point. A
+     * mast is the anchor that gets you up there, so it has to be findable
+     * from the street, and it is the one piece of the town painted in the
+     * colour that means "yours".
+     */
+    for (const a of sim.anchors) {
+      if (a.kind === 'lamp' && near(a.pos, 120)) {
+        // A light standard: a steel column and a head on a short arm.
+        this.boxAt(cam, a.pos, 0, 0.18, 0.18, 0, a.z + 0.2, PRINT.steel);
+        this.boxAt(cam, { x: a.pos.x + 0.45, y: a.pos.y }, 0, 1.1, 0.12, a.z + 0.1, a.z + 0.2, PRINT.steel);
+        this.boxAt(cam, { x: a.pos.x + 0.9, y: a.pos.y }, 0, 0.5, 0.28, a.z - 0.06, a.z + 0.1, shade(PRINT.steel, 0.25));
+        continue;
+      }
+      if (a.kind !== 'mast' || !near(a.pos, 140)) continue;
+      const base = a.z - MAST_RISE;
+      this.boxAt(cam, a.pos, 0, 0.16, 0.16, base, a.z + 0.5, PRINT.steel);
+      this.boxAt(cam, a.pos, 0, 1.4, 0.07, a.z - 0.2, a.z - 0.1, PRINT.steel);
+      this.boxAt(cam, a.pos, 0, 0.22, 0.22, a.z - 0.05, a.z + 0.18, VENEER.player);
+    }
     const wasInking = this.inkAs;
     this.inkAs = null;
     for (const w of sd.wires) {
@@ -2113,13 +2136,17 @@ export class PerspectiveRenderer {
 
     // Contact shadow, painted onto the ground plane rather than sorted against
     // the world: it is a mark on the road, not an object standing on it.
+    // On a roof, the mark is on the roof: sorted with it rather than painted
+    // under the whole town.
     const sh = at(0, 0);
+    const gz = p.ground + 0.01;
     this.push(cam, [
-      { x: sh.x + fx * 0.95, y: sh.y + fy * 0.95, z: 0.01 },
-      { x: sh.x + rx * 0.34, y: sh.y + ry * 0.34, z: 0.01 },
-      { x: sh.x - fx * 0.95, y: sh.y - fy * 0.95, z: 0.01 },
-      { x: sh.x - rx * 0.34, y: sh.y - ry * 0.34, z: 0.01 },
-    ], alpha(PRINT.ink, 0.3 - clamp01(z / 1.2) * 0.12), undefined, undefined, Layer.Ground, 99);
+      { x: sh.x + fx * 0.95, y: sh.y + fy * 0.95, z: gz },
+      { x: sh.x + rx * 0.34, y: sh.y + ry * 0.34, z: gz },
+      { x: sh.x - fx * 0.95, y: sh.y - fy * 0.95, z: gz },
+      { x: sh.x - rx * 0.34, y: sh.y - ry * 0.34, z: gz },
+    ], alpha(PRINT.ink, 0.3 - clamp01((z - p.ground) / 1.2) * 0.12), undefined, undefined,
+    p.ground > 0 ? Layer.Standing : Layer.Ground, 99);
     // The rider's line is the rider's: seeded by who, not where, so it holds
     // still while the board moves under it.
     this.seedBy(hashString(id + ':line'));
@@ -2838,7 +2865,6 @@ function dress(b: Building, sim: Sim): Dressing {
   return { walls, sunlit, normals, ridge, chimney, aerial: !!chimney && seed % 3 === 0, porch, wall, roof, plant };
 }
 
-const POLE_H = 8.6;
 
 /**
  * Light on the ground in an owned town: a clean paper-white, brighter than
@@ -2906,48 +2932,17 @@ export function streetDressingFor(data: WorldData): StreetDressing {
     return best;
   };
 
-  let k = 0;
-  let last: Vec2 | null = null;
-  let prevB = '';
+  // The pole line is the simulation's: a pole you can see is a pole you can
+  // hook, so both read the one list.
+  const line = poleLineFor(data);
+  out.poles.push(...line.poles);
+  out.wires.push(...line.wires);
   for (const { e, a, b } of edges) {
-    // A run of wire carries on round a bend in the same street.
-    if (e.a !== prevB) last = null;
-    prevB = e.b;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (len < 8) continue;
     const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
     const nx = -uy, ny = ux;
     const rot = Math.atan2(uy, ux);
-
-    // Poles on one verge, every thirty-odd metres, wired in a run.
-    if (e.surface === 'asphalt') {
-      const off = e.width / 2 + 2.2 + 0.8;
-      for (let d = 7; d < len - 4; d += 30) {
-        // Nudge along the verge round a driveway's bins or a mailbox, the
-        // way a line crew would; give up and break the run only if nothing fits.
-        let at: Vec2 | null = null;
-        // Failing that, the far verge: the run drops across the road to it.
-        for (const side of [1, -1]) {
-          for (const shift of [0, 2.5, -2.5, 5, -5]) {
-            const q = { x: a.x + ux * (d + shift) + nx * off * side, y: a.y + uy * (d + shift) + ny * off * side };
-            if (!inBuilding(q, 0.8) && !onRoad(q, 2.4) && !onModelled(q, 0.3) && !nearThing(q, 1.0)) { at = q; break; }
-          }
-          if (at) break;
-        }
-        if (!at) { last = null; continue; }
-        out.poles.push({ at, rot, can: (k++ % 4) === 1 });
-        if (last && Math.hypot(at.x - last.x, at.y - last.y) < 42) {
-          for (const side of [-0.7, 0.7]) {
-            out.wires.push({
-              a: { x: last.x + nx * side, y: last.y + ny * side },
-              b: { x: at.x + nx * side, y: at.y + ny * side },
-              z: POLE_H - 0.5, sag: 0.45,
-            });
-          }
-        }
-        last = at;
-      }
-    }
 
     // Wear in the carriageway, only where the carriageway is what you see.
     let h = hashString(`${e.a}-${e.b}`);

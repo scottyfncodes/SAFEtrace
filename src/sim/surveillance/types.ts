@@ -19,6 +19,12 @@ export interface Subject {
   vel: Vec2;
   /** True speed, m/s. */
   speed: number;
+  /**
+   * Height above the street, metres: in the air, or on a roof. Absent is the
+   * street. A camera looks down and out from its mount, never up, so a rider
+   * above the lens is not in its picture (sensors.ts `observe`).
+   */
+  z?: number;
   /** Prior association weight per district: used by fusion and prediction. */
   districtPriors: Record<string, number>;
   /** Contacts on record; raises the risk floor. */

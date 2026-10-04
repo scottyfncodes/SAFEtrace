@@ -57,6 +57,12 @@ export interface SimEvents extends Record<string, unknown> {
   'person:struck': { targetId: string; pos: Vec2; witnesses: number; seen: boolean };
   'player:bail': { pos: Vec2 };
   'player:land': { pos: Vec2; speed: number };
+  /** The sling line caught an anchor. */
+  'line:hook': { anchorId: string; kind: string; pos: Vec2; z: number };
+  /** The rider let go of the line (or it let go of them) and was flung. */
+  'line:release': { anchorId: string; charge: number; speed: number; snapped: boolean; pos: Vec2 };
+  /** Came down on a roof: the town has a second floor now. */
+  'player:roof': { pos: Vec2; height: number };
   'player:push': { pos: Vec2; speed: number };
   'player:pop': { pos: Vec2 };
   /** The wheels let go: the start of a powerslide, at this speed. */
