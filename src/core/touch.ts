@@ -106,6 +106,16 @@ export const TOUCH_TUNING = {
    * width.
    */
   grindOffset: { x: -86, y: -158 },
+  /**
+   * Where GRIND goes when the phone is wide enough: on the bottom row, just
+   * left of TRICK, where the right thumb already sits — grind and flip are
+   * the two things pressed mid-line, so they are neighbours. PLAN then takes
+   * the slot up and left of SLING. On a phone too narrow for a second button
+   * on the bottom row without crowding the movement pad, the cluster keeps
+   * its compact arrangement (`grindOffset` / `planOffset`).
+   */
+  grindRowOffset: { x: -112, y: 0 },
+  planHighOffset: { x: -86, y: -158 },
   grindRadius: 25,
   grindHit: 38,
   /**
@@ -341,9 +351,14 @@ export class TouchEngine {
     // A very short viewport (landscape, or a browser with a lot of chrome)
     // must not push PLAN off the top of the screen.
     const ceiling = safe.top + t.secondaryHit + 12;
-    const planY = Math.max(ceiling, anchor.y + t.planOffset.y);
     const slingY = Math.max(ceiling, anchor.y + t.slingOffset.y);
-    const grindY = Math.max(safe.top + t.grindHit + 12, anchor.y + t.grindOffset.y);
+    // Room on the bottom row for GRIND beside TRICK, with the pad intact?
+    const row = anchor.x + t.grindRowOffset.x - t.grindHit - t.padClearance >= t.padMinWidth
+      && anchor.y + t.grindRowOffset.y + t.grindHit <= h - safe.bottom;
+    const planOff = row ? t.planHighOffset : t.planOffset;
+    const grindOff = row ? t.grindRowOffset : t.grindOffset;
+    const planY = Math.max(ceiling, anchor.y + planOff.y);
+    const grindY = Math.max(safe.top + t.grindHit + 12, anchor.y + grindOff.y);
 
     return [
       {
@@ -357,12 +372,12 @@ export class TouchEngine {
         pressed: false, enabled: true,
       },
       {
-        id: 'plan', pos: { x: anchor.x + t.planOffset.x, y: planY },
+        id: 'plan', pos: { x: anchor.x + planOff.x, y: planY },
         radius: t.secondaryRadius, hit: t.secondaryHit, weight: 'secondary',
         pressed: this.planOn, enabled: true,
       },
       {
-        id: 'grind', pos: { x: anchor.x + t.grindOffset.x, y: grindY },
+        id: 'grind', pos: { x: anchor.x + grindOff.x, y: grindY },
         radius: t.grindRadius, hit: t.grindHit, weight: 'secondary',
         pressed: [...this.tracks.values()].some((tr) => tr.role === 'grind'), enabled: this.grindReady,
       },
