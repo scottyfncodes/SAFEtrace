@@ -16,6 +16,10 @@ import type { JobRecord } from '../core/save';
 import type { RunResult } from '../sim/jobs/score';
 import { exposureShare } from '../sim/jobs/exposure';
 import { wrapAngle } from '../core/math';
+import { PERKS, repFor, type PerkDef } from '../sim/jobs/kit';
+
+/** Rep from whatever the records hold. */
+export const repOf = (recs: Record<string, JobRecord>): number => repFor(Object.values(recs).map((r) => r.grade));
 
 export const fmtTime = (s: number): string => {
   const m = Math.floor(s / 60), r = Math.floor(s % 60), c = Math.floor((s * 10) % 10);
@@ -146,6 +150,7 @@ export class JobBoard {
             <h2 id="jb-title">Skate the city. Stay off the grid.</h2>
           </div>
         </div>
+        ${this.kitHtml(recs)}
         <div class="jb-list">${rows}</div>
         <div class="jb-foot">
           <span class="jb-hint">${this.touch ? 'Tap a job' : '<kbd>↑</kbd><kbd>↓</kbd> pick · <kbd>Enter</kbd> brief · <kbd>1</kbd>–<kbd>9</kbd> jump'}</span>
@@ -155,6 +160,14 @@ export class JobBoard {
           </span>
         </div>
       </div>`;
+  }
+
+  /** The kit: what rep has opened, and what the next one needs. */
+  private kitHtml(recs: Record<string, JobRecord>): string {
+    const rep = repOf(recs);
+    const perks = PERKS.map((p) => `<span class="perk${rep >= p.rep ? ' on' : ''}" title="${p.does}">
+      <b>${p.name}</b><small>${rep >= p.rep ? p.does : `REP ${p.rep}`}</small></span>`).join('');
+    return `<div class="jb-kit"><span class="jb-rep">REP <b>${rep}</b></span>${perks}</div>`;
   }
 
   private briefHtml(j: JobDef, r: JobRecord | undefined): string {
@@ -317,7 +330,10 @@ export class JobResults {
     return true;
   }
 
-  show(def: JobDef, r: RunResult, rec: JobRecord, bests: string[], hasNext: boolean, extra: { launches: number; tricks: number; roofs: number; bestChain: number }): void {
+  show(
+    def: JobDef, r: RunResult, rec: JobRecord, bests: string[], hasNext: boolean,
+    extra: { launches: number; tricks: number; roofs: number; bestChain: number }, unlocked: readonly PerkDef[] = [],
+  ): void {
     this.open = true;
     this.hasNext = hasNext;
     const best = (k: string) => (bests.includes(k) && rec.runs > 1 ? '<span class="nb">BEST</span>' : '');
@@ -335,6 +351,7 @@ export class JobResults {
           <div><dt>Flow</dt><dd>${pct(r.flow)} ${best('flow')}</dd></div>
         </dl>
         <p class="jr-line">${extra.launches} launch${extra.launches === 1 ? '' : 'es'} · ${extra.tricks} trick${extra.tricks === 1 ? '' : 's'} · ${extra.roofs} roof${extra.roofs === 1 ? '' : 's'} · best chain ${num(extra.bestChain)}${r.escapes ? ` · ${r.escapes} signal${r.escapes === 1 ? '' : 's'} lost` : ''}</p>
+        ${unlocked.map((p) => `<p class="jr-unlock"><span class="nb">NEW KIT</span> <b>${p.name}</b> — ${p.does}</p>`).join('')}
         <p class="jr-best-line">Best: <b class="g-${rec.grade}">${rec.grade}</b> ${num(rec.total)} · ${fmtTime(rec.time)} · seen ${pct(rec.exposure)} · run ${rec.runs}</p>
         <div class="brief-actions">
           <button class="jb-go" data-act="retry">RUN IT AGAIN${k ? `${k}Enter</kbd>` : ''}</button>
