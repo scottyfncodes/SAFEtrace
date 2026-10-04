@@ -14,10 +14,11 @@ import {
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
 import type { SimEvents } from './events';
-import { GRABS, TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
-import { type Anchor, anchorsFor } from './traversal/anchors';
+import { GRABS, TRICKS, TUNE, aimSway, beginTick, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
 import { KIT_EFFECT, NO_KIT, type Kit } from './jobs/kit';
-import { LINE, arrive, bleedBoost, hook, pickAnchor, release, stepLine, type SlingLine } from './traversal/slingline';
+import {
+  GRIND, GRIND_NAMES, findGrind, grindsFor, leaveGrind, startGrind, stepGrind, type Grind, type GrindLine,
+} from './traversal/grinds';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
   type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX, rebound,
@@ -218,24 +219,17 @@ export class Sim {
   npcSubjects: Subject[] = [];
   npcTracks: Track[] = [];
 
-  /**
-   * Everything a sling line can be hooked over, worked out once from the
-   * town (traversal/anchors.ts).
-   */
-  readonly anchors: Anchor[];
+  /** Everything in the town a board can grind, worked out once (traversal/grinds.ts). */
+  readonly grinds: GrindLine[];
+  /** The grind in progress, if the board is on a line. */
+  grind: Grind | null = null;
+  /** The nearest line the board is heading for, for the button and the highlight. */
+  grindNear: GrindLine | null = null;
   /**
    * What a run's earned kit changes (sim/jobs/kit.ts). Nothing by default:
    * the afternoon and a fresh player skate exactly the board as tuned.
    */
   kit: Kit = { ...NO_KIT };
-  /** The line, while the rider is on one. */
-  line: SlingLine | null = null;
-  /** What a hook would catch right now. The HUD brackets it. */
-  anchorTarget: Anchor | null = null;
-  /** The last anchor let go of, and when: a chain goes somewhere new. */
-  private lastAnchor: { id: string; tick: number } | null = null;
-  /** A hook asked for a moment before there was anything to catch. Seconds. */
-  private hookBuffer = 0;
 
   projectiles: Projectile[] = [];
   /** Rocks lying where they landed. Scenery, not supply. */
@@ -362,7 +356,7 @@ export class Sim {
       this.sensorById.set(sd.id, s);
     }
 
-    this.anchors = anchorsFor(worldData);
+    this.grinds = grindsFor(worldData);
     this.player = makePlayer(worldData.spawns.player);
     // Facing south down Maple Court, the way the advertisement's last shot looks.
     this.player.heading = Math.PI / 2;
@@ -503,8 +497,11 @@ export class Sim {
     this.updateAim(intent, pointerWorld);
     this.requestTrick(intent);
     this.requestGrab(intent);
-    updatePlayer(this.player, this.line ? onTheLine(intent) : intent, this.world, dt);
-    this.updateLine(intent, dt);
+    if (this.grind) this.rideGrind(intent, dt);
+    else {
+      updatePlayer(this.player, this.beforeGrind(intent, dt), this.world, dt);
+      this.catchGrind(intent);
+    }
     this.holdAimAnchor();
     this.emitPlayerFeedback();
 
@@ -579,56 +576,70 @@ export class Sim {
   // ---------------------------------------------------------------- movement
 
   /**
-   * The sling line, laid over the step the board has just taken.
+   * Grinds (traversal/grinds.ts).
    *
-   * A press hooks whatever is bracketed — or, pressed a moment early, the
-   * first thing that comes into reach. Held, the rider swings. Let go, or
-   * swing too far, and they are flung.
+   * GRIND pressed on the ground pops the board, the same one-motion rule as
+   * a trick; pressed or held in the air, it catches the nearest line the
+   * board is over, near the height of and roughly going the way of. On the
+   * line the board is the line's: the skating model rests until the board
+   * leaves it — off the end, out of speed, or popped off with an ollie or a
+   * flip.
    */
-  private updateLine(intent: Intent, dt: number): void {
-    const p = this.player;
-    const skip = this.lastAnchor && this.tick - this.lastAnchor.tick < LINE.reuseCooldown * 60 ? this.lastAnchor.id : null;
-    this.hookBuffer = intent.hookPressed ? 0.25 : Math.max(0, this.hookBuffer - dt);
+  private grindBuffer = 0;
 
-    if (this.line) {
-      const how = stepLine(p, this.line, this.world, dt);
-      if (how === 'snap' && (p.stance === 'BAIL' || !p.onBoard)) { this.dropLine(); }
-      else if (how === 'arrive') this.letGo(false, true);
-      else if (how === 'snap' || !intent.hook) this.letGo(how === 'snap');
-      this.anchorTarget = null;
+  private beforeGrind(intent: Intent, dt: number): Intent {
+    const p = this.player;
+    this.grindBuffer = intent.grindPressed ? GRIND.buffer : Math.max(0, this.grindBuffer - dt);
+    // A press on the ground is a pop first: the catch comes on the way up.
+    if (intent.grindPressed && p.onBoard && (p.stance === 'ROLL' || p.stance === 'SLIDE') && !this.aimMode) {
+      return { ...intent, olliePressed: true, ollieHeld: false };
+    }
+    return intent;
+  }
+
+  private catchGrind(intent: Intent): void {
+    const p = this.player;
+    this.grindNear = null;
+    if (!p.onBoard || this.aimMode || p.stance === 'BAIL' || p.stance === 'FOOT') return;
+    const near = findGrind(p, this.grinds, GRIND.near, true);
+    this.grindNear = near ? near.line : null;
+    if (p.stance !== 'AIR' || (this.grindBuffer <= 0 && !intent.grind)) return;
+    const c = findGrind(p, this.grinds);
+    if (!c) return;
+    const names = GRIND_NAMES[c.line.kind];
+    this.grind = startGrind(p, c, names[this.rng.int(0, names.length - 1)]);
+    this.grindBuffer = 0;
+    this.bus.emit('player:grind', { pos: { ...p.pos }, name: this.grind.name, kind: c.line.kind });
+  }
+
+  private rideGrind(intent: Intent, dt: number): void {
+    const p = this.player;
+    const g = this.grind!;
+    beginTick(p);
+    // Out with a pop, or a flip on the way out.
+    if (intent.olliePressed || p.trickRequest || intent.grabPressed) {
+      leaveGrind(p, g, TUNE.ollieImpulse * 0.95 * p.rampPop);
+      p.poppedThisTick = true;
+      this.endGrind();
       return;
     }
-
-    bleedBoost(p, dt);
-    const reach = this.kit.longLine ? KIT_EFFECT.longLine : 1;
-    this.anchorTarget = this.aimMode ? null : pickAnchor(p, this.anchors, this.world, skip, reach);
-    if (this.hookBuffer > 0 && intent.hook && this.anchorTarget) {
-      const a = this.anchorTarget;
-      this.line = hook(p, a, this.kit.quickReel ? KIT_EFFECT.quickReel : 1);
-      this.hookBuffer = 0;
-      this.anchorTarget = null;
-      this.bus.emit('line:hook', { anchorId: a.id, kind: a.kind, pos: { ...a.pos }, z: a.z });
+    const how = stepGrind(p, g, dt, this.kit.wax ? 0 : GRIND.friction);
+    if (how !== 'hold') {
+      leaveGrind(p, g, how === 'end' ? GRIND.endPop : 0.5);
+      this.endGrind();
     }
   }
 
-  private letGo(snapped: boolean, arrived = false): void {
-    if (!this.line) return;
-    const r = arrived ? arrive(this.player, this.line) : release(this.player, this.line, snapped);
-    this.lastAnchor = { id: r.anchor.id, tick: this.tick };
-    this.line = null;
-    this.bus.emit('line:release', {
-      anchorId: r.anchor.id, charge: r.charge, speed: r.speed, snapped, pos: { ...this.player.pos },
-    });
-    // A launch is loud the way a pop is: the tail and the band at once.
-    this.drawAttention({ ...this.player.pos }, BOARD_NOISE.pop, 2.5, 0.5);
+  /** The line is behind the board: say how long it was on it. */
+  private endGrind(): void {
+    const g = this.grind;
+    if (!g) return;
+    this.grind = null;
+    this.bus.emit('player:grindEnd', { pos: { ...this.player.pos }, name: g.name, seconds: g.time });
   }
 
-  /** Off the line without a launch: a bail, or stepping off the board. */
-  dropLine(): void {
-    if (!this.line) return;
-    this.lastAnchor = { id: this.line.anchor.id, tick: this.tick };
-    this.line = null;
-  }
+  /** Off the line without a word: a scene change, stepping off. */
+  dropGrind(): void { this.grind = null; }
 
   /**
    * Which trick, decided here rather than by the player.
@@ -2450,10 +2461,10 @@ export class Sim {
     Object.assign(this.player, makePlayer(spawn));
     this.player.heading = heading;
     this.player.landingBonusDeg = this.kit.softTrucks ? KIT_EFFECT.softTrucks : 0;
-    this.line = null;
-    this.anchorTarget = null;
-    this.lastAnchor = null;
-    this.hookBuffer = 0;
+    this.player.rampPop = this.kit.bigPop ? KIT_EFFECT.bigPop : 1;
+    this.grind = null;
+    this.grindNear = null;
+    this.grindBuffer = 0;
     this.aimMode = false;
     this.aimAnchor = null;
     this.projectiles = [];
@@ -2561,14 +2572,6 @@ export class Sim {
  * the stick did nothing, so "find where I am going" and "go there" could not
  * happen in the same view. Moving is what the plan is for.
  */
-/**
- * On the line, the line steers. The board still pops and still flips, but a
- * push or a carve would only be fighting the band.
- */
-function onTheLine(intent: Intent): Intent {
-  return { ...intent, steer: 0, moveVector: null, push: false, pushPressed: false, brake: false };
-}
-
 function suppressWhileLooking(intent: Intent): Intent {
   return {
     ...intent,

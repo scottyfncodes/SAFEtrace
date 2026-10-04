@@ -15,7 +15,7 @@ import { TICK_DT } from '../src/core/loop';
 import { buildBellhaven } from '../src/content/bellhaven';
 import { JOBS, jobUnlocked } from '../src/content/jobs';
 import { JOB } from '../src/content/copy';
-import { anchorsFor } from '../src/sim/traversal/anchors';
+import { grindsFor } from '../src/sim/traversal/grinds';
 import { EXPOSURE, makeExposure, stepExposure } from '../src/sim/jobs/exposure';
 import { STYLE, bailChain, gradeFor, makeTally, scoreMove, stepTally, styleTotal, totalFor } from '../src/sim/jobs/score';
 import { JobRun } from '../src/sim/jobs/run';
@@ -107,7 +107,13 @@ describe('style', () => {
 
 describe('the board', () => {
   const data = buildBellhaven();
-  const masts = anchorsFor(data).filter((a) => a.kind === 'mast');
+  const lines = grindsFor(data);
+  const kickers = data.features.filter((f) => f.kind === 'kicker');
+  const segDist = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  };
 
   it('offers every kind of job', () => {
     const kinds = new Set(JOBS.map((j) => j.kind));
@@ -129,7 +135,7 @@ describe('the board', () => {
     }
   });
 
-  it('puts every street point on the street and every roof point on a roof with a way up', () => {
+  it('puts every point somewhere it can be done: the street, a line to grind, a ramp to air', () => {
     for (const j of JOBS) {
       for (const st of j.stages) {
         for (const p of st.points) {
@@ -142,8 +148,12 @@ describe('the board', () => {
             expect({ job: j.id, point: p.id, roof: !!b }).toEqual({ job: j.id, point: p.id, roof: true });
             expect(b!.height).toBeGreaterThanOrEqual(p.minZ - 0.01);
             expect(b!.kind).not.toBe('house');
-            // A sling line can take you there.
-            expect(masts.some((m) => m.buildingId === b!.id)).toBe(true);
+          }
+          // A grind point has a line inside its reach; an air point has a ramp.
+          if (p.grind) expect({ point: p.id, line: lines.some((l) => segDist(p.pos, l.a, l.b) <= p.radius) }).toEqual({ point: p.id, line: true });
+          if (p.air !== undefined) {
+            expect({ point: p.id, ramp: kickers.some((k) => k.poly.some((q) => Math.hypot(q.x - p.pos.x, q.y - p.pos.y) <= p.radius + 2)) })
+              .toEqual({ point: p.id, ramp: true });
           }
         }
       }
@@ -186,20 +196,30 @@ describe('a run', () => {
     expect(['S', 'A', 'B', 'C']).toContain(res.grade);
   });
 
-  it('only counts a roof point from the roof', () => {
+  it('only counts a grind point while grinding, and an air point in the air', () => {
     const sim = makeSim();
     const j = job('TAG');
     const r = run(sim, j);
     const pt = j.stages[0].points[0];
-    place(sim, { x: pt.pos.x + 13, y: pt.pos.y });
-    sim.player.z = 0;
-    tick(sim, r, 0.2);
-    expect(r.status).toBe('running');
     place(sim, pt.pos);
-    sim.player.z = pt.minZ! + 0.1;
-    sim.player.ground = pt.minZ!;
-    tick(sim, r, 0.1);
-    expect(r.status).toBe('complete');
+    tick(sim, r, 0.2);
+    expect(r.done.has(pt.id)).toBe(false);
+    // On a line there: the plaza ledge.
+    const l = sim.grinds.find((g) => Math.hypot((g.a.x + g.b.x) / 2 - pt.pos.x, (g.a.y + g.b.y) / 2 - pt.pos.y) < pt.radius)!;
+    sim.grind = { line: l, t: l.len / 2, dir: 1, speed: 8, time: 0, name: '50-50' };
+    r.step(TICK_DT);
+    expect(r.done.has(pt.id)).toBe(true);
+
+    const sim2 = makeSim();
+    const air = job('PHOTOGRAPH');
+    const r2 = run(sim2, air);
+    const ap = air.stages[0].points[0];
+    place(sim2, ap.pos);
+    tick(sim2, r2, 0.1);
+    expect(r2.status).toBe('running');
+    sim2.player.stance = 'AIR'; sim2.player.z = ap.air! + 0.2;
+    r2.step(TICK_DT);
+    expect(r2.status).toBe('complete');
   });
 
   it('takes a sabotage camera out by stone, or by cutting its line in passing', () => {
@@ -261,8 +281,6 @@ describe('a run', () => {
     const r = run(sim, j);
     const pt = j.stages[0].points[0];
     place(sim, pt.pos);
-    sim.player.z = pt.minZ! + 0.05;
-    sim.player.ground = pt.minZ!;
     tick(sim, r, 0.05);
     expect(r.stageIndex).toBe(1);
     expect(r.exposure.value).toBeGreaterThanOrEqual(EXPOSURE.tracked);
@@ -272,10 +290,12 @@ describe('a run', () => {
     const sim = makeSim();
     const r = run(sim, job('COURIER'));
     sim.bus.emit('player:trick', { pos: sim.player.pos, name: 'KICKFLIP' });
-    sim.bus.emit('line:release', { anchorId: 'x', charge: 1, speed: 15, snapped: false, pos: sim.player.pos });
+    sim.bus.emit('player:grind', { pos: sim.player.pos, name: 'CROOKED', kind: 'ledge' });
+    sim.bus.emit('player:grindEnd', { pos: sim.player.pos, name: 'CROOKED', seconds: 2 });
     sim.bus.flush();
-    expect(styleTotal(r.tally)).toBe(STYLE.trick + (STYLE.launch + STYLE.launchCharge) * 2);
-    expect(r.lastMove?.label).toBe('FULL LAUNCH');
+    expect(styleTotal(r.tally)).toBe(STYLE.trick + STYLE.grind * 2 + STYLE.grindPerSecond * 2 * 3);
+    expect(r.lastMove?.label).toBe('CROOKED 2.0s');
+    expect(r.tally.grinds).toBe(1);
   });
 
   it('lets go of everything when it is put away', () => {

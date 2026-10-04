@@ -8,8 +8,6 @@ import { makeSim, place } from './harness';
 import { emptyIntent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import { PERKS, NO_KIT, kitFor, repFor } from '../src/sim/jobs/kit';
-import { LINE, canHook, hook, lineCharge } from '../src/sim/traversal/slingline';
-import type { Sim } from '../src/sim/sim';
 
 describe('rep', () => {
   it('pays a point a job and more for doing it well', () => {
@@ -28,28 +26,30 @@ describe('rep', () => {
 });
 
 describe('perks', () => {
-  const anchorAt = (sim: Sim, d: number) => {
-    const a = sim.anchors.find((x) => x.kind === 'pole')!;
-    place(sim, { x: a.pos.x - d, y: a.pos.y }, { x: 8, y: 0 });
-    return a;
-  };
-
-  it('LONG LINE reaches an anchor the plain line cannot', () => {
-    const sim = makeSim();
-    const a = anchorAt(sim, LINE.range + 4);
-    // Line of sight is a property of the street; only the reach is under test.
-    const reachable = canHook(sim.player, a, sim.world, 1.35) || sim.world.blocked(sim.player.pos, a.pos, a.z);
-    expect(canHook(sim.player, a, sim.world, 1)).toBe(false);
-    expect(reachable).toBe(true);
+  it('WAX keeps a grind at full speed to the end of the line', () => {
+    const ride = (wax: boolean) => {
+      const sim = makeSim();
+      sim.kit = { ...NO_KIT, wax };
+      const l = sim.grinds.find((g) => g.kind === 'rail' && Math.abs(g.a.y - 215) < 0.1)!;
+      sim.grind = { line: l, t: 0, dir: 1, speed: 8, time: 0, name: '50-50' };
+      for (let i = 0; i < 60; i++) sim.step(TICK_DT, emptyIntent(), null);
+      return sim.grind?.speed ?? 0;
+    };
+    expect(ride(true)).toBeCloseTo(8, 5);
+    expect(ride(false)).toBeLessThan(8);
   });
 
-  it('QUICK REEL charges a launch on a shorter arc', () => {
-    const sim = makeSim();
-    const a = anchorAt(sim, 6);
-    const plain = hook(sim.player, a, 1), quick = hook(sim.player, a, 2 / 3);
-    plain.swept = quick.swept = LINE.fullCharge * 0.66;
-    expect(lineCharge(plain)).toBeLessThan(0.7);
-    expect(lineCharge(quick)).toBeCloseTo(1, 1);
+  it('BIG POP throws you higher off a kicker', () => {
+    const air = (big: boolean) => {
+      const sim = makeSim();
+      sim.kit = { ...NO_KIT, bigPop: big };
+      sim.resetForRun({ x: 300, y: 215 }, 0);
+      sim.player.vel = { x: 10, y: 0 };
+      let maxZ = 0;
+      for (let i = 0; i < 120; i++) { sim.step(TICK_DT, emptyIntent(), null); maxZ = Math.max(maxZ, sim.player.z); }
+      return maxZ;
+    };
+    expect(air(true)).toBeGreaterThan(air(false) + 0.2);
   });
 
   it('SOFT TRUCKS rides away from a landing that would otherwise be a slam', () => {

@@ -1,197 +1,185 @@
 /**
- * The sling line and the second floor of the town.
+ * Grinds, ramps, and the second floor of the town.
  *
- * The skating model is not touched by any of this, so these tests are about
- * what was added on top: anchors exist where a player would look for them,
- * a hook catches and a swing charges, a full swing launches higher and faster
- * than any ollie, the extra speed bleeds away once the wheels are down, flat
- * roofs can be landed on and rolled off, and a rider above a camera is not
- * in its picture.
+ * The skating model's tuning is not touched by any of this, so these tests
+ * are about what was laid on top of it: the town's rails, ledges, benches
+ * and walls can be ground; GRIND pops on the ground and catches in the air;
+ * a grind rides to the end, can be popped out of, and pays out; a kicker is
+ * a slope you ride up and leave with air that grows with speed; roofs can
+ * be landed on and rolled off; a rider above a camera is not in its picture;
+ * and nobody is ever left inside a wall.
  */
 import { describe, expect, it } from 'vitest';
 import { makeSim, place, step } from './harness';
 import { emptyIntent, type Intent } from '../src/core/input';
 import { TICK_DT } from '../src/core/loop';
 import { buildBellhaven } from '../src/content/bellhaven';
-import { poleLineFor, POLE_H } from '../src/sim/traversal/poleLine';
-import { anchorsFor, MAST_MIN_ROOF, type Anchor } from '../src/sim/traversal/anchors';
-import { LINE } from '../src/sim/traversal/slingline';
-import { TUNE } from '../src/sim/player';
+import { grindsFor, type GrindLine } from '../src/sim/traversal/grinds';
 import { ABOVE_LENS, makeSensor, observe } from '../src/sim/surveillance/sensors';
 import type { Sim } from '../src/sim/sim';
 import type { Subject } from '../src/sim/surveillance/types';
 
-const hookIntent = (pressed: boolean): Intent => {
-  const i = emptyIntent();
-  i.hook = true;
-  i.hookPressed = pressed;
-  return i;
-};
+const grindPress = (held = true): Intent => { const i = emptyIntent(); i.grind = held; i.grindPressed = true; return i; };
 
-/** A pole, and a line along the road past it, a few metres off on the road side. */
-function passPole(sim: Sim, index: number, offset = 5, lead = 16, speed = 10): Anchor {
-  const pole = poleLineFor(sim.world.data).poles[index];
-  const a = sim.anchors.find((x) => x.kind === 'pole' && Math.hypot(x.pos.x - pole.at.x, x.pos.y - pole.at.y) < 0.01)!;
-  const dir = { x: Math.cos(pole.rot), y: Math.sin(pole.rot) };
-  let n = { x: -dir.y, y: dir.x };
-  if (sim.world.surfaceAt({ x: a.pos.x + n.x * offset, y: a.pos.y + n.y * offset }) !== 'asphalt') n = { x: -n.x, y: -n.y };
-  place(sim, { x: a.pos.x + n.x * offset - dir.x * lead, y: a.pos.y + n.y * offset - dir.y * lead }, { x: dir.x * speed, y: dir.y * speed });
-  return a;
+/** Roll at a line along its length, `lead` metres before it starts, on the ground. */
+function approach(sim: Sim, l: GrindLine, lead = 5, speed = 9): void {
+  const ux = (l.b.x - l.a.x) / l.len, uy = (l.b.y - l.a.y) / l.len;
+  place(sim, { x: l.a.x - ux * lead, y: l.a.y - uy * lead }, { x: ux * speed, y: uy * speed });
 }
 
-/** Ride, hook on frame `at`, hold for `hold` frames, then coast. Returns what happened. */
-function swing(sim: Sim, at: number, hold: number, total = 260) {
-  let maxZ = 0, maxSpeed = 0, charge = -1, hooked: string | null = null, landedOn = -1, bailed = false;
-  sim.bus.on('line:hook', (e) => { hooked = e.anchorId; });
-  sim.bus.on('line:release', (e) => { charge = e.charge; });
-  for (let i = 0; i < total; i++) {
-    const it = i >= at && i < at + hold ? hookIntent(i === at) : emptyIntent();
+/** A long, free rail in the lot, to grind in tests. */
+const lotRail = (sim: Sim) => sim.grinds.find((g) => g.kind === 'rail' && Math.abs(g.a.y - 215) < 0.1)!;
+
+/** Ride `frames`, pressing GRIND at `at`, and say what happened. */
+function ride(sim: Sim, at: number, frames = 200, intent: (i: number) => Intent | null = () => null) {
+  const names: string[] = [];
+  let ended = -1, seconds = 0;
+  sim.bus.on('player:grind', (e) => names.push(e.name));
+  sim.bus.on('player:grindEnd', (e) => { ended = sim.tick; seconds = e.seconds; });
+  for (let i = 0; i < frames; i++) {
+    const it = intent(i) ?? (i === at ? grindPress() : emptyIntent());
     sim.step(TICK_DT, it, null);
-    maxZ = Math.max(maxZ, sim.player.z);
-    maxSpeed = Math.max(maxSpeed, sim.player.speed);
-    if (sim.player.landedThisTick && landedOn < 0) landedOn = sim.player.ground;
-    if (sim.player.bailedThisTick) bailed = true;
   }
-  return { maxZ, maxSpeed, charge, hooked: hooked as string | null, landedOn, bailed };
+  return { names, ended, seconds };
 }
 
-describe('anchors are the town the player can already see', () => {
+describe('the town can be ground', () => {
   const data = buildBellhaven();
-  const anchors = anchorsFor(data);
+  const lines = grindsFor(data);
 
-  it('makes every pole in the pole line hookable, at the crossarm', () => {
-    const poles = poleLineFor(data).poles;
-    expect(poles.length).toBeGreaterThan(30);
-    for (const p of poles) {
-      const a = anchors.find((x) => Math.hypot(x.pos.x - p.at.x, x.pos.y - p.at.y) < 1.5);
-      expect(a).toBeDefined();
-    }
-    for (const a of anchors.filter((x) => x.kind === 'pole')) expect(a.z).toBeCloseTo(POLE_H - 0.6);
+  it('finds rails, ledges, benches and the Channel walls', () => {
+    const kinds = new Set(lines.map((l) => l.kind));
+    for (const k of ['rail', 'ledge', 'bench', 'wall'] as const) expect(kinds.has(k)).toBe(true);
+    expect(lines.length).toBeGreaterThan(40);
   });
 
-  it('puts masts only on flat roofs worth getting onto', () => {
-    const masts = anchors.filter((a) => a.kind === 'mast');
-    expect(masts.length).toBeGreaterThan(5);
-    for (const m of masts) {
-      const b = data.buildings.find((x) => x.id === m.buildingId)!;
-      expect(b.kind).not.toBe('house');
-      expect(b.height).toBeGreaterThanOrEqual(MAST_MIN_ROOF);
-      expect(m.z).toBeGreaterThan(b.height);
+  it('keeps every line at a height a board can get to', () => {
+    for (const l of lines) {
+      expect(l.z).toBeGreaterThan(0.3);
+      expect(l.z).toBeLessThanOrEqual(2.6);
+      expect(l.len).toBeGreaterThanOrEqual(1.2);
     }
   });
 
-  it('hangs a line off the cameras on poles, not the ones on porches', () => {
-    const cams = anchors.filter((a) => a.kind === 'camera');
-    expect(cams.length).toBeGreaterThan(10);
-    for (const c of cams) {
-      const s = data.sensors.find((x) => x.id === c.sensorId)!;
-      expect(['porch', 'doorbell', 'reader']).not.toContain(s.kind);
-    }
-  });
-
-  it('leaves no stretch of street without something to hook', () => {
-    // Every road node within a hook of an anchor, or nearly every one: the
-    // city is the skatepark, and a skatepark has no dead ends.
-    let covered = 0;
-    for (const n of data.roadNodes) {
-      if (anchors.some((a) => Math.hypot(a.pos.x - n.pos.x, a.pos.y - n.pos.y) <= LINE.range + 6)) covered++;
-    }
-    expect(covered / data.roadNodes.length).toBeGreaterThan(0.85);
+  it('builds the lot: rails, a ledge and four kickers off the road', () => {
+    const lot = (p: { x: number; y: number }) => p.x > 296 && p.x < 404 && p.y > 182 && p.y < 248;
+    expect(lines.filter((l) => lot(l.a)).length).toBeGreaterThanOrEqual(5);
+    expect(data.features.filter((f) => f.kind === 'kicker' && lot(f.poly[0])).length).toBe(4);
   });
 });
 
-describe('the sling line', () => {
-  it('brackets an anchor ahead, and a press hooks it', () => {
+describe('grinding', () => {
+  it('pops on the ground and catches the rail on the way up', () => {
     const sim = makeSim();
-    const a = passPole(sim, 10);
-    step(sim, 0.1);
-    expect(sim.anchorTarget?.id).toBe(a.id);
-    sim.step(TICK_DT, hookIntent(true), null);
-    expect(sim.line?.anchor.id).toBe(a.id);
+    const l = lotRail(sim);
+    approach(sim, l, 1.5);
+    const r = ride(sim, 0, 40, (i) => (i === 0 ? grindPress() : (() => { const x = emptyIntent(); x.grind = true; return x; })()));
+    expect(r.names.length).toBe(1);
+    expect(sim.grind?.line.id ?? null).toBe(r.ended < 0 ? l.id : null);
   });
 
-  it('honours a press made a moment before anything was in reach', () => {
+  it('rides the line at its height, going its way', () => {
     const sim = makeSim();
-    passPole(sim, 10, 5, 30);
-    sim.step(TICK_DT, hookIntent(true), null);
-    for (let i = 0; i < 40 && !sim.line; i++) sim.step(TICK_DT, hookIntent(false), null);
-    // Either it was in reach already, or the buffer caught it when it came in.
-    expect(sim.line).not.toBeNull();
+    const l = lotRail(sim);
+    approach(sim, l, 1.5);
+    ride(sim, 0, 30);
+    expect(sim.grind).not.toBeNull();
+    expect(sim.player.z).toBeCloseTo(l.z, 5);
+    const ux = (l.b.x - l.a.x) / l.len;
+    expect(Math.sign(sim.player.vel.x)).toBe(Math.sign(ux));
   });
 
-  it('turns a committed arc into a launch no ollie can match', () => {
+  it('rides to the end, hops off, and says how long it was on', () => {
     const sim = makeSim();
-    passPole(sim, 10);
-    const r = swing(sim, 10, 80);
-    expect(r.hooked).not.toBeNull();
-    expect(r.charge).toBeGreaterThan(0.9);
-    // An ollie tops out under a metre. A full swing is a storey or two.
-    expect(r.maxZ).toBeGreaterThan(4);
-    expect(r.maxSpeed).toBeGreaterThan(TUNE.maxSpeed + TUNE.flowSpeedBonus);
+    const l = lotRail(sim);
+    approach(sim, l, 1.5);
+    const r = ride(sim, 0, 60 * 6);
+    expect(r.ended).toBeGreaterThan(0);
+    expect(r.seconds).toBeGreaterThan(l.len / 16);
+    expect(sim.grind).toBeNull();
+  });
+
+  it('lets an ollie pop you out early', () => {
+    const sim = makeSim();
+    const l = lotRail(sim);
+    approach(sim, l, 1.5);
+    ride(sim, 0, 25);
+    expect(sim.grind).not.toBeNull();
+    const o = emptyIntent(); o.olliePressed = true;
+    sim.step(TICK_DT, o, null);
+    expect(sim.grind).toBeNull();
+    expect(sim.player.stance).toBe('AIR');
+    expect(sim.player.vz).toBeGreaterThan(4);
+  });
+
+  it('does not catch a line the board is going across', () => {
+    const sim = makeSim();
+    const l = lotRail(sim);
+    const mid = { x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 };
+    place(sim, { x: mid.x, y: mid.y - 3 }, { x: 0, y: 9 });
+    const r = ride(sim, 0, 40, () => grindPress());
+    expect(r.names.length).toBe(0);
+  });
+
+  it('cannot be done on foot', () => {
+    const sim = makeSim();
+    const l = lotRail(sim);
+    approach(sim, l, 1.5, 4);
+    sim.player.onBoard = false;
+    sim.player.stance = 'FOOT';
+    const r = ride(sim, 0, 30, () => grindPress());
+    expect(r.names.length).toBe(0);
+  });
+
+  it('lights the line the board is heading for', () => {
+    const sim = makeSim();
+    const l = lotRail(sim);
+    approach(sim, l, 4);
+    step(sim, 0.05);
+    expect(sim.grindNear?.id).toBe(l.id);
+  });
+
+  it('leaves the skating alone when nobody presses it', () => {
+    const a = makeSim(), b = makeSim();
+    const l = lotRail(a);
+    approach(a, l, 1.5); approach(b, l, 1.5);
+    step(a, 2); step(b, 2);
+    expect(a.player.pos).toEqual(b.player.pos);
+    expect(a.grind).toBeNull();
+  });
+});
+
+describe('ramps', () => {
+  const kickerRun = (speed: number) => {
+    const sim = makeSim();
+    // The lot's west kicker faces east; ride at it from the west.
+    place(sim, { x: 300, y: 215 }, { x: speed, y: 0 });
+    let maxZ = 0, airborne = 0, bailed = false;
+    for (let i = 0; i < 120; i++) {
+      sim.step(TICK_DT, emptyIntent(), null);
+      maxZ = Math.max(maxZ, sim.player.z);
+      if (sim.player.stance === 'AIR') airborne += TICK_DT;
+      if (sim.player.bailedThisTick) bailed = true;
+    }
+    return { maxZ, airborne, bailed };
+  };
+
+  it('is a slope you ride up and leave with air', () => {
+    const r = kickerRun(10);
+    expect(r.maxZ).toBeGreaterThan(2);
+    expect(r.airborne).toBeGreaterThan(0.6);
     expect(r.bailed).toBe(false);
   });
 
-  it('makes a flick past a pole a hop, not a launch', () => {
-    const sim = makeSim();
-    passPole(sim, 10);
-    const r = swing(sim, 10, 12);
-    expect(r.charge).toBeLessThan(0.25);
-    expect(r.maxZ).toBeLessThan(1.6);
+  it('gives more air for more speed', () => {
+    expect(kickerRun(11).maxZ).toBeGreaterThan(kickerRun(6).maxZ);
   });
 
-  it('charges with the arc and nothing else', () => {
-    const short = makeSim(); passPole(short, 10);
-    const long = makeSim(); passPole(long, 10);
-    const a = swing(short, 10, 40), b = swing(long, 10, 70);
-    expect(b.charge).toBeGreaterThan(a.charge);
-    expect(b.maxZ).toBeGreaterThan(a.maxZ);
-  });
-
-  it('lets go on its own if held round and round', () => {
-    const sim = makeSim();
-    passPole(sim, 10);
-    let released = false;
-    sim.bus.on('line:release', (e) => { released = e.snapped; });
-    for (let i = 0; i < 60 * (LINE.maxHold + 0.5); i++) sim.step(TICK_DT, hookIntent(i === 10), null);
-    expect(released).toBe(true);
-    expect(sim.line).toBeNull();
-  });
-
-  it('will not catch the anchor it has just let go of', () => {
-    const sim = makeSim();
-    const a = passPole(sim, 10);
-    swing(sim, 10, 30, 45);
-    expect(sim.anchorTarget?.id ?? null).not.toBe(a.id);
-  });
-
-  it('cannot be used on foot', () => {
-    const sim = makeSim();
-    passPole(sim, 10, 5, 10, 3);
-    sim.player.onBoard = false;
-    sim.player.stance = 'FOOT';
-    sim.step(TICK_DT, hookIntent(true), null);
-    expect(sim.anchorTarget).toBeNull();
-    expect(sim.line).toBeNull();
-  });
-
-  it('bleeds the extra speed away once the wheels are down', () => {
-    const sim = makeSim();
-    passPole(sim, 10);
-    swing(sim, 10, 80, 200);
-    step(sim, 4);
-    expect(sim.player.capBoost).toBeLessThan(0.5);
-    expect(sim.player.speed).toBeLessThanOrEqual(TUNE.maxSpeed + TUNE.flowSpeedBonus + 0.6);
-  });
-
-  it('leaves the skating alone when nobody touches it', () => {
-    // Same seed, same inputs, no hook: nothing about the line may have moved
-    // the board. (Determinism over the whole sim is tested elsewhere.)
-    const a = makeSim(), b = makeSim();
-    passPole(a, 10); passPole(b, 10);
-    step(a, 2); step(b, 2);
-    expect(a.player.pos).toEqual(b.player.pos);
-    expect(a.player.capBoost).toBe(0);
-    expect(a.line).toBeNull();
+  it('is tall enough to be worth riding at', () => {
+    const data = buildBellhaven();
+    for (const f of data.features.filter((x) => x.kind === 'kicker')) {
+      expect(f.rise).toBeGreaterThan(0.5);
+    }
   });
 });
 
@@ -244,39 +232,6 @@ describe('roofs are part of the town', () => {
     expect(sim.world.supportAt(centroid(ledge.poly), 3)).toBe(0);
   });
 
-  it('gets a rider from the street onto a roof with a mast', () => {
-    /*
-     * The moment the game is built round: a mast on a roof, hooked from the
-     * street, swung round, and let go — and the board comes down on top of
-     * the building. Searched rather than hand-placed, so it holds whatever
-     * the town's layout does, as long as it is possible somewhere.
-     */
-    const data = buildBellhaven();
-    const masts = anchorsFor(data).filter((a) => a.kind === 'mast');
-    let made: string | null = null;
-    search: for (const m of masts) {
-      for (let k = 0; k < 16; k++) {
-        const ang = (k / 16) * Math.PI * 2;
-        for (const r of [14, 18, 22]) {
-          const sim = makeSim();
-          const start = { x: m.pos.x + Math.cos(ang) * r, y: m.pos.y + Math.sin(ang) * r };
-          if (sim.world.buildingAt(start) || sim.world.surfaceAt(start) === 'grass') continue;
-          // Riding across the line to the mast, so the swing is round it.
-          const tang = ang + Math.PI / 2;
-          place(sim, start, { x: Math.cos(tang) * 10, y: Math.sin(tang) * 10 });
-          step(sim, 1 / 60);
-          if (sim.anchorTarget?.id !== m.id) continue;
-          for (const hold of [40, 55, 70]) {
-            const s2 = makeSim();
-            place(s2, start, { x: Math.cos(tang) * 10, y: Math.sin(tang) * 10 });
-            const res = swing(s2, 1, hold, 240);
-            if (res.hooked === m.id && res.landedOn > 0 && !res.bailed) { made = m.id; break search; }
-          }
-        }
-      }
-    }
-    expect(made).not.toBeNull();
-  });
 });
 
 describe('over the top of a camera', () => {
@@ -323,24 +278,24 @@ describe('nobody is ever stuck inside a building', () => {
     expect(sim.world.insideSolid(sim.player.pos, sim.player.z + 0.14)).toBeNull();
   });
 
-  it('survives a spread of random launches without leaving anyone in a wall', () => {
+  it('survives a spread of random jumps and grinds without leaving anyone in a wall', () => {
     let seed = 11;
     const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
-    const anchors = makeSim().anchors;
-    for (let k = 0; k < 60; k++) {
+    const lines = makeSim().grinds;
+    for (let k = 0; k < 50; k++) {
       const sim = makeSim();
-      const a = anchors[Math.floor(rnd() * anchors.length)];
-      const ang = rnd() * Math.PI * 2, r = 8 + rnd() * 10;
-      const start = { x: a.pos.x + Math.cos(ang) * r, y: a.pos.y + Math.sin(ang) * r };
-      if (sim.world.buildingAt(start)) continue;
-      const t = ang + (Math.PI / 2) * (rnd() < 0.5 ? 1 : -1);
-      place(sim, start, { x: Math.cos(t) * 10, y: Math.sin(t) * 10 });
-      const hold = 10 + Math.floor(rnd() * 120);
+      const l = lines[Math.floor(rnd() * lines.length)];
+      approach(sim, l, 1 + rnd() * 4, 6 + rnd() * 6);
+      if (sim.world.insideSolid(sim.player.pos, 0.2)) continue;
+      const hold = Math.floor(rnd() * 90);
       for (let i = 0; i < 240; i++) {
-        const it = emptyIntent(); it.hook = i < hold; it.hookPressed = i === 0;
+        const it = emptyIntent();
+        it.grind = i < hold; it.grindPressed = i === 0;
+        it.olliePressed = i === hold + 20;
         sim.step(TICK_DT, it, null);
         expect(sim.world.insideSolid(sim.player.pos, sim.player.z + 0.2)).toBeNull();
       }
     }
   });
 });
+

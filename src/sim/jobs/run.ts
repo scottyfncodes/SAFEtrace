@@ -83,9 +83,9 @@ export class JobRun {
     this.off.push(
       bus.on('player:trick', ({ name }) => { this.tally.tricks++; move(STYLE.trick, name); }),
       bus.on('player:grab', ({ name }) => { this.tally.tricks++; move(STYLE.grab, name); }),
-      bus.on('line:release', ({ charge }) => {
-        this.tally.launches++;
-        move(STYLE.launch + STYLE.launchCharge * charge, charge > 0.95 ? 'FULL LAUNCH' : 'LAUNCH');
+      bus.on('player:grind', ({ name }) => { this.tally.grinds++; move(STYLE.grind, name); }),
+      bus.on('player:grindEnd', ({ name, seconds }) => {
+        if (seconds > 0.4) move(STYLE.grindPerSecond * seconds, `${name} ${seconds.toFixed(1)}s`);
       }),
       bus.on('player:roof', () => { this.tally.roofs++; move(STYLE.roof, 'ROOFTOP'); }),
       bus.on('player:land', () => {
@@ -178,6 +178,8 @@ export class JobRun {
     }
     if (dist(p.pos, pt.pos) > pt.radius) return false;
     if (pt.minZ !== undefined && p.z < pt.minZ - 0.35) return false;
+    if (pt.grind && !sim.grind) return false;
+    if (pt.air !== undefined && (p.stance !== 'AIR' || p.z < pt.air)) return false;
     return true;
   }
 

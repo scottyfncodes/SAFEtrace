@@ -20,7 +20,6 @@ import { readPlan, type PlanReading } from './plan';
 import { moodOf } from './mood';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
 import { MACHINE, PRINT, SIGNAL, VENEER, alpha, mix, riskColour, shade } from './palette';
-import { lineCharge } from '../sim/traversal/slingline';
 
 /** The plan's own inks: the player's sketch, not the machine's colours. */
 const PLAN_INK = {
@@ -1089,7 +1088,7 @@ export class Renderer {
         this.drawTrajectory(ctx, eye, sim.player.pos, sim.shotDraw(), 0.35 + sim.player.draw * 0.65);
       }
       this.drawHeldSling(ctx);
-      this.drawSlingLine(ctx, eye);
+      this.drawGrindable(ctx, eye, dt);
       this.drawMousePull(ctx);
       this.drawSkateHud(ctx);
       this.drawSpeech(ctx, eye, dt);
@@ -1652,116 +1651,44 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** What the hook control is called on this device, for the bracket's tag. */
-  hookKey = 'C';
-
   /**
-   * The sling line, as the rider sees it.
+   * Grinds, as the rider sees them.
    *
-   * Three things and no more. Anchors within reach ahead get a small tick at
-   * the hook point, only while the board is moving — enough that a pole line
-   * starts to read as a row of opportunities, never a field of icons. The one
-   * a hook would catch gets a bracket and the key that catches it. And while
-   * hooked, the band itself runs from the rider's hands to the anchor, with
-   * a ring at the top that fills as the arc earns its launch.
+   * The line the board is heading for is picked out in the player's colour —
+   * a thin bright rule along its top — so a rail reads as "that one" before
+   * the button is pressed. On a line, the board throws sparks off it.
    */
-  private drawSlingLine(ctx: CanvasRenderingContext2D, eye: CamState): void {
+  private drawGrindable(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
     if (this.overlaysHidden) return;
     const sim = this.sim;
-    const p = sim.player;
-    const proj = (x: number, y: number, z: number) => this.perspective.project3(eye, x, y, z, this.w, this.h);
-    ctx.save();
-    ctx.lineCap = 'round';
-
-    const line = sim.line;
-    if (line) {
-      const a = line.anchor;
-      const top = proj(a.pos.x, a.pos.y, a.z);
-      const hands = proj(p.pos.x, p.pos.y, p.z + 1.25);
-      const charge = lineCharge(line);
-      if (top && hands) {
-        // The band: two strands, pulled thin as it stretches, lit as it charges.
-        const nx = -(top.y - hands.y), ny = top.x - hands.x;
-        const nl = Math.hypot(nx, ny) || 1;
-        const spread = 2.2;
-        ctx.strokeStyle = alpha(PRINT.ink, 0.55);
-        ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(hands.x, hands.y); ctx.lineTo(top.x, top.y); ctx.stroke();
-        ctx.strokeStyle = alpha(VENEER.player, 0.75 + charge * 0.25);
-        ctx.lineWidth = 1.6 + charge * 1.2;
-        for (const side of [-1, 1]) {
-          ctx.beginPath();
-          ctx.moveTo(hands.x + (nx / nl) * spread * side, hands.y + (ny / nl) * spread * side);
-          ctx.lineTo(top.x, top.y);
-          ctx.stroke();
-        }
-        // The charge ring round the hook point. Full is a full launch.
-        const r = 11;
-        ctx.strokeStyle = alpha(PRINT.ink, 0.5);
-        ctx.lineWidth = 5;
-        ctx.beginPath(); ctx.arc(top.x, top.y, r, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = charge >= 1 ? '#FFFFFF' : VENEER.player;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(top.x, top.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge); ctx.stroke();
-      }
-      ctx.restore();
-      return;
-    }
-
-    // Ticks on what is in reach, while rolling.
-    if (p.speed > 3.5 && p.onBoard) {
-      for (const a of sim.anchors) {
-        if (a === sim.anchorTarget) continue;
-        const dx = a.pos.x - p.pos.x, dy = a.pos.y - p.pos.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 26 || d < 2 || a.z < p.z + 1.2) continue;
-        if (dx * Math.cos(p.heading) + dy * Math.sin(p.heading) < 0) continue;
-        const at = proj(a.pos.x, a.pos.y, a.z);
-        if (!at) continue;
-        const k = 1 - d / 26;
-        ctx.fillStyle = alpha(VENEER.player, 0.25 + 0.45 * k);
-        ctx.strokeStyle = alpha(PRINT.ink, 0.35 * k);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(at.x, at.y - 4); ctx.lineTo(at.x + 4, at.y); ctx.lineTo(at.x, at.y + 4); ctx.lineTo(at.x - 4, at.y);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
+    const l = sim.grind?.line ?? sim.grindNear;
+    if (l) {
+      const a = this.perspective.project3(eye, l.a.x, l.a.y, l.z + 0.03, this.w, this.h);
+      const b = this.perspective.project3(eye, l.b.x, l.b.y, l.z + 0.03, this.w, this.h);
+      if (a && b) {
+        ctx.save();
+        ctx.lineCap = 'round';
+        const on = !!sim.grind;
+        ctx.strokeStyle = alpha(PRINT.ink, on ? 0.5 : 0.35);
+        ctx.lineWidth = on ? 5 : 4;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.strokeStyle = alpha(VENEER.player, on ? 1 : 0.55 + 0.25 * Math.sin(sim.time * 6));
+        ctx.lineWidth = on ? 2.6 : 1.8;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.restore();
       }
     }
-
-    const t = sim.anchorTarget;
-    if (t) {
-      const at = proj(t.pos.x, t.pos.y, t.z);
-      if (at) {
-        const pulse = 0.5 + 0.5 * Math.sin(sim.time * 7);
-        const s = 12 + pulse * 2;
-        const c = 6;
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = alpha(PRINT.ink, 0.5);
-        const bracket = () => {
-          ctx.beginPath();
-          for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-            ctx.moveTo(at.x + sx * s, at.y + sy * (s - c));
-            ctx.lineTo(at.x + sx * s, at.y + sy * s);
-            ctx.lineTo(at.x + sx * (s - c), at.y + sy * s);
-          }
-          ctx.stroke();
-        };
-        bracket();
-        ctx.lineWidth = 2.2;
-        ctx.strokeStyle = VENEER.player;
-        bracket();
-        ctx.font = '800 10px ui-monospace, Menlo, monospace';
-        ctx.textAlign = 'center';
-        const label = this.hookKey;
-        const wd = ctx.measureText(label).width + 8;
-        ctx.fillStyle = VENEER.player;
-        roundRect(ctx, at.x - wd / 2, at.y - s - 17, wd, 13, 3); ctx.fill();
-        ctx.fillStyle = PRINT.ink;
-        ctx.fillText(label, at.x, at.y - s - 7);
+    const g = sim.grind;
+    if (g) {
+      this.sparkClock -= dt;
+      if (this.sparkClock <= 0) {
+        this.sparkClock = 0.05;
+        const p = sim.player;
+        this.burst('spark', p.pos, p.z + 0.05, 3, p.heading + Math.PI, 0.8);
       }
     }
-    ctx.restore();
   }
+  private sparkClock = 0;
 
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;

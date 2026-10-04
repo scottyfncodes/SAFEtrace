@@ -25,14 +25,18 @@ export const JOBS: JobDef[] = [
     threat: 'Street cameras', target: 55,
   },
   {
-    id: 'job-02', number: 2, kind: 'TAG', title: 'TAG: LIBRARY ROOF',
-    brief: 'Put your mark where the whole plaza can see it. The mast gets you up.',
+    id: 'job-02', number: 2, kind: 'TAG', title: 'TAG: THE PLAZA LEDGES',
+    brief: 'Grind all three plaza ledges and leave your mark on each. The cameras are right there.',
     start: { label: 'Commons Street', pos: { x: 300, y: 150 }, heading: N },
     stages: [{
-      verb: 'TAG', mode: 'any', done: 'TAGGED',
-      points: [{ id: 'library', label: 'LIBRARY ROOF', pos: { x: 279, y: 90 }, radius: 14, minZ: 8 }],
+      verb: 'GRIND', mode: 'all', done: 'TAGGED',
+      points: [
+        { id: 'l1', label: 'WEST LEDGE', pos: { x: 323, y: 76 }, radius: 14, grind: true },
+        { id: 'l2', label: 'EAST LEDGE', pos: { x: 369, y: 76 }, radius: 14, grind: true },
+        { id: 'l3', label: 'SOUTH LEDGE', pos: { x: 323, y: 106 }, radius: 14, grind: true },
+      ],
     }],
-    threat: 'Plaza cameras', target: 40,
+    threat: 'Plaza cameras', target: 60,
   },
   {
     id: 'job-03', number: 3, kind: 'SABOTAGE', title: 'HIT: THREE PLAZA CAMERAS',
@@ -59,35 +63,38 @@ export const JOBS: JobDef[] = [
     threat: 'Every lens on Sable Lane', target: 80,
   },
   {
-    id: 'job-05', number: 5, kind: 'SPEEDRUN', title: 'RUN: MARKET ST TO DECK 2',
-    brief: 'Four checkpoints, in order, against the clock. The deck counts from the roof.',
+    id: 'job-05', number: 5, kind: 'SPEEDRUN', title: 'RUN: PARADE TO THE LOT',
+    brief: 'Four checkpoints, in order, against the clock. The last one counts in the air.',
     start: { label: 'Northgate Parade', pos: { x: 220, y: 60 }, heading: E },
     stages: [
       { verb: 'THROUGH', mode: 'any', done: 'CHECKPOINT', points: [{ id: 'cp1', label: 'MARKET ST WEST', pos: { x: 272, y: 58 }, radius: 7 }] },
       { verb: 'THROUGH', mode: 'any', done: 'CHECKPOINT', points: [{ id: 'cp2', label: 'CINEMA FORECOURT', pos: { x: 404, y: 100 }, radius: 7 }] },
-      { verb: 'UP ON', mode: 'any', done: 'CHECKPOINT', points: [{ id: 'cp3', label: 'DECK 2 ROOF', pos: { x: 502, y: 104 }, radius: 22, minZ: 8.5 }] },
-      { verb: 'DOWN TO', mode: 'any', done: 'FINISH', points: [{ id: 'cp4', label: 'COMMONS STREET', pos: { x: 460, y: 150 }, radius: 8 }] },
+      { verb: 'THROUGH', mode: 'any', done: 'CHECKPOINT', points: [{ id: 'cp3', label: 'COMMONS STREET', pos: { x: 350, y: 150 }, radius: 8 }] },
+      { verb: 'AIR', mode: 'any', done: 'FINISH', points: [{ id: 'cp4', label: 'THE LOT KICKER', pos: { x: 350, y: 186 }, radius: 7, air: 1.0 }] },
     ],
-    threat: 'Plaza cameras + parking', target: 60,
+    threat: 'Plaza cameras', target: 60,
   },
   {
-    id: 'job-06', number: 6, kind: 'PHOTOGRAPH', title: 'SHOOT: RELAY 12 FROM THE DEPOT ROOF',
-    brief: 'Get a clear look into the relay yard. The haulage depot roof has the angle.',
-    start: { label: 'Commons Street East', pos: { x: 460, y: 160 }, heading: S },
+    id: 'job-06', number: 6, kind: 'PHOTOGRAPH', title: 'SHOOT: THE LOT FROM THE AIR',
+    brief: 'Somebody wants proof the lot exists. Take the shot at the top of a kicker.',
+    start: { label: 'Ridgeline Road', pos: { x: 460, y: 200 }, heading: S },
     stages: [{
       verb: 'SHOOT FROM', mode: 'any', done: 'CAPTURED',
-      points: [{ id: 'depot', label: 'VENN DEPOT ROOF', pos: { x: 514, y: 265 }, radius: 13, minZ: 8 }],
+      points: [
+        { id: 'k1', label: 'WEST KICKER', pos: { x: 309, y: 215 }, radius: 6, air: 1.4 },
+        { id: 'k2', label: 'EAST KICKER', pos: { x: 391, y: 215 }, radius: 6, air: 1.4 },
+      ],
     }],
-    threat: 'Relay 12 perimeter', target: 50,
+    threat: 'None — until you are seen getting there', target: 45,
   },
   {
     id: 'job-07', number: 7, kind: 'EXTRACTION', title: 'LIFT: THE RELAY 12 DRIVE',
-    brief: 'Take the drive off the relay roof, then get it to the Channel. Lifting it is loud.',
+    brief: 'Take the drive off the loading apron, then get it to the Channel. Lifting it is loud.',
     start: { label: 'Ridgeline Road', pos: { x: 460, y: 200 }, heading: E },
     stages: [
       {
         verb: 'PICK UP', mode: 'any', done: 'DRIVE SECURED', alarm: 60,
-        points: [{ id: 'relay', label: 'RELAY 12 ROOF', pos: { x: 513, y: 218 }, radius: 12, minZ: 5.2 }],
+        points: [{ id: 'relay', label: 'LOADING APRON', pos: { x: 512, y: 244 }, radius: 6 }],
       },
       {
         verb: 'GET OUT TO', mode: 'any', done: 'EXTRACTED',
@@ -111,13 +118,19 @@ export const JOBS: JobDef[] = [
     threat: 'Drones, live', target: 105,
   },
   {
-    id: 'job-09', number: 9, kind: 'COURIER', title: 'GET TO: THE GYM ROOF',
-    brief: 'The highest roof in Bellhaven, from the far corner of town. Nothing is off limits.',
+    id: 'job-09', number: 9, kind: 'COURIER', title: 'BIG LINE: THE LOT, ALL OF IT',
+    brief: 'From the far corner of town: grind the lot\'s handrail, then air both kickers. Nothing is off limits.',
     start: { label: 'Northgate Lane West', pos: { x: 30, y: 60 }, heading: E },
-    stages: [{
-      verb: 'GET TO', mode: 'any', done: 'TOP OF THE TOWN',
-      points: [{ id: 'gym', label: 'GYMNASIUM ROOF', pos: { x: 335, y: 369 }, radius: 16, minZ: 11 }],
-    }],
+    stages: [
+      { verb: 'GRIND', mode: 'any', done: 'RAIL', points: [{ id: 'hand', label: 'LOT HANDRAIL', pos: { x: 327, y: 232 }, radius: 12, grind: true }] },
+      {
+        verb: 'AIR', mode: 'all', done: 'TOP OF THE TOWN',
+        points: [
+          { id: 'w', label: 'WEST KICKER', pos: { x: 309, y: 215 }, radius: 6, air: 1.2 },
+          { id: 'e', label: 'EAST KICKER', pos: { x: 391, y: 215 }, radius: 6, air: 1.2 },
+        ],
+      },
+    ],
     threat: 'Everything', target: 110,
   },
 ];

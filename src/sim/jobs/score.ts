@@ -1,7 +1,7 @@
 /**
  * How a run is scored: four numbers, each one a different way to be good.
  *
- *   STYLE     what the board did: tricks, grabs, launches, roofs, air — and
+ *   STYLE     what the board did: tricks, grabs, grinds, roofs, air — and
  *             above all chaining them. Every scoring move inside a few seconds
  *             of the last one raises the multiplier; touching down and rolling
  *             quietly for a while banks the chain; a bail loses whatever was
@@ -19,9 +19,9 @@ import { clamp01 } from '../../core/math';
 export const STYLE = {
   trick: 250,
   grab: 300,
-  /** A launch off the line, plus more for the charge it carried. */
-  launch: 200,
-  launchCharge: 600,
+  /** Locking onto a line, and then every second spent riding it. */
+  grind: 150,
+  grindPerSecond: 420,
   /** Setting a board down on a roof. */
   roof: 400,
   /** Per second of air, paid on landing, for air longer than `airFloor`. */
@@ -45,7 +45,9 @@ export interface StyleTally {
   sinceMove: number;
   /** Biggest chain banked, in points. */
   bestChain: number;
-  launches: number;
+  grinds: number;
+  /** Jumps long enough to be paid as air. */
+  airs: number;
   tricks: number;
   roofs: number;
   bails: number;
@@ -59,7 +61,7 @@ export interface StyleTally {
 export function makeTally(): StyleTally {
   return {
     banked: 0, pending: 0, multiplier: 1, sinceMove: 99, bestChain: 0,
-    launches: 0, tricks: 0, roofs: 0, bails: 0, flowTime: 0, totalTime: 0, airTime: 0,
+    grinds: 0, airs: 0, tricks: 0, roofs: 0, bails: 0, flowTime: 0, totalTime: 0, airTime: 0,
   };
 }
 
@@ -107,6 +109,7 @@ export function landed(t: StyleTally): number {
   const air = t.airTime;
   t.airTime = 0;
   if (air < STYLE.airFloor) return 0;
+  t.airs++;
   return scoreMove(t, STYLE.air * air);
 }
 
