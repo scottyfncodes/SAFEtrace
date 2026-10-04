@@ -227,7 +227,8 @@ export function buildBellhaven(): WorldData {
   b.ledge(pt(352, 106), pt(386, 106));
   b.ledge(pt(398, 78), pt(398, 104));
   b.stairs(pt(356, 120), 24, 9, 90, 1.1);
-  b.kicker(pt(356, 131), 14, 6, 90, 4.0);
+  // (A kicker used to sit at 356,131 — inside what became the cafe. It was
+  // never drawn, so nobody saw it go through the wall; now ramps are drawn.)
   /*
    * This used to sit at x=300, which reads as "against the library wall" but
    * is also exactly where the connector road down to Commons Way actually
@@ -592,6 +593,43 @@ export function buildBellhaven(): WorldData {
     height: 3, wall: '#D3CDBE', roof: '#8B7355', label: 'GROUNDS STORE',
   });
   b.prop('bench', pt(300, 296)); b.prop('bench', pt(400, 296));
+
+  // ------------------------------------------------------------ skate spots
+  /*
+   * The town as somewhere to skate. Every hard edge was already a ledge to
+   * somebody; this is the rest — rails where a planner would have put them
+   * anyway, ramps that read as ramps, and one lot that nobody modelled,
+   * because nobody expected anybody to be there.
+   */
+  b.in('commons');
+  // The plaza: a kicker straight onto a flat bar between the ledges.
+  b.ramp(pt(318.5, 84), 3, 3, 0, 0.75);
+  b.rail(pt(323, 84), pt(347, 84), 0.55);
+  b.prop('bench', pt(334, 98), 0);
+  b.prop('bench', pt(378, 98), 0);
+
+  /*
+   * THE LOT. A poured pad in the field between Commons Street and Ridgeline
+   * Road, with paths in from every side: two kickers facing each other down
+   * its length, a pair either side of the middle, flat bars, a handrail and
+   * a long ledge. Off the road graph and off the plan's modelled ground, so
+   * it is also the quietest hundred metres in Bellhaven.
+   */
+  b.in('ridgeline');
+  b.rectSurface(296, 182, 108, 66, 'smoothConcrete', 6);
+  b.rectSurface(346, 153, 8, 30, 'smoothConcrete', 6);
+  b.rectSurface(346, 247, 8, 26, 'smoothConcrete', 6);
+  b.rectSurface(233, 211, 64, 8, 'smoothConcrete', 6);
+  b.rectSurface(403, 211, 54, 8, 'smoothConcrete', 6);
+  b.ramp(pt(311, 215), 3.4, 4, 0, 1.15);
+  b.ramp(pt(389, 215), 3.4, 4, 180, 1.15);
+  b.ramp(pt(350, 241), 3.2, 4, 270, 1.0);
+  b.ramp(pt(350, 189), 3.2, 4, 90, 1.0);
+  b.rail(pt(318, 198), pt(340, 198), 0.5);
+  b.rail(pt(360, 232), pt(382, 232), 0.5);
+  b.rail(pt(318, 232), pt(336, 232), 0.95);
+  b.ledge(pt(362, 198), pt(386, 198), 1.2, 0.5);
+  b.rail(pt(335, 215), pt(365, 215), 0.6);
 
   // ---------------------------------------------------------------- routes
   const npcRoutes: Array<Array<{ x: number; y: number }>> = [

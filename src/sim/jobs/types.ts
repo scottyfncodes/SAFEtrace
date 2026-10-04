@@ -22,9 +22,13 @@ export interface JobPoint {
   radius: number;
   /**
    * Height the rider must be at or above: a roof. A point with `minZ` can
-   * only be done from up there, which is what makes it a sling-line job.
+   * only be done from up there.
    */
   minZ?: number;
+  /** Only counts while grinding: get on a line there. */
+  grind?: boolean;
+  /** Only counts while airborne at least this high: get some air there. */
+  air?: number;
   /**
    * A camera: done by putting it out of action — a stone in the lens or the
    * motor — or by riding past the foot of its pole and cutting its line.

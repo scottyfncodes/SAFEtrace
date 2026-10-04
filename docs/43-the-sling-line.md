@@ -1,5 +1,7 @@
 # 43 — The sling line
 
+> **Superseded by [45](45-grinds-ramps-and-the-lot.md).** After the first playtest the hook was removed: the city is skated with grinds and ramps instead. The roof surfaces and the above-the-lens camera rule from this pass remain.
+
 The reshape brief: UNDERWATCH is a skateboarding traversal game about a city
 that is watching you, and the slingshot is the mechanic that makes it
 distinct. The slingshot as built threw stones. It still does, exactly as

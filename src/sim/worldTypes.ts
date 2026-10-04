@@ -157,6 +157,11 @@ export interface SkateFeature {
   /** Speed granted at the lip for kickers/banks. */
   boost: number;
   district: string;
+  /**
+   * For anything that can be ground: the line along its top, end to end. A
+   * rail's bar, a ledge's arris. The height is `rise`.
+   */
+  line?: { a: Vec2; b: Vec2 };
 }
 
 export interface RoadNode { id: string; pos: Vec2; district: string; }

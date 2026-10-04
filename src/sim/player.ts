@@ -361,9 +361,7 @@ export interface PlayerState {
   /**
    * Extra speed over the cap, m/s. A rider keeping station on somebody is
    * allowed to be a little quicker than them, which is the whole of how a
-   * friend catches up without ever teleporting. For the player it is only
-   * ever what a sling line has flung them to, and it bleeds off once the
-   * wheels are down again (traversal/slingline.ts). Pushing never earns it.
+   * friend catches up without ever teleporting. Zero for the player.
    */
   capBoost: number;
   /**
@@ -374,6 +372,14 @@ export interface PlayerState {
   ground: number;
   /** Degrees added to how far off line a landing can be and still be ridden away. */
   landingBonusDeg: number;
+  /**
+   * How steeply the ground under the wheels was rising along the way the
+   * board is going, last tick: positive while riding up a ramp. Leaving the
+   * lip turns it into air.
+   */
+  rampClimb: number;
+  /** Multiplier on the pop off a ramp's lip (a perk can raise it). */
+  rampPop: number;
   lastSurface: string;
   /**
    * An ollie asked for slightly too early is remembered, not thrown away.
@@ -438,6 +444,8 @@ export function makePlayer(spawn: Vec2): PlayerState {
     capBoost: 0,
     ground: 0,
     landingBonusDeg: 0,
+    rampClimb: 0,
+    rampPop: 1,
     ollieBuffer: 0,
     pushBuffer: 0,
     lastSurface: 'asphalt',
@@ -489,7 +497,8 @@ function popNow(p: PlayerState, charge: number): void {
   p.poppedThisTick = true;
 }
 
-export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: number): void {
+/** The per-tick hooks the renderer and the sim read, cleared for a new tick. */
+export function beginTick(p: PlayerState): void {
   p.landedThisTick = false;
   p.bailedThisTick = false;
   p.pushedThisTick = false;
@@ -497,6 +506,10 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   p.slidThisTick = false;
   p.trickedThisTick = null;
   p.grabbedThisTick = null;
+}
+
+export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: number): void {
+  beginTick(p);
 
   if (p.stance === 'BAIL') {
     p.bailTimer -= dt;
@@ -754,11 +767,8 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
         const boost = feature.boost * alignment * dt * 3.2;
         p.vel.x += fdir.x * boost;
         p.vel.y += fdir.y * boost;
-        if (feature.kind === 'kicker' && speed > 5.5) {
-          p.vz = Math.max(p.vz, 2.4 + speed * 0.17);
-          p.z = Math.max(p.z, 0.001);
-          p.stance = 'AIR';
-        }
+        // A kicker is a real slope now (see integrate): the push up it is
+        // all this does, and the lip does the launching.
       }
     } else if (feature.kind === 'drop' && p.stance === 'ROLL') {
       p.vz = -0.2;
@@ -838,7 +848,9 @@ function integrate(p: PlayerState, world: World, dt: number): void {
   if (p.stance === 'AIR') {
     // Whatever is under the board now, judged from where it was: a roof
     // above the rider is not one they can land on.
-    const below = world.supportAt(p.pos, p.z);
+    let below = world.supportAt(p.pos, p.z);
+    const rampUnder = world.rampAt(p.pos);
+    if (rampUnder && rampUnder.height <= p.z + 0.1) below = Math.max(below, rampUnder.height);
     p.vz -= TUNE.gravity * dt;
     p.z += p.vz * dt;
     if (p.z <= below) {
@@ -900,12 +912,28 @@ function integrate(p: PlayerState, world: World, dt: number): void {
    * air and comes down where gravity says; anything else is put down.
    */
   if (p.stance !== 'AIR') {
-    const under = p.z > 0 ? world.supportAt(p.pos, p.z) : 0;
+    let under = p.z > 0 ? world.supportAt(p.pos, p.z) : 0;
+    /*
+     * Up a ramp. The surface is followed as long as it is a slope the wheels
+     * can climb (a step up of a kerb's height at most — riding into the side
+     * of a kicker is not riding up it). Leaving the lip, the climb the board
+     * had is turned into air: faster and steeper is higher.
+     */
+    const ramp = p.onBoard ? world.rampAt(p.pos) : null;
+    let climb = 0;
+    if (ramp && ramp.height <= p.z + 0.4 && ramp.height >= under) {
+      under = ramp.height;
+      const sp = len(p.vel);
+      if (sp > 0.1) climb = ramp.slope * dot(p.vel, fromAngle(ramp.facing)) / sp;
+    }
     p.ground = under;
-    if (p.z > under + 0.05) {
+    // Rolling down a slope is still rolling: only a real edge is a drop.
+    const edge = ramp && ramp.height === under ? 0.3 : 0.05;
+    if (p.z > under + edge) {
       if (p.onBoard && (p.stance === 'ROLL' || p.stance === 'SLIDE')) {
         p.stance = 'AIR';
-        p.vz = 0;
+        p.vz = p.rampClimb > 0.05 ? (len(p.vel) * p.rampClimb * RAMP.lift + RAMP.pop) * p.rampPop : 0;
+        if (p.vz > 0) p.poppedThisTick = true;
         if (p.ollieLoad >= 0) p.ollieLoad = -1;
       } else {
         p.z = under;
@@ -913,8 +941,16 @@ function integrate(p: PlayerState, world: World, dt: number): void {
     } else {
       p.z = under;
     }
+    p.rampClimb = climb;
   }
 }
+
+/**
+ * Off a lip: the slope's share of the speed, scaled up so that air is air
+ * at this game's snappy gravity, plus a fixed pop for committing to it. A
+ * three-metre kicker at full speed is a metre and a half over the lip.
+ */
+export const RAMP = { lift: 1.6, pop: 2.6 };
 
 function bail(p: PlayerState): void {
   p.stance = 'BAIL';

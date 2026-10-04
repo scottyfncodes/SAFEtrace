@@ -255,7 +255,7 @@ export class World {
    * What a rider at height `z` over `p` would be standing on: a flat roof's
    * height, or the street.
    *
-   * Roofs became somewhere to be when the sling line made them reachable. A
+   * Roofs are somewhere to be when something puts you on one. A
    * flat roof a board comes down onto is a surface like any other; a pitched
    * one is not (houses are for clearing, not landing on), and nothing lower
    * than a wall is a roof — ledges and kerbs stay what they always were.
@@ -269,6 +269,24 @@ export class World {
       if (pointInPoly(b.poly, p)) best = b.height;
     }
     return best;
+  }
+
+  /**
+   * A launch ramp under `p`: how high its surface is there, and how steep it
+   * is along the way it faces. The rider rides up the slope (the surface is
+   * real, not a trigger) and leaves the lip with whatever the slope gave them.
+   */
+  rampAt(p: Vec2): { height: number; slope: number; facing: number } | null {
+    for (const f of unique(this.featureHash.queryRadius(p, 0.1, this.scratch as SkateFeature[]))) {
+      if (f.kind !== 'kicker' || !pointInPoly(f.poly, p)) continue;
+      const fx = Math.cos(f.facing), fy = Math.sin(f.facing);
+      let lo = Infinity, hi = -Infinity;
+      for (const q of f.poly) { const d = q.x * fx + q.y * fy; lo = Math.min(lo, d); hi = Math.max(hi, d); }
+      const run = Math.max(0.5, hi - lo);
+      const t = Math.max(0, Math.min(1, (p.x * fx + p.y * fy - lo) / run));
+      return { height: f.rise * t, slope: f.rise / run, facing: f.facing };
+    }
+    return null;
   }
 
   featureAt(p: Vec2): SkateFeature | null {

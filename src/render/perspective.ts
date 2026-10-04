@@ -32,7 +32,6 @@ import { INK, Ink, brushOutline, hash01, inkAt, seedOf } from './ink';
 import { CITY_INK, PRINT, SIGNAL, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 import { Tone, tone } from './tone';
 import { POLE_H, poleLineFor } from '../sim/traversal/poleLine';
-import { MAST_RISE } from '../sim/traversal/anchors';
 
 
 /** Eye height of a teenager standing on a board. */
@@ -1550,6 +1549,53 @@ export class PerspectiveRenderer {
    * — on the verge outside the footway, or seven metres up — and none of it
    * is in the world data, so not one collision, sightline or forecast moves.
    */
+  /**
+   * The skateable town: kickers as real wedges you can see the lip of, and
+   * rails as a bar on posts. These were in the world data all along and were
+   * never drawn, so the ramps in Bellhaven were invisible.
+   */
+  private collectSkateFeatures(sim: Sim, cam: Cam, near: (p: Vec2, r: number) => boolean): void {
+    for (const f of sim.world.data.features) {
+      const c = f.poly[0];
+      if (!near(c, 110)) continue;
+      if (f.kind === 'kicker') {
+        const fx = Math.cos(f.facing), fy = Math.sin(f.facing);
+        let lo = Infinity, hi = -Infinity;
+        for (const q of f.poly) { const d = q.x * fx + q.y * fy; lo = Math.min(lo, d); hi = Math.max(hi, d); }
+        const zOf = (q: Vec2) => f.rise * Math.max(0, Math.min(1, ((q.x * fx + q.y * fy) - lo) / Math.max(0.5, hi - lo)));
+        const top = f.poly.map((q) => ({ x: q.x, y: q.y, z: zOf(q) + 0.01 }));
+        this.push(cam, top, RAMP_TOP);
+        const n = f.poly.length;
+        for (let i = 0; i < n; i++) {
+          const a = f.poly[i], b = f.poly[(i + 1) % n];
+          const za = zOf(a), zb = zOf(b);
+          if (za < 0.02 && zb < 0.02) continue;
+          this.push(cam, [{ x: a.x, y: a.y, z: 0 }, { x: b.x, y: b.y, z: 0 }, { x: b.x, y: b.y, z: zb }, { x: a.x, y: a.y, z: za }], RAMP_SIDE);
+        }
+        // The lip, picked out: a steel coping along the top edge.
+        const lip = f.poly.filter((q) => zOf(q) > f.rise - 0.02);
+        if (lip.length === 2) {
+          this.push(cam, [
+            { x: lip[0].x, y: lip[0].y, z: f.rise }, { x: lip[1].x, y: lip[1].y, z: f.rise },
+            { x: lip[1].x, y: lip[1].y, z: f.rise + 0.07 }, { x: lip[0].x, y: lip[0].y, z: f.rise + 0.07 },
+          ], PRINT.steel);
+        }
+      } else if (f.kind === 'rail' && f.line) {
+        const { a, b } = f.line;
+        const z = f.rise;
+        const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const rot = Math.atan2(b.y - a.y, b.x - a.x);
+        // The bar, a little proud, and posts every couple of metres.
+        this.boxAt(cam, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, rot, l, 0.07, z - 0.06, z, RAIL_STEEL);
+        const posts = Math.max(2, Math.round(l / 2.2) + 1);
+        for (let i = 0; i < posts; i++) {
+          const t = i / (posts - 1);
+          this.boxAt(cam, { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, rot, 0.06, 0.06, 0, z - 0.04, RAIL_STEEL);
+        }
+      }
+    }
+  }
+
   private collectStreetDressing(sim: Sim, cam: Cam): void {
     const sd = streetDressingFor(sim.world.data);
     const near = (p: Vec2, r: number) => Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y) < r;
@@ -1611,27 +1657,7 @@ export class PerspectiveRenderer {
       }
       if (p.can) this.boxAt(cam, { x: p.at.x + across.x * 0.34, y: p.at.y + across.y * 0.34 }, p.rot, 0.46, 0.46, POLE_H - 2.5, POLE_H - 1.3, PRINT.steel);
     }
-    /*
-     * Roof masts: a steel aerial on every flat roof tall enough to be worth
-     * getting onto, with a band of the player's colour at the hook point. A
-     * mast is the anchor that gets you up there, so it has to be findable
-     * from the street, and it is the one piece of the town painted in the
-     * colour that means "yours".
-     */
-    for (const a of sim.anchors) {
-      if (a.kind === 'lamp' && near(a.pos, 120)) {
-        // A light standard: a steel column and a head on a short arm.
-        this.boxAt(cam, a.pos, 0, 0.18, 0.18, 0, a.z + 0.2, PRINT.steel);
-        this.boxAt(cam, { x: a.pos.x + 0.45, y: a.pos.y }, 0, 1.1, 0.12, a.z + 0.1, a.z + 0.2, PRINT.steel);
-        this.boxAt(cam, { x: a.pos.x + 0.9, y: a.pos.y }, 0, 0.5, 0.28, a.z - 0.06, a.z + 0.1, shade(PRINT.steel, 0.25));
-        continue;
-      }
-      if (a.kind !== 'mast' || !near(a.pos, 140)) continue;
-      const base = a.z - MAST_RISE;
-      this.boxAt(cam, a.pos, 0, 0.16, 0.16, base, a.z + 0.5, PRINT.steel);
-      this.boxAt(cam, a.pos, 0, 1.4, 0.07, a.z - 0.2, a.z - 0.1, PRINT.steel);
-      this.boxAt(cam, a.pos, 0, 0.22, 0.22, a.z - 0.05, a.z + 0.18, VENEER.player);
-    }
+    this.collectSkateFeatures(sim, cam, near);
     const wasInking = this.inkAs;
     this.inkAs = null;
     for (const w of sd.wires) {
@@ -2872,6 +2898,12 @@ function dress(b: Building, sim: Sim): Dressing {
  * hue is the player's.
  */
 const POOL_LIGHT = '#F4F0E6';
+
+/** Ramps: smooth poured concrete, a shade warmer than the paving, so a lip reads. */
+const RAMP_TOP = '#C9C1AE';
+const RAMP_SIDE = '#8E887A';
+/** A rail is steel with a little paint left on it. */
+const RAIL_STEEL = '#3E4A52';
 
 /** A bird's outline, across and up from its perch: tail, back, head, beak, breast. */
 const BIRD: ReadonlyArray<readonly [number, number]> = [

@@ -18,12 +18,12 @@ export interface Intent {
   /** One press, one grab. Which grab — same as a trick — is not this layer's business. */
   grabPressed: boolean;
   /**
-   * The sling line: held, the band is hooked over an anchor and the rider is
-   * swung round it; let go, and they are flung. `hookPressed` is the frame it
-   * went down, so a press can be honoured a moment late (traversal/slingline.ts).
+   * GRIND: pressed on the ground it pops, pressed or held in the air it
+   * catches the line under the board (traversal/grinds.ts). `grindPressed`
+   * is the frame it went down, so a press can be honoured a moment late.
    */
-  hook: boolean;
-  hookPressed: boolean;
+  grind: boolean;
+  grindPressed: boolean;
   toggleStance: boolean;
   aim: boolean;
   fire: boolean;
@@ -82,7 +82,7 @@ export interface Intent {
 export const emptyIntent = (): Intent => ({
   steer: 0, push: false, pushPressed: false, brake: false,
   ollieHeld: false, olliePressed: false, ollieReleased: false, trickPressed: false,
-  grabPressed: false, hook: false, hookPressed: false,
+  grabPressed: false, grind: false, grindPressed: false,
   toggleStance: false, aim: false, fire: false, firePressed: false,
   planView: false, interact: false, interactPressed: false,
   pointer: { x: 0, y: 0 }, pointerActive: false,
@@ -105,8 +105,8 @@ export function mergeIntent(base: Intent, add: Intent): Intent {
   base.ollieReleased ||= add.ollieReleased;
   base.trickPressed ||= add.trickPressed;
   base.grabPressed ||= add.grabPressed;
-  base.hook ||= add.hook;
-  base.hookPressed ||= add.hookPressed;
+  base.grind ||= add.grind;
+  base.grindPressed ||= add.grindPressed;
   base.toggleStance ||= add.toggleStance;
   base.aim ||= add.aim;
   base.fire ||= add.fire;
@@ -148,8 +148,8 @@ const CODE = {
   ollie: ['Space'],
   trick: ['KeyR'],
   grab: ['KeyG'],
-  /** The sling line. Under the left hand, beside the board's own keys. */
-  hook: ['KeyC'],
+  /** Grind. Under the left hand, beside the board's own keys. */
+  grind: ['KeyC'],
   stance: ['ShiftLeft', 'ShiftRight'],
   planView: ['KeyQ'],
   interact: ['KeyE'],
@@ -171,7 +171,7 @@ export class InputManager {
   private planViewToggle = false;
   private planWasDown = false;
   private planHeldFrames = 0;
-  private hookWasDown = false;
+  private grindWasDown = false;
 
   /** The plan was closed from somewhere else (a menu, a scene, a thumb). */
   setPlanOpen(on: boolean): void { this.planViewToggle = on; }
@@ -296,9 +296,9 @@ export class InputManager {
     i.ollieReleased = this.any(CODE.ollie, this.released);
     i.trickPressed = this.any(CODE.trick, this.pressed);
     i.grabPressed = this.any(CODE.grab, this.pressed);
-    i.hook = this.any(CODE.hook, this.down) || gpBtn(5);
-    i.hookPressed = this.any(CODE.hook, this.pressed) || (gpBtn(5) && !this.hookWasDown);
-    this.hookWasDown = gpBtn(5);
+    i.grind = this.any(CODE.grind, this.down) || gpBtn(5);
+    i.grindPressed = this.any(CODE.grind, this.pressed) || (gpBtn(5) && !this.grindWasDown);
+    this.grindWasDown = gpBtn(5);
     i.toggleStance = this.any(CODE.stance, this.pressed) || gpBtn(3);
     i.interact = this.any(CODE.interact, this.down);
     i.interactPressed = this.any(CODE.interact, this.pressed);

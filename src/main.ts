@@ -97,6 +97,8 @@ class Game {
   private results!: JobResults;
   /** Seconds after a job is done before the result comes up: let the landing land. */
   private resultIn = -1;
+  /** Seconds to the next scrape while grinding. */
+  private scrapeIn = 0;
   private saveDue = 0;
   /** The pin the player put on the plan, and who and what they have met. */
   private waypoint: { x: number; y: number } | null = null;
@@ -128,7 +130,6 @@ class Game {
     // The world's contextual prompt names the thing the player will actually
     // do, on the device they are actually holding.
     this.renderer.interactVerb = this.touchPrimary ? 'TAP' : 'E';
-    this.renderer.hookKey = this.touchPrimary ? 'HOOK' : 'C';
     this.renderer.touchHints = this.touchPrimary;
     this.ad = new Advertisement(document.body, this.renderer, this.audio, this.touchPrimary);
     this.story = new StoryDirector({
@@ -403,7 +404,7 @@ class Game {
         });
         this.clearHeldInput();
         this.results.show(r.def, res, record, bests, JOBS.indexOf(r.def) < JOBS.length - 1, {
-          launches: r.tally.launches, tricks: r.tally.tricks, roofs: r.tally.roofs, bestChain: r.tally.bestChain,
+          grinds: r.tally.grinds, tricks: r.tally.tricks, airs: r.tally.airs, bestChain: r.tally.bestChain,
         }, PERKS.filter((p) => p.rep > repBefore && p.rep <= repOf(loadJobRecords())));
         this.audio.hackDone();
       }
@@ -635,7 +636,7 @@ class Game {
     this.closePlan();
     this.touch.setSlingOut(false);
     this.sim.exitAimMode();
-    this.sim.dropLine();
+    this.sim.dropGrind();
     this.sim.dismissFocus();
     this.touch.reset();
     this.touch.setAiming(false);
@@ -754,12 +755,9 @@ class Game {
     const bus = this.sim.bus;
     bus.on('player:push', () => this.audio.push());
     bus.on('player:pop', () => this.audio.pop());
-    // The sling line: the band catching, and the band letting go.
-    bus.on('line:hook', () => { this.audio.servo(); this.audio.hackTick(); this.renderer.kick(0.08); });
-    bus.on('line:release', ({ charge }) => {
-      this.audio.fire(0.35 + charge * 0.65);
-      this.renderer.kick(0.1 + charge * 0.25);
-    });
+    // Grinds: the trucks biting the rail, and letting go of it.
+    bus.on('player:grind', () => { this.audio.land(0.55); this.audio.impact('metal', 0.5, 1); this.renderer.kick(0.07); });
+    bus.on('player:grindEnd', () => this.audio.pop());
     bus.on('player:roof', ({ pos }) => this.renderer.ripple(pos, 0.5));
     bus.on('player:slide', ({ speed }) => this.audio.slide(Math.min(1, speed / 12)));
     bus.on('player:land', ({ speed }) => {
@@ -918,7 +916,12 @@ class Game {
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
     this.touch.setSlingAvailable(!this.sim.hack);
-    this.touch.setHookReady(!!this.sim.anchorTarget || !!this.sim.line);
+    this.touch.setGrindReady(!!this.sim.grindNear || !!this.sim.grind);
+    // The scrape of trucks on a rail, for as long as the board is on one.
+    if (this.sim.grind) {
+      this.scrapeIn -= dt;
+      if (this.scrapeIn <= 0) { this.scrapeIn = 0.2; this.audio.slide(Math.min(1, 0.35 + this.sim.grind.speed / 20)); }
+    } else this.scrapeIn = 0;
 
     if (this.sim.aimMode) {
       /*

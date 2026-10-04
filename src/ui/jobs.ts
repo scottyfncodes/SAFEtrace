@@ -266,7 +266,7 @@ export class JobHud {
         objective = `${st.verb}: ${left.map((p) => p.label).join(' · ')} <small>${st.points.length - left.length}/${st.points.length}</small>`;
       } else objective = `${st.verb}: ${next?.label ?? ''}`;
       objective = `<span class="jh-label">${objective}</span>`;
-      if (next) objective += ` <span class="jh-dist">${rel(next.pos)} ${Math.round(Math.hypot(next.pos.x - player.x, next.pos.y - player.y))} m${next.minZ !== undefined ? ' · ROOF' : ''}</span>`;
+      if (next) objective += ` <span class="jh-dist">${rel(next.pos)} ${Math.round(Math.hypot(next.pos.x - player.x, next.pos.y - player.y))} m${next.minZ !== undefined ? ' · ROOF' : next.grind ? ' · GRIND' : next.air !== undefined ? ' · AIR' : ''}</span>`;
       if (st.loseSignal && level !== 'TRACKED' && level !== 'UNDERWATCH') objective = `${st.verb} <span class="jh-dist">${JOB.run.lost}</span>`;
     }
     // Who is looking: what has you now, and what the chase has sent.
@@ -334,7 +334,7 @@ export class JobResults {
 
   show(
     def: JobDef, r: RunResult, rec: JobRecord, bests: string[], hasNext: boolean,
-    extra: { launches: number; tricks: number; roofs: number; bestChain: number }, unlocked: readonly PerkDef[] = [],
+    extra: { grinds: number; tricks: number; airs: number; bestChain: number }, unlocked: readonly PerkDef[] = [],
   ): void {
     this.open = true;
     this.hasNext = hasNext;
@@ -352,7 +352,7 @@ export class JobResults {
           <div><dt>Exposure</dt><dd>${pct(r.exposure)} ${best('exposure')}</dd></div>
           <div><dt>Flow</dt><dd>${pct(r.flow)} ${best('flow')}</dd></div>
         </dl>
-        <p class="jr-line">${extra.launches} launch${extra.launches === 1 ? '' : 'es'} · ${extra.tricks} trick${extra.tricks === 1 ? '' : 's'} · ${extra.roofs} roof${extra.roofs === 1 ? '' : 's'} · best chain ${num(extra.bestChain)}${r.escapes ? ` · ${r.escapes} signal${r.escapes === 1 ? '' : 's'} lost` : ''}</p>
+        <p class="jr-line">${extra.grinds} grind${extra.grinds === 1 ? '' : 's'} · ${extra.tricks} trick${extra.tricks === 1 ? '' : 's'} · ${extra.airs} air${extra.airs === 1 ? '' : 's'} · best chain ${num(extra.bestChain)}${r.escapes ? ` · ${r.escapes} signal${r.escapes === 1 ? '' : 's'} lost` : ''}</p>
         ${unlocked.map((p) => `<p class="jr-unlock"><span class="nb">NEW KIT</span> <b>${p.name}</b> — ${p.does}</p>`).join('')}
         <p class="jr-best-line">Best: <b class="g-${rec.grade}">${rec.grade}</b> ${num(rec.total)} · ${fmtTime(rec.time)} · seen ${pct(rec.exposure)} · run ${rec.runs}</p>
         <div class="brief-actions">

@@ -54,7 +54,7 @@ See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-g
 | `W` | push — hold it to keep pushing, or tap it in rhythm |
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
-| `C` (hold) | the sling line: hook the bracketed pole, camera, sign or roof mast, swing round it, let go to launch |
+| `C` | grind: on the ground it pops you onto the lit rail or ledge, in the air it catches it; ollie or trick off |
 | `R` | trick — which trick is the board's business, not yours |
 | `G` | grab — cycles through six, same reasoning as `R` |
 | `S` | brake / powerslide |
@@ -74,16 +74,17 @@ Nothing opens on its own. A node's panel appears because you pressed `E` — or,
 on a phone, because you tapped the thing itself — and never because you skated
 past it.
 
-**The sling line** is the slingshot the other way round: hook the band over
-an anchor and you are the stone. Hold to swing round it (the arc is the
-charge), let go to be flung, faster and higher the further round you went. A
-quarter-turn clears the pole you swung round. Masts on flat roofs reel you up
-the side of the building and set you down on top. Roofs are a surface, and a
-rider above a camera's mount is out of its picture. See
-[`docs/43-the-sling-line.md`](docs/43-the-sling-line.md).
+**Grinds and ramps.** Press `C` (or `GRIND` on a phone) near a rail, ledge,
+bench or the top of a Channel wall. On the ground it pops you onto the line;
+in the air it catches it. The line you're heading for is lit in your colour.
+You ride the line to its end, or ollie or `TRICK` off it. Kickers are real
+slopes: ride up them and leave the lip with air that grows with your speed.
+**The Lot**, a poured pad in the field between Commons Street and Ridgeline
+Road, has kickers, flat bars, a handrail and a ledge, with paths in from every
+side. See [`docs/45-grinds-ramps-and-the-lot.md`](docs/45-grinds-ramps-and-the-lot.md).
 
-A phone gets four buttons in the bottom-right: `SLING`, `TRICK`, `HOOK` and `PLAN`.
-Hold `HOOK` to swing round the bracketed anchor and let go to launch.
+A phone gets four buttons in the bottom-right: `SLING`, `TRICK`, `GRIND` and `PLAN`.
+`GRIND` pops you onto the lit rail, or catches it if you're already in the air.
 Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
 round. `SLING` takes the slingshot out — nothing else changes, you are still
 in the street and can keep skating — and then a pull back anywhere on the

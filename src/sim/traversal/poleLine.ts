@@ -3,8 +3,8 @@
  * street, about thirty metres apart, wired in runs.
  *
  * This used to live in the renderer as street dressing. It moved here when the
- * poles became something a rider can hook a sling line over: the pole you can
- * see has to be exactly the pole you can use, so both sides read one list.
+ * pole line became world data rather than decoration, so the simulation and
+ * the renderer read one list.
  * Deterministic from the world data alone, and computed once per town.
  */
 import { type Vec2, pointInPoly } from '../../core/math';

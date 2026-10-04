@@ -392,8 +392,40 @@ export class TownBuilder {
     this.features.push({
       id: this.id('FT'), kind: 'curb', poly, facing: Math.atan2(dy, dx),
       rise: height, boost: 0, district: this.currentDistrict,
+      line: { a: { ...a }, b: { ...b } },
     });
     return built;
+  }
+
+  /**
+   * A rail: a steel bar on posts, `height` off the ground. Grindable end to
+   * end and nothing else — it does not stop a board that rolls under or
+   * through it, because a city where every rail is a wall is a city nobody
+   * skates. A flat bar is a rail at knee height.
+   */
+  rail(a: Vec2, b: Vec2, height = 0.9): SkateFeature {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l * 0.12, ny = dx / l * 0.12;
+    const poly = [P(a.x + nx, a.y + ny), P(b.x + nx, b.y + ny), P(b.x - nx, b.y - ny), P(a.x - nx, a.y - ny)];
+    const f: SkateFeature = {
+      id: this.id('RL'), kind: 'rail', poly, facing: Math.atan2(dy, dx), rise: height, boost: 0,
+      district: this.currentDistrict, line: { a: { ...a }, b: { ...b } },
+    };
+    this.features.push(f);
+    return f;
+  }
+
+  /**
+   * A launch ramp: `len` metres up its slope, `width` across, rising to
+   * `rise` at the lip, facing the way you leave it (degrees). Unlike the old
+   * kicker helper this one is sized the way people build them: short, steep,
+   * and pointed at something worth jumping.
+   */
+  ramp(centre: Vec2, len: number, width: number, facing: number, rise = 1.1, boost = 3.0): SkateFeature {
+    const poly = rectPoly(centre, len, width, facing * DEG);
+    this.surface(poly, 'smoothConcrete', 5);
+    return this.feature('kicker', poly, facing, rise, boost);
   }
 
   /** A stair set with a run-out, plus the kicker beside it for the gap. */

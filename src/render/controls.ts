@@ -263,23 +263,24 @@ export class ControlsRenderer {
       return;
     }
 
-    if (id === 'hook') {
+    if (id === 'grind') {
       /*
-       * HOOK: a post, and the band thrown round it in a loop. The thing the
-       * control does is "swing round that", and a loop round a post says so
-       * before the word is read.
+       * GRIND: a rail on two posts, with a board riding it. What the button
+       * does is "get on that", and a board on a bar says so before the word
+       * is read.
        */
-      const top = y - s * 0.78, foot = y + s * 0.18;
+      const railY = y - s * 0.12;
       ctx.lineWidth = Math.max(1.6, r * 0.075);
       ctx.beginPath();
-      ctx.moveTo(x, foot); ctx.lineTo(x, top);
-      ctx.moveTo(x - s * 0.3, top + s * 0.14); ctx.lineTo(x + s * 0.3, top + s * 0.14);
+      ctx.moveTo(x - s * 0.8, railY); ctx.lineTo(x + s * 0.8, railY);
+      ctx.moveTo(x - s * 0.55, railY); ctx.lineTo(x - s * 0.55, railY + s * 0.42);
+      ctx.moveTo(x + s * 0.55, railY); ctx.lineTo(x + s * 0.55, railY + s * 0.42);
       ctx.stroke();
-      ctx.lineWidth = Math.max(1.2, r * 0.05);
+      ctx.lineWidth = Math.max(1.8, r * 0.085);
       ctx.beginPath();
-      ctx.ellipse(x, top + s * 0.38, s * 0.62, s * 0.2, 0, Math.PI * 0.15, Math.PI * 1.85);
+      ctx.moveTo(x - s * 0.5, railY - s * 0.22); ctx.lineTo(x + s * 0.5, railY - s * 0.22);
       ctx.stroke();
-      label('HOOK');
+      label('GRIND');
       return;
     }
 

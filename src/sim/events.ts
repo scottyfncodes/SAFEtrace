@@ -57,10 +57,10 @@ export interface SimEvents extends Record<string, unknown> {
   'person:struck': { targetId: string; pos: Vec2; witnesses: number; seen: boolean };
   'player:bail': { pos: Vec2 };
   'player:land': { pos: Vec2; speed: number };
-  /** The sling line caught an anchor. */
-  'line:hook': { anchorId: string; kind: string; pos: Vec2; z: number };
-  /** The rider let go of the line (or it let go of them) and was flung. */
-  'line:release': { anchorId: string; charge: number; speed: number; snapped: boolean; pos: Vec2 };
+  /** The board locked onto a rail, a ledge, a bench or a wall. */
+  'player:grind': { pos: Vec2; name: string; kind: string };
+  /** Off the line again, after this long on it. */
+  'player:grindEnd': { pos: Vec2; name: string; seconds: number };
   /** Came down on a roof: the town has a second floor now. */
   'player:roof': { pos: Vec2; height: number };
   'player:push': { pos: Vec2; speed: number };
