@@ -147,6 +147,23 @@ export const CLUES: ClueDef[] = [
     title: 'The staff camera',
     body: 'The office camera at Relay 12 runs on a different uplink. Staff are told, can object, and it is deleted after 30 days.',
   },
+  // ------------------------------------------------- second looks (optional)
+  // Found only by going back to a place once you know enough to see it.
+  {
+    id: 'c-gallery', thread: 'system', source: 'place', where: 'The Ridgeline gate sign',
+    title: 'Everyone at Ridgeline',
+    body: "The gallery is the whole school — 812, everyone enrolled, nobody opted out. On the sign, in biro: Kofi Mensah was brought in for a week last spring, and he still doesn't know what for.",
+  },
+  {
+    id: 'c-flyer', thread: 'system', source: 'place', where: 'The Commons noticeboard',
+    title: 'Last April',
+    body: "Under the leaflets, an older alert in the same layout as Devon's: PERSON OF INTEREST — COMMONS, last April. Someone scratched the face out. What's left of the name: '…ENSAH'.",
+  },
+  {
+    id: 'c-ledge', thread: 'system', source: 'place', where: 'The Channel, under the footbridge',
+    title: 'Down here all week',
+    body: "Scratched low on the wall under the footbridge: KOFI M, a date last April, and 'down here all week. the little light saw me.'",
+  },
   {
     id: 'c-record', thread: 'system', source: 'record', where: 'SVC-RECORD',
     title: "Devon's record",
@@ -204,6 +221,16 @@ export const DEDUCTIONS: DeductionDef[] = [
     id: 'd-object', thread: 'system', from: ['c-staff', 'c-record'],
     title: 'Who gets to object',
     body: "The people who work at Relay 12 can object to their own footage, and it's gone in thirty days. Devon can't object to his, and it's kept forever.",
+  },
+  {
+    id: 'd-any-of-us', thread: 'system', from: ['c-gallery', 'c-predict'],
+    title: 'It could have been any of us',
+    body: "Every kid at Ridgeline is in the gallery, and every one of us has somewhere we usually go. Devon's was his cousin's street. Mine is the Channel.",
+  },
+  {
+    id: 'd-before', thread: 'system', from: ['c-flyer', 'c-ledge'],
+    title: "It's happened before",
+    body: "Last April it was Kofi, on the Commons. He was down here, the apron camera saw him, and nobody read that either. Devon isn't a glitch. He's the second one I know about.",
   },
   {
     id: 'd-carriage', thread: 'system', from: ['c-mara', 'c-tx2'],
@@ -275,7 +302,84 @@ export const PLACES: Record<string, PlaceText> = {
   'p-devon-board': {
     text: "Devon's board, leaning against his front step. There's fresh grip tape on the nose, and he's written on it in marker: NOT A MATCH.",
   },
+  'p-noticeboard': {
+    text: "The community noticeboard. Piano lessons. A lost tortoise called Gerald. Over the top of all of it, newer than anything: a SAFEtrace CARE leaflet. 'See something? The app already has.'",
+  },
+  'p-ledge': {
+    text: 'Names scratched into the wall under the footbridge, years of them. Initials, dates, a board company logo, a very bad drawing of a dog.',
+  },
+  'p-doorbell': {
+    text: "A SAFEtrace HOME doorbell on the corner house. A small green light, and a sticker: 'This home is protected.' It's angled at the pavement, not the door.",
+  },
 };
+
+// ------------------------------------------------------------- second looks
+
+/**
+ * The same place, seen by somebody who knows more than they did.
+ *
+ * Nothing about the place changes. What changes is what the player can see in
+ * it, so each reading waits on something already in their notes — a clue or a
+ * connection — and replaces the plain text from then on. A place with several
+ * shows the last one whose condition is met. There is deliberately no count of
+ * these anywhere: the only sign one exists is a pencil tick on the plan, beside
+ * a place the player has already stood at.
+ */
+export interface SecondLook {
+  id: string;
+  place: string;
+  /** A clue or deduction id that has to be in the notes. */
+  needs: string;
+  text: string;
+  clue?: string;
+}
+
+export const SECOND_LOOKS: SecondLook[] = [
+  {
+    id: 'sl-enrol', place: 'p-enrol', needs: 'c-vision', clue: 'c-gallery',
+    text: "'All Ridgeline pupils are enrolled.' All of them. That's the 812. Under 'opt-out forms', in biro, small enough to miss: 'they had Kofi Mensah in for a week last spring. ask him what for. he doesn't know either.'",
+  },
+  {
+    id: 'sl-noticeboard', place: 'p-noticeboard', needs: 'c-alert', clue: 'c-flyer',
+    text: "You lift the CARE leaflet. Under it, sun-bleached, the same layout as the shelter screen: PERSON OF INTEREST — COMMONS. Last April. Somebody has scratched the face out with a key, carefully, like they were being kind. What's left of the name: '…ENSAH'.",
+  },
+  {
+    id: 'sl-ledge', place: 'p-ledge', needs: 'c-gallery', clue: 'c-ledge',
+    text: "You know the name now, so you find it. Low on the wall, scratched deep: KOFI M. Under it, the same hand, a date from last April, and: 'down here all week. the little light saw me.'",
+  },
+  {
+    id: 'sl-graffiti', place: 'p-graffiti', needs: 'd-alibi',
+    text: "SMILE — YOU'RE PREDICTED. And underneath: not down here. Except it was down here. The apron camera had the two of you at 04:39:52 the whole time. Nobody asked it.",
+  },
+  {
+    id: 'sl-devon-board', place: 'p-devon-board', needs: 'd-posterior',
+    text: "NOT A MATCH, in marker, on the nose of his board. Under it, smaller, like he came back and added it later: 61.",
+  },
+  {
+    id: 'sl-dropin', place: 'p-dropin', needs: 'c-review',
+    text: "'Meet Priya Venn, your Regional Operations lead. Your questions make us better.' P. Venn. The same name as the bottom of the threshold review. Five o'clock. You have a question.",
+  },
+  {
+    id: 'sl-alert', place: 'p-alert', needs: 'd-witness',
+    text: "Devon's school photo, on a loop. Posted 04:43. You watch it go round twice. Every phone on the Lane got this. Two minutes later, people were remembering a boy.",
+  },
+  {
+    id: 'sl-doorbell', place: 'p-doorbell', needs: 'd-nobody-called',
+    text: "The green light. 'This home is protected.' So was No. 14. If somebody picks up a parcel on this step while they're at work, the house will report it for them, and by the time they're home it will be true.",
+  },
+];
+
+/**
+ * What a place shows, given what the player knows: the base text, or the
+ * latest second look whose condition is met. `look` names the reading, if any.
+ */
+export function readingFor(place: string, has: (id: string) => boolean): PlaceText & { look?: string } {
+  let out: PlaceText & { look?: string } = PLACES[place] ?? { text: '' };
+  for (const sl of SECOND_LOOKS) {
+    if (sl.place === place && has(sl.needs)) out = { text: sl.text, clue: sl.clue, look: sl.id };
+  }
+  return out;
+}
 
 // ------------------------------------------------------------------ endings
 

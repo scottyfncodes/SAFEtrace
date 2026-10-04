@@ -58,12 +58,18 @@ export function authorCast(b: TownBuilder): void {
   // The drop-in, advertised from the first frame of play.
   b.sceneProp('sp-dropin', 'poster', pt(244, 130.3), { rot: 90, w: 1.4, z: 1.55, tint: '#2C8C8C', text: 'DROP-IN' });
   b.place('p-dropin', pt(244, 132.6), 'Poster', { reach: 2.8, sceneProp: 'sp-dropin' });
+  // The community centre's noticeboard: years of the town, one leaflet on top.
+  b.sceneProp('sp-noticeboard', 'notice', pt(264, 130.3), { rot: 90, w: 1.2, z: 1.4, tint: '#E9E2D2', text: 'NOTICES' });
+  b.place('p-noticeboard', pt(264, 132.6), 'Noticeboard', { reach: 2.8, sceneProp: 'sp-noticeboard' });
   b.person('priya', 'Priya Venn', 'SAFEtrace Regional Operations', pt(257, 134.2), 90, '#7C5A8E', { visible: false });
 
   // ------------------------------------------------------------------ channel
   b.in('channel');
   b.sceneProp('sp-graffiti', 'graffiti', pt(240, 425.2), { rot: 90, w: 6, z: 1.25, tint: '#D45A7A', text: "SMILE — YOU'RE PREDICTED" });
   b.place('p-graffiti', pt(240, 428.4), 'Wall', { reach: 3.6, sceneProp: 'sp-graffiti' });
+  // Under the footbridge, where everybody who has ever skated here has left a name.
+  b.sceneProp('sp-ledge', 'graffiti', pt(180, 425.2), { rot: 90, w: 3.2, z: 0.8, tint: '#9AA5AC', text: 'K.M. · J+S · 4EVA' });
+  b.place('p-ledge', pt(180, 428.4), 'Names', { reach: 3.2, sceneProp: 'sp-ledge' });
 
   // ---------------------------------------------------------------- ridgeline
   b.in('ridgeline');
@@ -72,6 +78,9 @@ export function authorCast(b: TownBuilder): void {
 
   // -------------------------------------------------------------------- maple
   b.in('maple');
+  // The corner house's doorbell, on the way out of the close.
+  b.sceneProp('sp-doorbell', 'screen', pt(128.3, 232), { rot: 0, w: 0.4, z: 1.3, tint: '#1D2A33' });
+  b.place('p-doorbell', pt(129.9, 232), 'Doorbell', { reach: 2.6, sceneProp: 'sp-doorbell' });
   b.sceneProp('sp-devon-board', 'board', pt(176.3, 266.6), { rot: 0, w: 0.9, tint: '#5FBF52', visible: false });
   b.place('p-devon-board', pt(175, 266.8), "Devon's board", { reach: 2.4, visible: false, sceneProp: 'sp-devon-board' });
 }

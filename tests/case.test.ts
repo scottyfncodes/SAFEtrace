@@ -6,7 +6,7 @@ import { dist } from '../src/core/math';
 import type { Sim } from '../src/sim/sim';
 import { Casefile, validateCase } from '../src/sim/casefile';
 import {
-  CASE, CASE_HOLDS, CLUES, DEDUCTIONS, ENDINGS, ENDING_ORDER, PLACES, RECORD_CLUES,
+  CASE, CASE_HOLDS, CLUES, DEDUCTIONS, ENDINGS, ENDING_ORDER, PLACES, RECORD_CLUES, SECOND_LOOKS,
   caseStrength, resolveEnding,
 } from '../src/content/case';
 import { PEOPLE_NAMES, chooseOption, openConversation, type TalkContext } from '../src/content/talk';
@@ -108,6 +108,15 @@ describe('the case, as authored', () => {
         };
         for (const l of openConversation(id, ctx).learn ?? []) reachable.add(l);
       }
+    }
+    // A second look is somewhere a player can go only once they know what it
+    // waits on, so it is followed as a chain: a reading whose condition is
+    // itself reachable (a clue, or a connection both halves of which are)
+    // makes its clue reachable too.
+    const knowable = (id: string) => reachable.has(id)
+      || DEDUCTIONS.some((d) => d.id === id && d.from.every((f) => reachable.has(f)));
+    for (let pass = 0; pass < SECOND_LOOKS.length; pass++) {
+      for (const sl of SECOND_LOOKS) if (sl.clue && knowable(sl.needs)) reachable.add(sl.clue);
     }
     for (const c of CLUES) expect(reachable.has(c.id), `${c.id} cannot be found`).toBe(true);
   });
