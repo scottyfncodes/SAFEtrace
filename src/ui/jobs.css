@@ -103,6 +103,7 @@
 
 /* ------------------------------------------------------------------- the run */
 #job-hud {
+  box-sizing: border-box;
   position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
   width: min(460px, calc(100vw - 40px));
   font-family: var(--font-mono); color: #EEF3F6;
@@ -129,6 +130,9 @@
 #job-hud .jh-bar i { display: block; height: 100%; background: #9FB0BD; transition: width 120ms linear, background 300ms; }
 #job-hud .jh-pct { color: #6F808D; font-size: 0.9em; }
 #job-hud .jh-chain { color: var(--own); font-weight: 600; }
+#job-hud .jh-mini-time { display: none; color: #9FB0BD; }
+#job-hud .jh-mini-time.over { color: var(--st-orange); }
+@media (max-width: 640px), (pointer: coarse) { #job-hud .jh-mini-time { display: inline; } }
 #job-hud .jh-watch { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; font-size: 0.92em; letter-spacing: 0.06em; }
 #job-hud .w { padding: 1px 6px; border-radius: 3px; background: rgba(255, 99, 38, 0.18); color: #FFB08F; }
 #job-hud .w-hunt { background: rgba(255, 74, 61, 0.12); color: #FF9A90; }
@@ -182,7 +186,30 @@
 #prefs .go.mode-jobs:hover { background: #FFD884; }
 
 @media (max-width: 640px), (pointer: coarse) {
-  #job-hud { top: calc(62px + var(--safe-top, 0px)); width: calc(100vw - 24px); padding: 6px 9px 7px; }
+  /*
+   * On a phone the run is a strip, not a panel: two short lines in the dead
+   * space between the Jobs chip and the pause button, level with them, so
+   * the street under it stays the street.
+   */
+  #job-hud {
+    box-sizing: border-box;
+    top: calc(10px + var(--safe-top, 0px));
+    left: calc(84px + var(--safe-left, 0px)); right: calc(64px + var(--safe-right, 0px));
+    width: auto; transform: none;
+    padding: 4px 8px 5px; border-radius: 6px;
+    font-size: calc(10px * var(--text-scale));
+    background: rgba(9, 14, 20, 0.58);
+  }
+  #job-hud .jh-top, #job-hud .jh-pct, #job-hud .jh-obj small { display: none; }
+  #job-hud .jh-obj { display: flex; align-items: baseline; margin: 0 0 3px; font-size: 1.1em; white-space: nowrap; }
+  #job-hud .jh-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #job-hud .jh-dist { flex: none; }
+  #job-hud .jh-exp { gap: 6px; white-space: nowrap; overflow: hidden; }
+  #job-hud .jh-bar { min-width: 28px; }
+  #job-hud .jh-level { min-width: 0; }
+  #job-hud .jh-watch { margin-top: 3px; flex-wrap: nowrap; overflow: hidden; gap: 6px; }
+  #job-hud .w { white-space: nowrap; }
+  #job-hud.quiet { background: rgba(9, 14, 20, 0.42); }
   .job-row { grid-template-columns: 54px 1fr auto; }
   .jr-kind { grid-row: auto; grid-column: 2; }
   .jr-title { grid-column: 2; }
@@ -194,7 +221,7 @@
 
 /* In a job on a phone, the control hint sits under the job panel, not on it. */
 @media (max-width: 640px), (pointer: coarse) {
-  html.jobs-mode #prompts { top: calc(var(--safe-top, 0px) + 172px); }
+  html.jobs-mode #prompts { top: calc(var(--safe-top, 0px) + 84px); }
 }
 
 /* The kit strip on the board: rep, and what it has opened. */

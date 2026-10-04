@@ -265,6 +265,7 @@ export class JobHud {
         const left = run.remaining();
         objective = `${st.verb}: ${left.map((p) => p.label).join(' · ')} <small>${st.points.length - left.length}/${st.points.length}</small>`;
       } else objective = `${st.verb}: ${next?.label ?? ''}`;
+      objective = `<span class="jh-label">${objective}</span>`;
       if (next) objective += ` <span class="jh-dist">${rel(next.pos)} ${Math.round(Math.hypot(next.pos.x - player.x, next.pos.y - player.y))} m${next.minZ !== undefined ? ' · ROOF' : ''}</span>`;
       if (st.loseSignal && level !== 'TRACKED' && level !== 'UNDERWATCH') objective = `${st.verb} <span class="jh-dist">${JOB.run.lost}</span>`;
     }
@@ -285,6 +286,7 @@ export class JobHud {
         <span class="jh-level">${JOB.level[level]}</span>
         <span class="jh-bar"><i style="width:${Math.round(e.value)}%"></i></span>
         <span class="jh-pct">${pct(exposureShare(e))} SEEN</span>
+        <span class="jh-mini-time${over ? ' over' : ''}">${fmtClock(run.elapsed)}</span>
         ${pending}
       </div>
       ${seenBy.length ? `<div class="jh-watch">${seenBy.join('')}</div>` : ''}`;
