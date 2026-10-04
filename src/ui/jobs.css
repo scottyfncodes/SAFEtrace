@@ -130,9 +130,17 @@
 #job-hud .jh-bar i { display: block; height: 100%; background: #9FB0BD; transition: width 120ms linear, background 300ms; }
 #job-hud .jh-pct { color: #6F808D; font-size: 0.9em; }
 #job-hud .jh-chain { color: var(--own); font-weight: 600; }
-#job-hud .jh-mini-time { display: none; color: #9FB0BD; }
+#job-hud .jh-mini-time, #job-hud .jh-obj-time { display: none; color: #9FB0BD; }
+#job-hud .jh-obj-time { flex: none; margin-left: 8px; font-weight: 400; font-size: 0.9em; }
+#job-hud .jh-obj-time.over { color: var(--st-orange); }
 #job-hud .jh-mini-time.over { color: var(--st-orange); }
-@media (max-width: 640px), (pointer: coarse) { #job-hud .jh-mini-time { display: inline; } }
+@media (max-width: 640px), (pointer: coarse) {
+  /* One line while nothing is looking: where, how far, how long. The
+     exposure row only arrives when something has you. */
+  #job-hud .jh-obj-time { display: inline; }
+  #job-hud.quiet .jh-exp { display: none; }
+  #job-hud.quiet .jh-obj { margin: 0; }
+}
 #job-hud .jh-watch { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; font-size: 0.92em; letter-spacing: 0.06em; }
 #job-hud .w { padding: 1px 6px; border-radius: 3px; background: rgba(255, 99, 38, 0.18); color: #FFB08F; }
 #job-hud .w-hunt { background: rgba(255, 74, 61, 0.12); color: #FF9A90; }
