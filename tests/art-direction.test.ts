@@ -1,15 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildBellhaven } from '../src/content/bellhaven';
-import { MACHINE, TECH, VENEER, weather } from '../src/render/palette';
-import { streetDressingFor, terminalFor } from '../src/render/perspective';
+import { markersFor, sightlinesFor, SIGHTLINE_MAX } from '../src/render/evidence';
+import { ADULT, DEVON, RIDER, castLook, officerLook, pose, residentLook, wearable, type Look } from '../src/render/characters';
+import { INK, Ink, brushOutline } from '../src/render/ink';
+import { MACHINE, PRINT, SIGNAL, SKY, TECH, VENEER, weather } from '../src/render/palette';
+import { MATERIAL, streetDressingFor, terminalFor } from '../src/render/perspective';
 import type { Vec2 } from '../src/core/math';
 
 /*
- * Near-future urban noir (docs/39), held to the few rules that make it
- * recognisable: the town is muted and the machine is not; the machine owns
- * three accents and the town owns none of them; and none of the dressing that
- * makes the town look lived-in is allowed to stand where anybody skates.
+ * The inked town (docs/40), held to the rules that make it recognisable and
+ * keep it readable: three colours mean something and the street may not
+ * borrow them; the ink has a hierarchy and a person tops it; the people can
+ * be told apart by outline before colour; the player's investigation is
+ * marked only where they have earned it; and none of the dressing that makes
+ * the town look drawn is allowed to stand where anybody skates.
  */
 
 function rgb(c: string): [number, number, number] {
@@ -21,67 +26,96 @@ function rgb(c: string): [number, number, number] {
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 }
 
-/** HSL saturation and lightness, 0..1. */
-function sl(c: string): { s: number; l: number } {
+/** Chroma (max − min channel) and lightness, 0..1, and hue in degrees. */
+function hcl(c: string): { h: number; chroma: number; l: number } {
   const [r, g, b] = rgb(c).map((v) => v / 255);
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const s = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
-  return { s, l };
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d > 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+  }
+  return { h: (h * 60 + 360) % 360, chroma: d, l: (max + min) / 2 };
 }
+const hueGap = (a: number, b: number) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 
-const TOWN = [
-  VENEER.asphalt, VENEER.smoothConcrete, VENEER.roughConcrete, VENEER.tile,
-  VENEER.grass, VENEER.gravel, VENEER.dirt, VENEER.water,
-  VENEER.wallWarm, VENEER.wallCool, VENEER.roofTerracotta, VENEER.roofSlate,
-  VENEER.tree, VENEER.treeLight,
+/** Every colour the street itself is printed in: no person, no signal. */
+const ENVIRONMENT: Array<[string, string]> = [
+  ...Object.entries(PRINT).filter(([, v]) => typeof v === 'string').map(([k, v]) => [`PRINT.${k}`, v] as [string, string]),
+  ...Object.entries(SKY).map(([k, v]) => [`SKY.${k}`, v] as [string, string]),
+  ...Object.entries(MATERIAL).flatMap(([k, vs]) => (vs ?? []).map((v, i) => [`MATERIAL.${k}[${i}]`, v] as [string, string])),
 ];
 
-describe('the town is muted and the machine is not', () => {
-  it('keeps every surface of the physical town desaturated', () => {
-    for (const c of TOWN) expect({ c, s: sl(c).s < 0.3 }).toEqual({ c, s: true });
+describe('three colours mean something, and the street may not borrow them', () => {
+  const SIGNALS = Object.entries(SIGNAL);
+
+  it('has an amber player, a cyan system and an orange warning', () => {
+    expect(hcl(SIGNAL.player).h).toBeGreaterThanOrEqual(35);
+    expect(hcl(SIGNAL.player).h).toBeLessThanOrEqual(52);
+    expect(hcl(SIGNAL.system).h).toBeGreaterThanOrEqual(175);
+    expect(hcl(SIGNAL.system).h).toBeLessThanOrEqual(200);
+    expect(hcl(SIGNAL.warning).h).toBeGreaterThanOrEqual(8);
+    expect(hcl(SIGNAL.warning).h).toBeLessThanOrEqual(28);
   });
 
-  it('keeps the town in the low-to-mid values, so it never reads as a pastel suburb', () => {
-    for (const c of TOWN) expect({ c, l: sl(c).l <= 0.45 }).toEqual({ c, l: true });
-  });
-
-  it('keeps the people brighter and stronger than the ground they stand on', () => {
-    // Darkening the town must make people pop more, never less.
-    const ground = [VENEER.asphalt, VENEER.smoothConcrete, VENEER.roughConcrete, VENEER.grass];
-    for (const who of [VENEER.player, VENEER.friend]) {
-      for (const g of ground) expect(sl(who).s - sl(g).s).toBeGreaterThan(0.3);
+  it('keeps the three far enough apart to read as three things', () => {
+    // Amber and warning orange were nine degrees apart in the noir pass.
+    for (const [a, ca] of SIGNALS) for (const [b, cb] of SIGNALS) {
+      if (a >= b) continue;
+      expect({ a, b, gap: hueGap(hcl(ca).h, hcl(cb).h) >= 22 }).toEqual({ a, b, gap: true });
     }
   });
 
-  it('gives SAFEtrace accents that are unmistakably saturated', () => {
-    for (const c of [TECH.cyan, TECH.acid, TECH.orange]) expect(sl(c).s).toBeGreaterThan(0.8);
+  it('makes each of them unmistakably saturated', () => {
+    for (const [k, c] of SIGNALS) expect({ k, strong: hcl(c).chroma > 0.6 }).toEqual({ k, strong: true });
+  });
+
+  it('routes every use of a meaning through the signal table', () => {
+    expect(VENEER.player).toBe(SIGNAL.player);
+    expect(VENEER.warning).toBe(SIGNAL.player);       // the flow ring and ripple are the player's
+    expect(VENEER.responding).toBe(SIGNAL.warning);   // an officer coming for you is a warning
+    expect(SIGNAL.system).toBe(TECH.cyan);
+    expect(SIGNAL.warning).toBe(TECH.orange);
+    expect(MACHINE.data).toBe(SIGNAL.system);
+    expect(MACHINE.riskMid).toBe(SIGNAL.warning);
+  });
+
+  it('prints the street in muted colour only', () => {
+    for (const [k, c] of ENVIRONMENT) expect({ k, muted: hcl(c).chroma < 0.25 }).toEqual({ k, muted: true });
+  });
+
+  it('never lets the street wear a signal\'s hue at any strength', () => {
+    // Paper is a warm off-white and may sit near amber's hue; what it may not
+    // do is carry amber's colour. Near a signal's hue, the street stays grey.
+    for (const [k, c] of ENVIRONMENT) {
+      const { h, chroma } = hcl(c);
+      for (const [sig, sc] of SIGNALS) {
+        if (hueGap(h, hcl(sc).h) >= 25) continue;
+        expect({ k, sig, quiet: chroma < 0.15 }).toEqual({ k, sig, quiet: true });
+      }
+    }
+  });
+
+  it('keeps the people stronger than the ground they stand on', () => {
+    const ground = [PRINT.road, PRINT.footway, PRINT.forecourt, PRINT.verge];
+    for (const who of [VENEER.player, VENEER.friend]) {
+      for (const g of ground) expect(hcl(who).chroma - hcl(g).chroma).toBeGreaterThan(0.3);
+    }
+  });
+
+  it('gives the street a value structure: black road, pale paper, skateable ground lighter than the verge', () => {
+    expect(hcl(PRINT.road).l).toBeLessThan(0.2);
+    expect(hcl(PRINT.paper).l).toBeGreaterThan(0.75);
+    expect(hcl(PRINT.ink).l).toBeLessThan(0.12);
+    for (const sk of [PRINT.footway, PRINT.forecourt, PRINT.tile]) expect(hcl(sk).l).toBeGreaterThan(hcl(PRINT.verge).l);
   });
 
   it('weathers authored paint down, never up', () => {
-    // The pastel walls Bellhaven was authored with, and a loud one.
     for (const c of ['#F0E3D0', '#DCE4E8', '#C4714E', '#5FBF52', '#E8563F']) {
-      const before = sl(c), after = sl(weather(c));
-      expect(after.s).toBeLessThan(before.s);
+      const before = hcl(c), after = hcl(weather(c));
+      expect(after.chroma).toBeLessThan(before.chroma);
       expect(after.l).toBeLessThanOrEqual(before.l + 0.02);
-    }
-  });
-
-  it('draws the machine only in its own accents', () => {
-    expect(MACHINE.data).toBe(TECH.cyan);
-    expect(MACHINE.confirm).toBe(TECH.acid);
-    expect(MACHINE.prediction).toBe(TECH.acid);
-    expect(MACHINE.riskLow).toBe(TECH.cyan);
-    expect(MACHINE.riskMid).toBe(TECH.orange);
-  });
-
-  it('lends none of its accents to the town or the player', () => {
-    // The flow ring, a stone's ripple and the ammo cache are the player's;
-    // a sign's lettering may be SAFEtrace's, and is its ink cyan, not the light.
-    const owned = new Set<string>([TECH.cyan, TECH.acid, TECH.orange].map((c) => c.toLowerCase()));
-    for (const [k, v] of Object.entries(VENEER)) {
-      if (k === 'accent') continue;
-      for (const c of Array.isArray(v) ? v : [v]) expect({ k, owned: owned.has(String(c).toLowerCase()) }).toEqual({ k, owned: false });
     }
   });
 
@@ -91,13 +125,164 @@ describe('the town is muted and the machine is not', () => {
     expect(css).toMatch(/html\.reduce-motion #inspect\.show::after\s*\{\s*animation:\s*none/);
   });
 
-  it('keeps the interface and the canvas on the same cyan', () => {
-    // A DOM panel and a world-space label for the same system must not be two
-    // slightly different products.
+  it('keeps the interface and the canvas on the same cyan and orange', () => {
     const css = readFileSync('src/ui/styles.css', 'utf8');
     expect(css).toMatch(new RegExp(`--st-teal-bright:\\s*${TECH.cyan}`, 'i'));
     expect(css).toMatch(new RegExp(`--st-acid:\\s*${TECH.acid}`, 'i'));
     expect(css).toMatch(new RegExp(`--st-orange:\\s*${TECH.orange}`, 'i'));
+  });
+});
+
+describe('the ink has a hierarchy, and a person tops it', () => {
+  const order = [Ink.Person, Ink.Interactable, Ink.Building, Ink.Furniture, Ink.Detail];
+
+  it('never out-inks a person', () => {
+    for (let i = 1; i < order.length; i++) {
+      const a = INK[order[i - 1]], b = INK[order[i]];
+      expect(a.width).toBeGreaterThanOrEqual(b.width);
+      expect(a.alpha).toBeGreaterThanOrEqual(b.alpha);
+      expect(a.breakAt).toBeGreaterThanOrEqual(b.breakAt);
+    }
+  });
+
+  it('never breaks up a person\'s line, however far away', () => {
+    expect(INK[Ink.Person].breakAt).toBeGreaterThan(400);
+  });
+
+  it('draws the same line every frame for the same thing', () => {
+    // Seeded from the thing, never the frame: a line that changes between
+    // two identical calls would boil on screen.
+    const record = () => {
+      const out: number[] = [];
+      const ctx = {
+        moveTo: (x: number, y: number) => out.push(x, y),
+        lineTo: (x: number, y: number) => out.push(x, y),
+        closePath: () => out.push(NaN),
+      } as unknown as CanvasRenderingContext2D;
+      brushOutline(ctx, [10, 90, 90, 10], [10, 10, 70, 70], 4, Ink.Building, 1.7, 0.7, 12345);
+      return out;
+    };
+    expect(record()).toEqual(record());
+    expect(record().length).toBeGreaterThan(0);
+  });
+});
+
+describe('people are told apart by outline first', () => {
+  const KINDS = ['adult', 'child', 'dogWalker', 'jogger'] as const;
+  const residents: Look[] = [];
+  for (let i = 0; i < 60; i++) for (const k of KINDS) residents.push(residentLook(`npc-${i}`, k, VENEER.civilian[i % VENEER.civilian.length], i % 9 === 0));
+  const cast = ['mara', 'priya', 'courier', 'carvalho', 'brennan'].map((id) => castLook(id, '#E6C229')!);
+  const everyoneButDevon = [...residents, ...cast, officerLook('o1'), RIDER];
+
+  it('gives Devon the one bucket hat in town, so he is Devon before he is green', () => {
+    expect(DEVON.hat).toBe('bucket');
+    for (const l of everyoneButDevon) expect(l.hat).not.toBe('bucket');
+  });
+
+  it('keeps the officer the broadest-shouldered figure on the street', () => {
+    const o = officerLook('o1');
+    for (const l of [...residents, ...cast, DEVON, RIDER]) {
+      expect(o.body.shoulder * o.body.scale).toBeGreaterThan(l.body.shoulder * l.body.scale);
+    }
+  });
+
+  it('draws a child as a child', () => {
+    const child = residentLook('kid', 'child', '#4F8E9E');
+    expect(child.body.scale).toBeLessThan(0.75);
+    // A child's head is bigger for their size than a grown-up's.
+    expect(child.body.headR).toBeGreaterThan(ADULT.headR);
+  });
+
+  it('dresses nobody but the rider in a signal\'s colour', () => {
+    expect(RIDER.top).toBe(SIGNAL.player);
+    for (const l of [...residents, ...cast, DEVON, officerLook('o1')]) {
+      for (const c of [l.top, l.bottom, l.hatColour]) {
+        const { h, chroma } = hcl(c);
+        for (const sig of [SIGNAL.player, SIGNAL.warning]) {
+          if (chroma < 0.28) continue;
+          expect({ c, near: hueGap(h, hcl(sig).h) < 18 }).toEqual({ c, near: false });
+        }
+      }
+    }
+  });
+
+  it('takes a colour off a signal\'s hue and leaves others alone', () => {
+    expect(wearable('#E6C229')).not.toBe('#E6C229');   // the courier's yellow, beside amber
+    expect(wearable('#B5523F')).not.toBe('#B5523F');   // a rust, beside warning orange
+    expect(wearable('#806FA0')).toBe('#806FA0');       // a violet, near nothing
+  });
+
+  it('gives Priya, and only Priya, the system\'s cyan, as a badge', () => {
+    expect(castLook('priya', '#7C5A8E')!.badge).toBe(SIGNAL.system);
+    for (const l of [...residents, DEVON, RIDER, officerLook('o1')]) expect(l.badge).toBeUndefined();
+  });
+});
+
+describe('people are posed, not posted', () => {
+  const at = { x: 0, y: 0 };
+
+  it('walks with alternating feet, and the knees bend forward', () => {
+    const a = pose({ at, facing: 0, gait: 'walk', phase: Math.PI / 2, body: ADULT });
+    const b = pose({ at, facing: 0, gait: 'walk', phase: (3 * Math.PI) / 2, body: ADULT });
+    expect(a.footL.x).toBeGreaterThan(a.footR.x);
+    expect(b.footR.x).toBeGreaterThan(b.footL.x);
+    for (const j of [a, b]) {
+      for (const [hip, knee, foot] of [[j.hipL, j.kneeL, j.footL], [j.hipR, j.kneeR, j.footR]]) {
+        // Facing +x: the knee sits ahead of the line from hip to foot.
+        const t = (knee.z - hip.z) / (foot.z - hip.z);
+        expect(knee.x).toBeGreaterThanOrEqual(hip.x + (foot.x - hip.x) * t - 1e-6);
+      }
+    }
+  });
+
+  it('stands on the ground, head over shoulders over hips', () => {
+    const j = pose({ at, facing: 1.1, gait: 'stand', phase: 0, body: ADULT, seed: 3 });
+    expect(Math.max(j.footL.z, j.footR.z)).toBeLessThan(0.01);
+    expect(j.head.z).toBeGreaterThan(j.chest.z);
+    expect(j.chest.z).toBeGreaterThan(j.pelvis.z);
+  });
+
+  it('stands across a board to ride it, looking down it', () => {
+    // Facing +y means riding along +x: the feet are spread along the board.
+    const j = pose({ at, facing: Math.PI / 2, gait: 'ride', phase: 0, body: ADULT });
+    expect(Math.abs(j.footL.x - j.footR.x)).toBeGreaterThan(0.5);
+    expect(Math.abs(j.footL.y - j.footR.y)).toBeLessThan(0.05);
+    expect(Math.cos(j.look!)).toBeCloseTo(1, 5);
+  });
+
+  it('holds out a flat hand to stop you, and reaches for the radio when responding', () => {
+    const stop = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT, gesture: 'stop' });
+    const radio = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT, gesture: 'radio' });
+    const rest = pose({ at, facing: 0, gait: 'stand', phase: 0, body: ADULT });
+    expect(stop.handR.z).toBeGreaterThan(rest.handR.z + 0.4);
+    expect(stop.handR.x).toBeGreaterThan(rest.handR.x + 0.3);
+    expect(radio.handL.z).toBeGreaterThan(rest.handL.z + 0.4);
+  });
+});
+
+describe('the street marks only what the player has earned', () => {
+  const places = [
+    { id: 'a', pos: { x: 0, y: 0 }, visible: true },
+    { id: 'b', pos: { x: 10, y: 0 }, visible: false },
+    { id: 'c', pos: { x: 20, y: 0 }, visible: true },
+  ];
+
+  it('numbers markers in the order things were found, and only those', () => {
+    expect(markersFor(places, [], new Set())).toEqual([]);
+    const m = markersFor(places, ['c', 'b', 'a'], new Set(['a']));
+    // b is found but has nothing to stand beside now; its number is kept.
+    expect(m.map((x) => [x.id, x.n, x.again])).toEqual([['c', 1, false], ['a', 3, true]]);
+  });
+
+  it('rules a sightline only in front of a camera the player has noticed', () => {
+    const sensors = [
+      { id: 's1', pos: { x: 0, y: 0 }, facing: 0, range: 100 },
+      { id: 's2', pos: { x: 5, y: 5 }, facing: Math.PI / 2, range: 20 },
+    ];
+    expect(sightlinesFor(sensors, new Set())).toEqual([]);
+    const sl = sightlinesFor(sensors, new Set(['s1']));
+    expect(sl).toHaveLength(1);
+    expect(Math.hypot(sl[0].to.x - sl[0].from.x, sl[0].to.y - sl[0].from.y)).toBeLessThanOrEqual(SIGHTLINE_MAX);
   });
 });
 
@@ -174,9 +359,26 @@ describe('the dressing stays out of the way', () => {
     for (const w of dressing.wires) expect(w.z - w.sag).toBeGreaterThan(5);
   });
 
+  it('grows grass only on grass', () => {
+    const top = (q: Vec2) => {
+      let best: typeof world.surfaces[number] | null = null;
+      for (const sf of world.surfaces) if (inside(q, sf.poly) && (!best || sf.priority >= best.priority)) best = sf;
+      return best?.kind;
+    };
+    expect(dressing.tufts.length).toBeGreaterThan(100);
+    expect(dressing.hatch.length).toBeGreaterThan(500);
+    for (const t of dressing.tufts) expect({ at: t.at, on: top(t.at) }).toEqual({ at: t.at, on: 'grass' });
+    for (const g of dressing.hatch) {
+      const mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 };
+      expect({ mid, on: top(mid) }).toEqual({ mid, on: 'grass' });
+    }
+  });
+
   it('is the same town every time', () => {
     const again = streetDressingFor(buildBellhaven());
     expect(again.poles).toEqual(dressing.poles);
     expect(again.signs).toEqual(dressing.signs);
+    expect(again.tufts).toEqual(dressing.tufts);
+    expect(again.hatch).toEqual(dressing.hatch);
   });
 });

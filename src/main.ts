@@ -1058,7 +1058,10 @@ class Game {
 const canvas = document.getElementById('game') as HTMLCanvasElement | null;
 const ui = document.getElementById('ui');
 if (canvas && ui) {
-  new Game(canvas, ui);
+  const game = new Game(canvas, ui);
+  // A handle for the screenshot harness (scripts/shots.mjs). Dev builds only:
+  // Vite strips the branch from production, so no player ever has it.
+  if (import.meta.env.DEV) (window as unknown as { __safetrace: unknown }).__safetrace = game;
 } else {
   console.error('SAFETRACE: missing #game canvas or #ui root');
 }

@@ -1,5 +1,10 @@
 # 39 — Near-Future Urban Noir
 
+> **Superseded in part by [40 — The Inked Town](40-the-inked-town.md)** for
+> the street view: the palette and noir correction (§3, §4), and characters
+> (§6). The rules for SAFEtrace hardware, the record UI and where dressing may
+> stand are unchanged.
+
 The visual identity, restated. This supersedes the palette and mood sections of
 [10 — Art Direction](10-art-direction.md) (§3 light, §4 palette, §6
 characters) and the accent colour in [11 — Brand & UI](11-brand-and-ui.md) §1.

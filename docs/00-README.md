@@ -44,6 +44,7 @@ before implementation and is the authority for what the game is trying to be.
 | 37 | [The Feel Pass](37-the-feel-pass.md) | Three buttons instead of four, a camera with room to see, a plan you use to get somewhere, a score you find, and a slingshot with weight |
 | 38 | [Stealth, Manipulation, and Escalation](38-stealth-manipulation-and-escalation.md) | A town that remembers where trouble happened, a board that makes noise, a plan that shows what a stone would turn, and sabotage that solves one problem by creating the next |
 | 39 | [Near-Future Urban Noir](39-near-future-urban-noir.md) | The visual identity restated: a muted, worn town, a system that owns three exact accents and looks trustworthy, inked people, and wire overhead |
+| 40 | [The Inked Town](40-the-inked-town.md) | First original art pass on the street view: ink on paper, a line hierarchy, screentone, silhouette figures, three sacred signals, and the player's investigation drawn into the street in amber pencil |
 
 ## The one-sentence pitch
 
