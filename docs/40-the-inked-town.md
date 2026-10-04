@@ -1,5 +1,7 @@
 # 40 — The Inked Town
 
+> **Extended by [41 — The Mood of the Town](41-the-mood-of-the-town.md):** the page, sky, windows, shadows and street dressing described here are the *ordinary* state; 41 makes them answer the system's control.
+
 The visual identity, first original pass. This supersedes the palette, light
 and character sections of [39 — Near-Future Urban Noir](39-near-future-urban-noir.md)
 (§3, §4 "noir correction", §6) for the **street view** — the chase camera and

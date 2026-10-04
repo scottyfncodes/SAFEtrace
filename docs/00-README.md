@@ -45,6 +45,7 @@ before implementation and is the authority for what the game is trying to be.
 | 38 | [Stealth, Manipulation, and Escalation](38-stealth-manipulation-and-escalation.md) | A town that remembers where trouble happened, a board that makes noise, a plan that shows what a stone would turn, and sabotage that solves one problem by creating the next |
 | 39 | [Near-Future Urban Noir](39-near-future-urban-noir.md) | The visual identity restated: a muted, worn town, a system that owns three exact accents and looks trustworthy, inked people, and wire overhead |
 | 40 | [The Inked Town](40-the-inked-town.md) | First original art pass on the street view: ink on paper, a line hierarchy, screentone, silhouette figures, three sacred signals, and the player's investigation drawn into the street in amber pencil |
+| 41 | [The Mood of the Town](41-the-mood-of-the-town.md) | The picture answers the game: the system's grip darkens the town, sabotage and uncovering light it; plus porches, drainpipes, aerials, birds and chalk |
 
 ## The one-sentence pitch
 

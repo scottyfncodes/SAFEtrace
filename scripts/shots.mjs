@@ -26,7 +26,7 @@ const url = process.env.SHOT_URL ?? 'http://localhost:5173/';
 mkdirSync(out, { recursive: true });
 
 /* The slice: Maple Court down to Devon, plus a corner with a cabinet. */
-const SHOTS = [
+const SHOTS = process.env.SHOT_ONLY ? [{ name: 'maple-doorbell', pos: { x: 158, y: 236 }, heading: Math.PI - 0.1 }, { name: 'officer', near: 'patrol' }] : [
   { name: 'maple-start', pos: { x: 158, y: 214 }, heading: Math.PI / 2 },
   { name: 'maple-devon', pos: { x: 158, y: 262 }, heading: Math.PI / 2 },
   { name: 'maple-doorbell', pos: { x: 158, y: 236 }, heading: Math.PI - 0.1 },
@@ -74,6 +74,12 @@ for (const vp of VIEWPORTS) {
       for (const id of ['p-dropin', 'p-doorbell', 'p-noticeboard']) g.seenPlaces.add(id);
       for (const s of g.sim.sensors) if (d(s.data.pos) < 60) g.sim.knownSensors.add(s.data.id);
     });
+  }
+  // Pin the town's mood for the shot (docs/41): SHOT_MOOD=-1..1.
+  if (process.env.SHOT_MOOD !== undefined) {
+    const m = Number(process.env.SHOT_MOOD);
+    await page.evaluate((m) => { const r = window.__safetrace.renderer; r.moodOverride = m; }, m);
+    await page.waitForTimeout(6000);
   }
   for (const s of SHOTS) {
     await page.evaluate((s) => {
