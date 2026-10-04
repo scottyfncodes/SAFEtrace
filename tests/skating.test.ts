@@ -250,3 +250,93 @@ describe('the brake is a powerslide', () => {
     expect(offOf(sim)).toBeLessThan(0.1);
   });
 });
+
+describe('Devon rides the same board', () => {
+  const ROAD = { x: 300, y: 150 };
+  const follow = (sim: ReturnType<typeof makeSim>, seconds: number, steer = 0) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) {
+      const it = emptyIntent();
+      it.push = true; it.pushPressed = true; it.steer = steer;
+      sim.step(TICK_DT, it, null);
+    }
+  };
+  const start = () => {
+    const sim = makeSim();
+    place(sim, ROAD);
+    sim.player.heading = 0;
+    sim.devonPos = { x: ROAD.x - 5, y: ROAD.y + 2.6 };
+    sim.meetDevon();
+    return sim;
+  };
+
+  it('pushes, with a stride, rather than sliding along at a computed speed', () => {
+    const sim = start();
+    let strides = 0, lastPhase = 0;
+    for (let i = 0; i < 60 * 6; i++) {
+      const it = emptyIntent();
+      it.push = true; it.pushPressed = true;
+      sim.step(TICK_DT, it, null);
+      const ph = sim.devonRider.pushPhase;
+      if (ph > 0 && lastPhase === 0) strides++;
+      lastPhase = ph;
+    }
+    expect(strides).toBeGreaterThan(4);
+    expect(sim.devon.speed).toBeGreaterThan(4);
+    expect(sim.devonRider.stance).not.toBe('BAIL');
+  });
+
+  it('keeps station off the shoulder, and keeps up', () => {
+    const sim = start();
+    follow(sim, 8);
+    const h = sim.player.heading;
+    const rel = { x: sim.devonPos.x - sim.player.pos.x, y: sim.devonPos.y - sim.player.pos.y };
+    const behind = -(rel.x * Math.cos(h) + rel.y * Math.sin(h));
+    const lateral = -rel.x * Math.sin(h) + rel.y * Math.cos(h);
+    expect(behind).toBeGreaterThan(3);
+    expect(behind).toBeLessThan(12);
+    expect(lateral).toBeGreaterThan(1.5);
+    expect(sim.devon.speed).toBeGreaterThan(sim.player.speed * 0.7);
+  });
+
+  it('leans into a carve the way the player does', () => {
+    const sim = start();
+    follow(sim, 3);
+    let peak = 0;
+    for (let i = 0; i < 60 * 2; i++) {
+      const it = emptyIntent();
+      it.push = true; it.pushPressed = true; it.steer = -1;
+      sim.step(TICK_DT, it, null);
+      peak = Math.max(peak, Math.abs(sim.devonRider.lean));
+    }
+    expect(peak).toBeGreaterThan(0.15);
+  });
+
+  it('stands still when the player does, and is exactly where he was left', () => {
+    const sim = start();
+    for (let i = 0; i < 60 * 3; i++) sim.step(TICK_DT, emptyIntent(), null);
+    const at = { ...sim.devonPos };
+    expect(sim.devon.speed).toBe(0);
+    expect(sim.devonRider.pushTimer).toBe(0);
+    for (let i = 0; i < 60 * 3; i++) sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.devonPos.x).toBe(at.x);
+    expect(sim.devonPos.y).toBe(at.y);
+  });
+
+  it('goes where the story puts him, board and all', () => {
+    const sim = start();
+    follow(sim, 3);
+    expect(sim.devon.speed).toBeGreaterThan(1);
+    sim.devonPos = { x: 191, y: 426 };
+    sim.step(TICK_DT, emptyIntent(), null);
+    expect(sim.devonRider.pos.x).toBeCloseTo(191, 3);
+    expect(sim.devonRider.pos.y).toBeCloseTo(426, 3);
+    expect(sim.devonRider.speed).toBeLessThan(0.5);
+  });
+
+  it('is a little quicker than the player only while he is behind', () => {
+    const sim = start();
+    follow(sim, 0.5);
+    expect(sim.devonRider.capBoost).toBeGreaterThanOrEqual(0);
+    expect(sim.player.capBoost).toBe(0);
+  });
+});

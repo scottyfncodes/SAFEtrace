@@ -7,9 +7,9 @@
  * which is the entire game.
  */
 import { EventBus } from '../core/events';
-import type { Intent } from '../core/input';
+import { emptyIntent, type Intent } from '../core/input';
 import {
-  type Vec2, angleOf, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds,
+  type Vec2, angleOf, clamp, clamp01, dist, fromAngle, norm, pointInPoly, polyBounds,
 } from '../core/math';
 import { Rng, hashString } from '../core/rng';
 import { World } from './world';
@@ -144,6 +144,19 @@ export class Sim {
   devon: Subject;
   devonTrack: Track;
   devonPos: Vec2;
+  /**
+   * Devon on his board: the same simulation as the player's, down to the
+   * constant. He used to be a point that slid toward a station behind the
+   * player at a computed speed, with a board drawn under it — so he never
+   * pushed, never leaned, never slid, and could turn on the spot at full
+   * pace. Now a small follower writes an `Intent` for him every tick and the
+   * one skating model does the rest. `devonPos` stays the public position:
+   * the story and the save file move him by writing it, and the rider is
+   * put wherever it says.
+   */
+  devonRider: PlayerState;
+  /** Seconds until Devon copies a pop the player just did. Negative: nothing to copy. */
+  private devonMimic = -1;
   /**
    * Whether Devon is currently keeping pace with the player.
    *
@@ -340,6 +353,7 @@ export class Sim {
     this.playerTrack = makeTrack(this.playerSubject);
 
     this.devonPos = { ...worldData.spawns.devon };
+    this.devonRider = makePlayer(worldData.spawns.devon);
     this.devon = {
       id: 'SUBJ-2210',
       kind: 'friend',
@@ -713,64 +727,121 @@ export class Sim {
   }
 
   private updateDevon(dt: number): void {
+    const r = this.devonRider;
+    // Somebody else moved him — the story sending him home, a save being
+    // restored, a test — so the board goes where he went, and stops.
+    if (r.pos.x !== this.devonPos.x || r.pos.y !== this.devonPos.y) {
+      r.pos = { ...this.devonPos };
+      r.vel = { x: 0, y: 0 };
+      r.speed = 0;
+      r.turnRate = 0;
+      r.lean = 0;
+      r.slip = 0;
+      r.stance = 'ROLL';
+      r.z = 0;
+      r.vz = 0;
+      r.trick = null;
+      r.grab = null;
+    }
     if (!this.devonVisible) {
       this.devon.vel = { x: 0, y: 0 };
       this.devon.speed = 0;
       return;
     }
     if (this.devonStopped || !this.devonFollowing) {
+      r.vel = { x: 0, y: 0 };
+      r.speed = 0;
       this.devon.vel = { x: 0, y: 0 };
       this.devon.speed = 0;
       this.devon.pos = { ...this.devonPos };
       return;
     }
-    /*
-     * Devon skates a few metres behind, badly — and off to one side.
-     *
-     * Straight behind was exactly where the chase camera looks from, so for
-     * the whole of the time he was following, the boy stood on the line from
-     * the lens to the player and covered them. Off the shoulder is also
-     * simply where a mate rides: next to you and a bit back, not in your
-     * slipstream.
-     */
-    const back = this.devonClosing ? 1.6 : 4.8, side = this.devonClosing ? 2.0 : 2.6;
-    const hx = Math.cos(this.player.heading), hy = Math.sin(this.player.heading);
-    const target = {
-      x: this.player.pos.x - hx * back - hy * side,
-      y: this.player.pos.y - hy * back + hx * side,
-    };
-    const d = dist(this.devonPos, target);
-    /*
-     * A friend who is going nowhere stands still.
-     *
-     * The closing speed used to carry a flat `+ 1.2` floor, so Devon moved at
-     * walking pace at a player who was not moving at all — and because his
-     * station is a point 5.5 m *behind* them, the straight line to it goes
-     * past their shoulder. Measured over the opening advertisement, where the
-     * player is frozen by definition: he closed 11.3 m to **2.8 m**, then
-     * settled at 5.2 m and held it. Somebody crossing eight metres of grass to
-     * stand three metres off your back while you cannot move is not what
-     * waiting for your mate looks like. It is the single most tail-like thing
-     * in the build, it is the first thing that happens, and it is very
-     * probably what three passes of "the cop is hunting me immediately" were
-     * actually looking at — the renderer pass fixed how he is drawn without
-     * touching what he does.
-     *
-     * The floor now scales with the player instead of being constant, so it is
-     * unchanged at any speed anybody skates at and goes to zero when they
-     * stop. Stand still, and Devon stands still too.
-     */
-    // Coming over to you is the one time he moves at somebody who is standing still.
-    const floor = this.devonClosing ? 4.5 : Math.min(1.2, this.player.speed);
-    const speed = Math.min(this.player.speed * 1.05 + floor, Math.max(0, d) * 2.2);
-    if (d > 0.4) {
-      const dir = norm({ x: target.x - this.devonPos.x, y: target.y - this.devonPos.y });
-      const to = { x: this.devonPos.x + dir.x * speed * dt, y: this.devonPos.y + dir.y * speed * dt };
-      this.devonPos = this.world.resolveCollision(this.devonPos, to, 0.4);
-    }
-    this.devon.vel = { x: (this.devonPos.x - this.devon.pos.x) / dt, y: (this.devonPos.y - this.devon.pos.y) / dt };
-    this.devon.speed = Math.hypot(this.devon.vel.x, this.devon.vel.y);
+
+    if (this.player.poppedThisTick && this.devonMimic < 0 && r.speed > 4) this.devonMimic = 0.45;
+    updatePlayer(r, this.devonIntent(dt), this.world, dt);
+    this.devonPos = r.pos;
+    this.devon.vel = { x: r.vel.x, y: r.vel.y };
+    this.devon.speed = r.speed;
     this.devon.pos = { ...this.devonPos };
+  }
+
+  /**
+   * What Devon's thumbs would be doing.
+   *
+   * He skates a few metres behind, off to one side — straight behind was
+   * exactly where the chase camera looks from, so for the whole of the time
+   * he was following he stood on the line from the lens to the player and
+   * covered them; off the shoulder is also simply where a mate rides. The
+   * follower aims the board at that station, pushes when he is slower than
+   * he needs to be, lets the board run when he is quicker, and only puts a
+   * foot down to slide when he is well over pace. A friend who is going
+   * nowhere stands still: a player who is not moving gets no pushes at all,
+   * so nothing about this closes on somebody frozen in the opening
+   * advertisement. Coming over to the player (`devonClosing`) is the one
+   * time he moves at somebody who is standing still.
+   */
+  private devonIntent(dt: number): Intent {
+    const r = this.devonRider;
+    const p = this.player;
+    const it = emptyIntent();
+    const closing = this.devonClosing;
+    const back = closing ? 1.6 : 4.8, side = closing ? 2.0 : 2.6;
+    const hx = Math.cos(p.heading), hy = Math.sin(p.heading);
+    // Where he is in the player's frame: how far behind, how far across.
+    const relX = r.pos.x - p.pos.x, relY = r.pos.y - p.pos.y;
+    const behind = -(relX * hx + relY * hy);
+    /*
+     * Aim at the lateral offset first and the station second: when he is a
+     * long way back the point to steer for is beside the player's line at
+     * his own distance, not the station itself, so he rides parallel to
+     * them and closes along the road rather than cutting in across it.
+     */
+    const aimBehind = Math.max(back, behind - 1.5);
+    const target = {
+      x: p.pos.x - hx * aimBehind - hy * side,
+      y: p.pos.y - hy * aimBehind + hx * side,
+    };
+    const dx = target.x - r.pos.x, dy = target.y - r.pos.y;
+    const d = Math.hypot(dx, dy);
+    const ahead = (dx * hx + dy * hy) > 0;     // the station is still in front of him
+    // How far he actually is from where he should be, station to board.
+    const gap = Math.hypot(p.pos.x - hx * back - hy * side - r.pos.x, p.pos.y - hy * back + hx * side - r.pos.y);
+
+    // The pace he wants: the player's, plus something for the gap, and the
+    // one time he moves at a standing player is when he is coming over.
+    let want: number;
+    if (closing) want = gap < 0.6 ? 0 : Math.max(4.5, p.speed);
+    else if (p.speed < 0.15) want = 0;
+    else if (!ahead) want = Math.max(0, p.speed - 1.5);
+    else want = p.speed + clamp(gap * 0.8, 0, 4);
+    // A friend keeping up is allowed to be a little quicker than you: up to
+    // four metres a second over the cap when he has been left well behind,
+    // nothing at all once he is back on station.
+    r.capBoost = closing ? 2 : clamp01((gap - 3) / 12) * 4;
+
+    if (want > 0.3 && (r.speed > 0.5 || want > r.speed) && d > 0.3) {
+      it.moveVector = { x: dx / d, y: dy / d };
+    }
+    if (want > 0.3 && r.speed < want - 0.25 && r.stance === 'ROLL') { it.push = true; it.pushPressed = true; }
+    if (r.speed > want + 2.5 && r.speed > 1) it.brake = true;
+
+    // A kerb coming up at speed: the same hop the player would make, found
+    // the same way the player's wheels would find it.
+    if (r.stance === 'ROLL' && r.speed > 4.5) {
+      const fx = Math.cos(r.heading), fy = Math.sin(r.heading);
+      const probe = { x: r.pos.x + fx * 1.4, y: r.pos.y + fy * 1.4 };
+      const low = this.world.resolveCollision(r.pos, probe, 0.45, 0.14);
+      const high = this.world.resolveCollision(r.pos, probe, 0.45, 0.6);
+      const lowBlocked = Math.hypot(low.x - probe.x, low.y - probe.y) > 0.05;
+      const highClear = Math.hypot(high.x - probe.x, high.y - probe.y) < 0.05;
+      if (lowBlocked && highClear) { it.olliePressed = true; it.ollieReleased = true; }
+    }
+    // Mates copy each other.
+    if (this.devonMimic >= 0) {
+      this.devonMimic -= dt;
+      if (this.devonMimic < 0 && r.stance === 'ROLL' && r.speed > 3) { it.olliePressed = true; it.ollieReleased = true; }
+    }
+    return it;
   }
 
   // ---------------------------------------------------------------- slingshot

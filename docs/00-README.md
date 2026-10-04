@@ -46,7 +46,7 @@ before implementation and is the authority for what the game is trying to be.
 | 39 | [Near-Future Urban Noir](39-near-future-urban-noir.md) | The visual identity restated: a muted, worn town, a system that owns three exact accents and looks trustworthy, inked people, and wire overhead |
 | 40 | [The Inked Town](40-the-inked-town.md) | First original art pass on the street view: ink on paper, a line hierarchy, screentone, silhouette figures, three sacred signals, and the player's investigation drawn into the street in amber pencil |
 | 41 | [The Mood of the Town](41-the-mood-of-the-town.md) | The picture answers the game: the system's grip darkens the town, sabotage and uncovering light it; plus porches, drainpipes, aerials, birds and chalk |
-| 42 | [Natural Skating](42-natural-skating.md) | The push comes through the foot, the body leans against the load, and the brake is a powerslide that lets the wheels go and grips again |
+| 42 | [Natural Skating](42-natural-skating.md) | The push comes through the foot, the body leans against the load, the brake is a powerslide that lets the wheels go and grips again, and Devon rides the same board on the same simulation |
 
 ## The one-sentence pitch
 

@@ -88,6 +88,38 @@ the board grips again.
 - **Deck pitch is one continuous curve** from the vertical speed: nose up
   off the pop, level at the apex, a touch nose-first coming down.
 
+## Devon rides the same board
+
+Devon used to be a point that slid toward a station behind the player at a
+computed speed, with a board drawn under it: he never pushed, never leaned,
+never slid, and could turn on the spot at full pace. He now has a rider
+state of his own (`sim.devonRider`), stepped by the same `updatePlayer` the
+player's is, with every constant shared. A small follower writes his
+`Intent` each tick: it aims the board at a point beside the player's line
+at his own distance back (so he rides parallel and closes along the road
+rather than cutting across it), pushes when he is slower than he needs to
+be, lets the board run when he is quicker, and only puts a foot down to
+slide when he is well over pace. A player who is not moving gets no pushes
+at all, so nothing closes on somebody frozen in the opening advertisement;
+coming over to the player is the one time he moves at a standing one. He
+hops a kerb he is about to hit at speed, found the same way the player's
+wheels would find it, and copies a pop the player does half a second later.
+
+The one thing he is allowed that the player is not is `capBoost`: up to two
+metres a second over the cap while he is more than three metres off station,
+fading to nothing as he arrives. It is how a friend catches up without ever
+teleporting. `devonPos` stays the public position; the story and the save
+file move him by writing it, and the board goes wherever it says and stops.
+
+He is drawn by the rider's own painter — `collectRider` became
+`collectSkater(rider, look, deck, sling)` — so his pushes, carves, pops and
+slides look exactly like the player's, in his own colours, without a sling.
+
+One existing test moved: the follow test starts Devon and the player on the
+same spot and began measuring personal space after one second, which the
+old point could satisfy by leaving at twelve metres a second. A board
+cannot; he is clear inside two seconds, and the window starts there.
+
 ## What was deliberately left alone
 
 Every number a human has already said yes to: the turning-radius curve, the
@@ -98,7 +130,7 @@ flat-plan rider is a map mark and keeps its old stick legs.
 
 ## What was tested
 
-`tests/skating.test.ts`, 17 tests: no speed before the foot is down and
+`tests/skating.test.ts`, 23 tests: no speed before the foot is down and
 nearly all of it while it is; the same total as before; the scuff on
 touchdown; the profile's shape; the stride rests inside the rhythm; a foot
 that never lands pushes nothing; lean grows with speed for the same ask,
@@ -108,4 +140,7 @@ scrubs; frontside by default and the stick picks the side; never past
 sideways; back in line by turning the board rather than the road; announced
 once; a stop below walking pace. The existing handling tests (the RC-car
 suite, the pop arc, early presses, aiming at a standstill) all still pass
-unchanged: 584 tests.
+unchanged, and six more cover Devon: he pushes in strides, keeps station
+off the shoulder and keeps up, leans into a carve, stands exactly still
+when the player does, goes where the story puts him, and only ever gets
+the cap boost while he is behind. 590 tests.

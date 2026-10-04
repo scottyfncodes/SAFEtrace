@@ -27,7 +27,7 @@ import type { RockShape } from '../sim/slingshot';
 import type { Building, Prop, WorldData } from '../sim/worldTypes';
 import { markersFor, sightlinesFor } from './evidence';
 import { DEVON, DOG_COATS, RIDER, castLook, dogCollar, officerLook, paintDog, paintFigure, pose, residentLook, type Gait, type Gesture, type Joints, type Look } from './characters';
-import { TUNE as SKATE } from '../sim/player';
+import { TUNE as SKATE, type PlayerState } from '../sim/player';
 import { INK, Ink, brushOutline, hash01, inkAt, seedOf } from './ink';
 import { CITY_INK, PRINT, SIGNAL, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 import { Tone, tone } from './tone';
@@ -224,6 +224,8 @@ const WHEELS: ReadonlyArray<readonly [number, number]> = [
 ];
 /** Half-width and half-height of a wheel, drawn as a billboard. */
 const WHEEL_R = 0.06;
+/** Devon on his board: the board is under him, not in his hand. */
+const DEVON_RIDING: Look = { ...DEVON, carry: 'none' };
 
 /**
  * Bone lengths, in metres, for a fourteen-year-old on a board.
@@ -618,7 +620,7 @@ export class PerspectiveRenderer {
     this.collectActors(sim, cam);
     this.slingHands = null;
     this.inkAs = Ink.Person;
-    if (!firstPerson) this.collectRider(sim, cam);
+    if (!firstPerson) this.collectSkater(sim, cam, sim.player, 'rider', RIDER, VENEER.player, true);
     this.inkAs = null;
 
     this.faces.sort((a, b) => {
@@ -1788,13 +1790,9 @@ export class PerspectiveRenderer {
      */
     if (sim.devonVisible) {
       if (sim.devonFollowing && !sim.devonStopped) {
-        const v = sim.devon.vel;
-        const heading = Math.hypot(v.x, v.y) > 0.35 ? Math.atan2(v.y, v.x) : 0;
-        this.skater(cam, sim.devonPos, v, VENEER.friend);
-        const look = { ...DEVON, carry: 'none' as const };
-        // Across the board: the body faces off the board's side.
-        const j = pose({ at: sim.devonPos, z: 0.1, facing: heading + Math.PI / 2, gait: 'ride', phase: tick * 0.05, body: look.body });
-        this.personAt(cam, 'devon', sim.devonPos, look, { tick, sun, joints: j, bias: 0.25 });
+        // The same board, the same rig, the same pushes: he is simulated by
+        // the player's own skating model, so he is drawn by its painter.
+        this.collectSkater(sim, cam, sim.devonRider, 'devon', DEVON_RIDING, VENEER.friend, false);
       } else {
         this.personAt(cam, 'devon', sim.devonPos, DEVON, { tick, sun, gait: 'stand' });
       }
@@ -2093,38 +2091,19 @@ export class PerspectiveRenderer {
   }
 
   /**
-   * The board under somebody riding, which is what Devon has been the whole
-   * time; the body over it is a figure, crouched (`riding`).
-   *
-   * Devon was once drawn bolt upright with no board while following the
-   * player at their exact speed — not a friend skating along, a tail. The
-   * board was the missing word.
-   */
-  private skater(cam: Cam, p: Vec2, vel: Vec2, tint: string): void {
-    const speed = Math.hypot(vel.x, vel.y);
-    const h = speed > 0.35 ? Math.atan2(vel.y, vel.x) : 0;
-    const fx = Math.cos(h), fy = Math.sin(h);
-    const rx = -fy, ry = fx;
-    const L = 0.92, W = 0.20, z = 0.055;
-    this.push(cam, [
-      { x: p.x + fx * L + rx * W, y: p.y + fy * L + ry * W, z },
-      { x: p.x + fx * L - rx * W, y: p.y + fy * L - ry * W, z },
-      { x: p.x - fx * L - rx * W, y: p.y - fy * L - ry * W, z },
-      { x: p.x - fx * L + rx * W, y: p.y - fy * L + ry * W, z },
-    ], shade(tint, -0.45));
-  }
-
-  /**
-   * The rider, from behind, on a board.
+   * A skater, from behind, on a board.
    *
    * The board is real geometry laid on the ground and turned with the heading —
    * not a billboard — because the whole point is that the board is the thing
    * being steered and you can see it turn under you. The legs, torso and head
    * are cards, which is enough: this is a flat-colour world and a kid on a
    * board is a silhouette.
+   *
+   * Written for the player and now shared with Devon, who runs on the same
+   * simulation: `p` is whichever rider, `look` how they dress, `deck` the
+   * colour of their board, and `sling` whether this is the one holding one.
    */
-  private collectRider(sim: Sim, cam: Cam): void {
-    const p = sim.player;
+  private collectSkater(sim: Sim, cam: Cam, p: PlayerState, id: string, look: Look, deck: string, sling: boolean): void {
     const h = p.heading;
     const fx = Math.cos(h), fy = Math.sin(h);
     const rx = -fy, ry = fx;              // the rider's right hand
@@ -2143,7 +2122,7 @@ export class PerspectiveRenderer {
     ], alpha(PRINT.ink, 0.3 - clamp01(z / 1.2) * 0.12), undefined, undefined, Layer.Ground, 99);
     // The rider's line is the rider's: seeded by who, not where, so it holds
     // still while the board moves under it.
-    this.seedBy(0x5afe);
+    this.seedBy(hashString(id + ':line'));
 
     /*
      * The board rolls into the turn.
@@ -2222,7 +2201,7 @@ export class PerspectiveRenderer {
         onBoard(0.92, -0.20, rise(0.92)),
         onBoard(-0.92, -0.20, rise(-0.92)),
         onBoard(-0.92, 0.20, rise(-0.92)),
-      ], VENEER.player);
+      ], deck);
       // The trucks: a hanger under the deck that the wheels are on the ends of,
       // so there is something holding them up rather than two floating discs.
       for (const f of [0.62, -0.62]) {
@@ -2445,7 +2424,7 @@ export class PerspectiveRenderer {
      * toward the cheek, as far as the band is drawn — so the pouch is in a
      * hand and the fork is in a hand, rather than floating near the rider.
      */
-    const sp = this.slingPose;
+    const sp = sling ? this.slingPose : { held: false, drawing: false, draw: 0 };
     const slingOn = sp.held && p.stance !== 'BAIL';
     let ax = fx, ay = fy;
     if (sp.drawing && sim.aimWorld) {
@@ -2513,7 +2492,7 @@ export class PerspectiveRenderer {
       look: running ? h : lerp(h + lean * 0.45, travel, sliding),
     };
     this.seedBy(null);
-    this.personAt(cam, 'rider', p.pos, RIDER, { tick: sim.tick, sun: sim.sun, joints, bias: 0.25 });
+    this.personAt(cam, id, p.pos, look, { tick: sim.tick, sun: sim.sun, joints, bias: 0.25 });
   }
 
   /** A leg: a narrow quad from a foot on the ground up to the hip. */

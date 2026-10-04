@@ -178,7 +178,10 @@ describe('the friend behind you reads as a friend', () => {
     let closest = Infinity;
     for (let i = 0; i < 60 * 20; i++) {
       sim.step(TICK_DT, push(), null);
-      if (i > 60) closest = Math.min(closest, dist(sim.devonPos, sim.player.pos));
+      // They start on the same spot. Devon rides a real board now, so he
+      // cannot leave it at twelve metres a second the way the old point
+      // could; he is clear inside two seconds and stays clear after that.
+      if (i > 120) closest = Math.min(closest, dist(sim.devonPos, sim.player.pos));
     }
 
     // He comes along, at something like the player's pace...

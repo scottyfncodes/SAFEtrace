@@ -358,6 +358,12 @@ export interface PlayerState {
   drawHeld: number;
   /** Metres travelled; used only for telemetry and story pacing. */
   odometer: number;
+  /**
+   * Extra speed over the cap, m/s. Zero for the player, always. A rider
+   * keeping station on somebody is allowed to be a little quicker than them,
+   * which is the whole of how a friend catches up without ever teleporting.
+   */
+  capBoost: number;
   lastSurface: string;
   /**
    * An ollie asked for slightly too early is remembered, not thrown away.
@@ -419,6 +425,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
     draw: 0,
     drawHeld: 0,
     odometer: 0,
+    capBoost: 0,
     ollieBuffer: 0,
     pushBuffer: 0,
     lastSurface: 'asphalt',
@@ -438,7 +445,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
 }
 
 export const maxSpeedFor = (p: PlayerState): number =>
-  TUNE.maxSpeed + TUNE.flowSpeedBonus * p.flow;
+  TUNE.maxSpeed + TUNE.flowSpeedBonus * p.flow + p.capBoost;
 
 /** Is the pushing foot on the road right now? The renderer asks this too. */
 export const footDown = (p: PlayerState): boolean =>
