@@ -570,6 +570,7 @@ export class Sim {
     const p = this.player;
     if (p.pushedThisTick) this.bus.emit('player:push', { pos: p.pos, speed: p.speed });
     if (p.poppedThisTick) this.bus.emit('player:pop', { pos: p.pos });
+    if (p.slidThisTick) this.bus.emit('player:slide', { pos: p.pos, speed: p.speed });
     if (p.trickedThisTick) this.bus.emit('player:trick', { pos: p.pos, name: p.trickedThisTick.name });
     if (p.grabbedThisTick) this.bus.emit('player:grab', { pos: p.pos, name: p.grabbedThisTick.name });
     if (p.landedThisTick) this.bus.emit('player:land', { pos: p.pos, speed: p.speed });

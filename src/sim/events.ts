@@ -59,6 +59,8 @@ export interface SimEvents extends Record<string, unknown> {
   'player:land': { pos: Vec2; speed: number };
   'player:push': { pos: Vec2; speed: number };
   'player:pop': { pos: Vec2 };
+  /** The wheels let go: the start of a powerslide, at this speed. */
+  'player:slide': { pos: Vec2; speed: number };
   /** The board came all the way round and the feet caught it. */
   'player:trick': { pos: Vec2; name: string };
   /** Still holding it when the wheels touched down. */

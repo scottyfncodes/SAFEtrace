@@ -612,6 +612,7 @@ class Game {
     const bus = this.sim.bus;
     bus.on('player:push', () => this.audio.push());
     bus.on('player:pop', () => this.audio.pop());
+    bus.on('player:slide', ({ speed }) => this.audio.slide(Math.min(1, speed / 12)));
     bus.on('player:land', ({ speed }) => {
       this.audio.land(Math.min(1, speed / 12));
       this.renderer.kick(0.06 + Math.min(0.1, speed / 120));

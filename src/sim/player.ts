@@ -5,7 +5,7 @@
  * to a spectator as good, purely from how they move down a street.
  */
 import {
-  type Vec2, angleOf, clamp, clamp01, damp, dot, fromAngle, len,
+  type Vec2, angleOf, clamp, clamp01, damp, dot, fromAngle, len, lerp,
   norm, remap, wrapAngle,
 } from '../core/math';
 import type { Intent } from '../core/input';
@@ -66,7 +66,24 @@ export const TUNE = {
   flowSpeedBonus: 2.5,
   pushImpulse: 3.1,
   pushCooldown: 0.42,
-  pushDuration: 0.22,
+  /**
+   * A stride, and the part of it the foot is actually on the road.
+   *
+   * The push used to be one frame: the whole impulse landed the instant the
+   * button did, and then a leg animation played for a fifth of a second
+   * *after* the board had already jumped forward. The board got its speed
+   * before the foot had reached the ground, which is backwards, and it is
+   * the single biggest reason pushing read as a throttle rather than a leg.
+   *
+   * Now the stride is a third of a second, and the foot leaves the tail,
+   * comes down, drives, and comes back up. The speed arrives only while it
+   * is down — between `pushContactStart` and `pushContactEnd` of the stride,
+   * on a bell curve that peaks mid-drive — so the board accelerates when the
+   * leg is visibly pushing it and not otherwise. The total is unchanged.
+   */
+  pushDuration: 0.34,
+  pushContactStart: 0.22,
+  pushContactEnd: 0.70,
   /**
    * The turn-rate ceiling, at a standstill and at full speed.
    *
@@ -102,6 +119,16 @@ export const TUNE = {
   pushSteerBoost: 1.45,
   /** Visible body lean, radians at full carve. */
   leanMax: 0.42,
+  /**
+   * The cornering load, in m/s², that is a full lean.
+   *
+   * Lean used to follow the turn *rate*, so a slow board tic-tacking in a
+   * driveway leaned harder than a fast one in a long sweeping carve — the
+   * opposite of a person, who leans against the force that is actually
+   * trying to throw them off: speed times turn rate. Six m/s² is about a
+   * thirty-degree lean on a real board, which is a committed carve.
+   */
+  leanAccel: 6.0,
   /**
    * How far off the desired heading counts as full deflection.
    *
@@ -145,7 +172,45 @@ export const TUNE = {
   ollieMaxLoad: 0.25,
   gravity: 21,
   slideFriction: 6.5,
-  slideSteer: 4.6,
+  slideSteer: 8.0,
+  /**
+   * A powerslide is the wheels letting go.
+   *
+   * It used to be a sharper carve with more friction: the board turned and
+   * the velocity followed it, gripping *harder* than in a normal turn. A real
+   * slide is the other thing — the board swings out sideways under you and
+   * you keep going the way you were going, scrubbing speed on four wheels
+   * dragged across the road. So in a slide the wheels have almost no lateral
+   * grip, the board is thrown out to about eighty degrees (frontside, so the
+   * rider ends up facing where they are headed, unless the stick picks a
+   * side), and never further than that: past ninety a slide is a fall.
+   */
+  slideGrip: 0.015,
+  slideKick: 1.40,
+  /**
+   * Unloaded wheels whip round. Carving builds a turn against the grip of
+   * four wheels, which is where `turnAccel` gets its weight; a sliding deck
+   * has nothing holding it and is kicked out in about a third of a second.
+   * The swing is run as a motion profile — it slows down early enough to
+   * stop *at* `slideKick` rather than sailing past it on its own momentum.
+   */
+  slideTurnAccel: 40,
+  /** A slide this slow is a stop. */
+  slideExitSpeed: 1.2,
+  /**
+   * Letting the brake go, the board is still sideways to the road and the
+   * wheels are still sliding. They drag it straight: the *heading* comes
+   * back to the line of travel, rather than the travel snapping round to
+   * wherever the deck happened to be pointing, which would be a right-angle
+   * turn out of thin air. Between `regripFrom` and `regripOff` off the line
+   * of travel the wheels are part way to letting go — grip fades, drag
+   * rises, and the board is pulled straight; past `regripOff` they have
+   * gone, whatever the stance says. Ordinary carving lives well inside
+   * `regripFrom` and never feels any of this.
+   */
+  regripFrom: 0.25,
+  regripOff: 0.5,
+  regripRate: 7.0,
   brakeFriction: 7.5,
   bailTime: 1.1,
   curbHeight: 0.15,
@@ -262,8 +327,17 @@ export interface PlayerState {
   turnRate: number;
   /** Visible lean, -1..1, following the turn under load. */
   lean: number;
+  /**
+   * How far the wheels have let go, 0..1. One through a powerslide, and it
+   * fades after the brake comes off as the board straightens and grips.
+   * Ordinary carving never moves it. The renderer reads it for the stance.
+   */
+  slip: number;
   /** 0..1 through a push stride; drives the pushing leg. */
   pushPhase: number;
+  /** The speed this stride owes the board, and how much of it has arrived. */
+  pushTotal: number;
+  pushDelivered: number;
   /** Seconds left of absorbing a landing. */
   landTimer: number;
   /**
@@ -310,6 +384,8 @@ export interface PlayerState {
   bailedThisTick: boolean;
   pushedThisTick: boolean;
   poppedThisTick: boolean;
+  /** The wheels let go this tick: the start of a powerslide. */
+  slidThisTick: boolean;
   /** The trick that came all the way round this tick, if one did. */
   trickedThisTick: TrickSpec | null;
   /** The grab that was still held at the moment of landing, if one was. */
@@ -331,7 +407,10 @@ export function makePlayer(spawn: Vec2): PlayerState {
     ollieLoad: -1,
     turnRate: 0,
     lean: 0,
+    slip: 0,
     pushPhase: 0,
+    pushTotal: 0,
+    pushDelivered: 0,
     landTimer: 0,
     crouch: 0,
     bailTimer: 0,
@@ -352,6 +431,7 @@ export function makePlayer(spawn: Vec2): PlayerState {
     bailedThisTick: false,
     pushedThisTick: false,
     poppedThisTick: false,
+    slidThisTick: false,
     trickedThisTick: null,
     grabbedThisTick: null,
   };
@@ -360,11 +440,42 @@ export function makePlayer(spawn: Vec2): PlayerState {
 export const maxSpeedFor = (p: PlayerState): number =>
   TUNE.maxSpeed + TUNE.flowSpeedBonus * p.flow;
 
+/** Is the pushing foot on the road right now? The renderer asks this too. */
+export const footDown = (p: PlayerState): boolean =>
+  p.pushTimer > 0 && p.pushPhase >= TUNE.pushContactStart && p.pushPhase < TUNE.pushContactEnd;
+
+/**
+ * How much of a stride's speed has arrived by this point in it, 0..1.
+ * Nothing before the foot is down, a raised cosine while it is, all of it
+ * once it lifts.
+ */
+export function pushProfile(phase: number): number {
+  const u = clamp01((phase - TUNE.pushContactStart) / (TUNE.pushContactEnd - TUNE.pushContactStart));
+  return (1 - Math.cos(u * Math.PI)) / 2;
+}
+
+/**
+ * The tail hits the road and the board leaves it. `charge` is how long the
+ * pop was loaded, 0..1. The knees fold on the same frame: a pop is a crouch
+ * released, and without this a tapped ollie extended from standing, which is
+ * a hop.
+ */
+function popNow(p: PlayerState, charge: number): void {
+  p.vz = TUNE.ollieImpulse * (0.7 + clamp01(charge) * 0.3);
+  p.z = 0.001;
+  p.stance = 'AIR';
+  p.ollieLoad = -1;
+  p.ollieBuffer = 0;
+  p.crouch = Math.min(p.crouch, -0.55);
+  p.poppedThisTick = true;
+}
+
 export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: number): void {
   p.landedThisTick = false;
   p.bailedThisTick = false;
   p.pushedThisTick = false;
   p.poppedThisTick = false;
+  p.slidThisTick = false;
   p.trickedThisTick = null;
   p.grabbedThisTick = null;
 
@@ -423,34 +534,103 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
 
   // Turning radius grows with speed. This single curve is the whole feel.
   let carveRate = remap(speed, 1.5, cap, TUNE.carveLow, TUNE.carveHigh);
-  // Mid-push, the foot on the ground can point the board somewhere new. It is
-  // the only way to turn sharply at walking pace, and you can see it happen.
-  if (p.pushTimer > 0) carveRate *= TUNE.pushSteerBoost;
+  // With the pushing foot on the ground, it can point the board somewhere
+  // new. It is the only way to turn sharply at walking pace, and it happens
+  // exactly while you can see the foot down on the road.
+  if (footDown(p)) carveRate *= TUNE.pushSteerBoost;
   if (p.stance === 'AIR') carveRate *= 0.28;
-  if (p.stance === 'SLIDE') carveRate = TUNE.slideSteer;
+
+  // How far the deck points away from where the board is actually going.
+  const travel = speed > 0.3 ? angleOf(p.vel) : p.heading;
+  const off = wrapAngle(p.heading - travel);
+
+  /*
+   * How far the wheels have let go. All the way in a slide; otherwise read
+   * from the angle — a board well off its line of travel is sliding whatever
+   * the stance says — and, after a slide, fading as the board straightens,
+   * so the regrip finishes the job rather than stopping at a threshold.
+   */
+  const sidewaysK = p.stance === 'AIR' ? 0
+    : clamp01((Math.abs(off) - TUNE.regripFrom) / (TUNE.regripOff - TUNE.regripFrom));
+  p.slip = p.stance === 'SLIDE' ? 1 : Math.max(sidewaysK, damp(p.slip, 0, 0.10, dt));
+  if (p.slip < 0.01) p.slip = 0;
+
+  /** The fastest the deck may still be swinging with `remaining` to go, if it is to stop there. */
+  const stopBy = (remaining: number, accel: number) => Math.sqrt(2 * accel * Math.max(0, remaining));
+
+  let wantTurn = steerInput * carveRate;
+  let turnAccel = TUNE.turnAccel;
+  if (p.stance === 'SLIDE') {
+    /*
+     * Kicked out. The stick picks which way the tail goes; with no stick it
+     * goes the way the board was already turning, or frontside, which is the
+     * one every skater learns first. The swing slows as the board approaches
+     * `slideKick` off the line of travel and hangs there, sideways,
+     * scrubbing — and steering back through straight and out the other side
+     * is allowed, because that is a thing.
+     */
+    const side = Math.abs(steerInput) > 0.1 ? Math.sign(steerInput) : (Math.abs(off) > 0.08 ? Math.sign(off) : -1);
+    wantTurn = side * Math.min(TUNE.slideSteer, stopBy(TUNE.slideKick - side * off - 0.05, TUNE.slideTurnAccel));
+    turnAccel = TUNE.slideTurnAccel;
+  } else if (p.stance !== 'AIR' && p.slip > 0 && speed > 1.0) {
+    // Still sideways after the brake has gone: the wheels drag it straight,
+    // as fast as it can come round and still stop on the line, and the stick
+    // has less say the more the wheels are sliding.
+    const pull = Math.min(TUNE.regripRate, stopBy(Math.abs(off), TUNE.slideTurnAccel), Math.abs(off) / dt);
+    wantTurn = -Math.sign(off) * pull * p.slip + wantTurn * (1 - p.slip);
+    turnAccel = lerp(TUNE.turnAccel, TUNE.slideTurnAccel, p.slip);
+  }
 
   // The board has to be leaned into a turn and let out of it again.
-  const wantTurn = steerInput * carveRate;
-  const accel = Math.sign(wantTurn - p.turnRate) * TUNE.turnAccel * dt;
+  const accel = Math.sign(wantTurn - p.turnRate) * turnAccel * dt;
   p.turnRate += Math.abs(wantTurn - p.turnRate) < Math.abs(accel) ? wantTurn - p.turnRate : accel;
-  if (Math.abs(steerInput) < 0.02) p.turnRate = damp(p.turnRate, 0, 1 / TUNE.turnDamp, dt);
+  if (Math.abs(steerInput) < 0.02 && p.stance !== 'SLIDE' && Math.abs(wantTurn) < 0.01) {
+    p.turnRate = damp(p.turnRate, 0, 1 / TUNE.turnDamp, dt);
+  }
   p.heading = wrapAngle(p.heading + p.turnRate * dt);
 
-  // Lean follows the turn, loaded by speed. This is what the eye reads as carve.
-  const loaded = clamp(p.turnRate / Math.max(0.001, TUNE.carveLow), -1, 1) * clamp01(speed / 4);
+  /*
+   * Lean is against the load, not the stick. Speed times turn rate is the
+   * acceleration trying to throw the rider off the outside of the turn, and
+   * that is what they lean into — so a fast, gentle carve is a committed lean
+   * and a slow pivot is barely one. This is what the eye reads as carve.
+   * Sliding wheels push back with nothing, so there is nothing to lean on.
+   */
+  const loaded = clamp((speed * p.turnRate * (1 - p.slip)) / TUNE.leanAccel, -1, 1);
   p.lean = damp(p.lean, loaded, 0.09, dt);
 
   // --- slide ------------------------------------------------------------
-  const wantSlide = intent.brake && speed > 3.2 && p.stance !== 'AIR';
-  if (wantSlide && p.stance !== 'SLIDE') p.stance = 'SLIDE';
+  const wantSlide = intent.brake && p.stance !== 'AIR'
+    && (p.stance === 'SLIDE' ? speed > TUNE.slideExitSpeed : speed > 3.2);
+  if (wantSlide && p.stance !== 'SLIDE') { p.stance = 'SLIDE'; p.slidThisTick = true; }
   else if (!wantSlide && p.stance === 'SLIDE') p.stance = 'ROLL';
 
   // --- push -------------------------------------------------------------
   p.pushCooldown = Math.max(0, p.pushCooldown - dt);
+  const wasDown = footDown(p);
+  const strideOn = p.pushTimer > 0;
   p.pushTimer = Math.max(0, p.pushTimer - dt);
   // 0 at the start of a stride, 1 at the end. The renderer reads this rather
   // than a looping clock, so the leg only moves when a push is happening.
   p.pushPhase = p.pushTimer > 0 ? 1 - p.pushTimer / TUNE.pushDuration : 0;
+  if (strideOn) {
+    /*
+     * The speed arrives through the sole of the foot. Nothing until it is
+     * down; then a bell curve across the drive, so the board accelerates
+     * hardest mid-stride; then nothing again as the leg comes back up.
+     * Whatever a stride still owes when it ends is forgiven rather than
+     * dumped: a foot that never found the road pushed nothing.
+     */
+    const owed = p.pushTotal * pushProfile(p.pushPhase) - p.pushDelivered;
+    if (owed > 0 && p.stance === 'ROLL') {
+      const h = fromAngle(p.heading, owed);
+      p.vel.x += h.x;
+      p.vel.y += h.y;
+      p.pushDelivered += owed;
+    }
+    if (!wasDown && footDown(p)) p.pushedThisTick = true;   // the scuff: foot on road
+    if (p.pushTimer <= 0) { p.pushTotal = 0; p.pushDelivered = 0; }
+  }
 
   /*
    * The shape of a pop: knees fold as it is loaded, the body extends through
@@ -469,13 +649,12 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
     const room = clamp01((cap - speed) / cap);
     const imp = TUNE.pushImpulse * room;
     if (imp > 0.05) {
-      const h = fromAngle(p.heading, imp);
-      p.vel.x += h.x;
-      p.vel.y += h.y;
+      // The leg starts moving now; the speed comes when the foot does.
       p.pushCooldown = TUNE.pushCooldown;
       p.pushTimer = TUNE.pushDuration;
+      p.pushTotal = imp;
+      p.pushDelivered = 0;
       p.pushBuffer = 0;
-      p.pushedThisTick = true;
     }
   }
 
@@ -484,14 +663,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   else p.ollieBuffer = Math.max(0, p.ollieBuffer - dt);
 
   if (p.stance !== 'AIR') {
-    const pop = (charge: number) => {
-      p.vz = TUNE.ollieImpulse * (0.7 + clamp01(charge) * 0.3);
-      p.z = 0.001;
-      p.stance = 'AIR';
-      p.ollieLoad = -1;
-      p.ollieBuffer = 0;
-      p.poppedThisTick = true;
-    };
+    const pop = (charge: number) => popNow(p, charge);
 
     // Still holding: load the pop, and let go when they do.
     if (p.ollieBuffer > 0 && p.ollieLoad < 0 && intent.ollieHeld) {
@@ -523,14 +695,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
    * kicker or a drop turns into a trick.
    */
   if (p.trickRequest && !p.grab && p.onBoard && !p.aiming) {
-    if (p.stance !== 'AIR') {
-      p.vz = TUNE.ollieImpulse * 0.94;
-      p.z = 0.001;
-      p.stance = 'AIR';
-      p.ollieLoad = -1;
-      p.ollieBuffer = 0;
-      p.poppedThisTick = true;
-    }
+    if (p.stance !== 'AIR') popNow(p, 0.8);
     if (!p.trick) p.trick = { spec: p.trickRequest, t: 0, phase: 0, landed: false };
   }
   p.trickRequest = null;
@@ -553,14 +718,7 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
    * moment the wheels do, and `integrate` is where it is either kept or lost.
    */
   if (p.grabRequest && !p.trick && p.onBoard && !p.aiming) {
-    if (p.stance !== 'AIR') {
-      p.vz = TUNE.ollieImpulse * 0.94;
-      p.z = 0.001;
-      p.stance = 'AIR';
-      p.ollieLoad = -1;
-      p.ollieBuffer = 0;
-      p.poppedThisTick = true;
-    }
+    if (p.stance !== 'AIR') popNow(p, 0.8);
     if (!p.grab) p.grab = { spec: p.grabRequest };
   }
   p.grabRequest = null;
@@ -592,8 +750,10 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
   if (p.stance === 'AIR') {
     // No ground friction in the air; horizontal velocity is preserved.
   } else {
+    // Wheels dragged across the road scrub speed, in a slide or still
+    // sideways after one; a foot down on the road is the ordinary brake.
     let fric = surf.friction;
-    if (p.stance === 'SLIDE') fric += TUNE.slideFriction;
+    if (p.slip > 0) fric += TUNE.slideFriction * p.slip;
     else if (intent.brake) fric += TUNE.brakeFriction;
     applyFriction(p, fric, dt);
 
@@ -601,13 +761,17 @@ export function updatePlayer(p: PlayerState, intent: Intent, world: World, dt: n
     const h = fromAngle(p.heading);
     const forward = dot(p.vel, h);
     const lat = { x: p.vel.x - h.x * forward, y: p.vel.y - h.y * forward };
-    const grip = p.stance === 'SLIDE' ? 0.42 : TUNE.lateralGrip * surf.grip;
+    // Sliding wheels hold almost nothing, in a slide or still sideways after
+    // one: the board straightens under the rider (above) as it grips again,
+    // so the grip comes back with the angle rather than all at once.
+    const sliding = p.slip > 0.5;
+    const grip = lerp(TUNE.lateralGrip * surf.grip, TUNE.slideGrip, p.slip);
     const keep = Math.pow(1 - clamp01(grip), dt * 60);
     p.vel.x = h.x * forward + lat.x * keep;
     p.vel.y = h.y * forward + lat.y * keep;
 
-    // Rolling backwards is not a thing on a skateboard.
-    if (forward < -0.4) {
+    // Rolling backwards is not a thing on a skateboard. Sideways is, briefly.
+    if (forward < -0.4 && !sliding) {
       p.vel.x = h.x * -0.4;
       p.vel.y = h.y * -0.4;
     }
@@ -711,6 +875,11 @@ function bail(p: PlayerState): void {
   p.stance = 'BAIL';
   p.trick = null;
   p.grab = null;
+  p.pushTimer = 0;
+  p.pushPhase = 0;
+  p.pushTotal = 0;
+  p.pushDelivered = 0;
+  p.slip = 0;
   p.bailTimer = TUNE.bailTime;
   p.bailedThisTick = true;
   p.vel.x *= 0.25;

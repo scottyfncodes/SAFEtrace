@@ -20,13 +20,14 @@
  * point.
  */
 import type { Vec2 } from '../core/math';
-import { clamp, clamp01, damp, lerp, solveTwoBone, wrapAngle } from '../core/math';
+import { clamp, clamp01, damp, lerp, smoothstep, solveTwoBone, wrapAngle } from '../core/math';
 import { hashString } from '../core/rng';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
 import type { Building, Prop, WorldData } from '../sim/worldTypes';
 import { markersFor, sightlinesFor } from './evidence';
 import { DEVON, DOG_COATS, RIDER, castLook, dogCollar, officerLook, paintDog, paintFigure, pose, residentLook, type Gait, type Gesture, type Joints, type Look } from './characters';
+import { TUNE as SKATE } from '../sim/player';
 import { INK, Ink, brushOutline, hash01, inkAt, seedOf } from './ink';
 import { CITY_INK, PRINT, SIGNAL, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 import { Tone, tone } from './tone';
@@ -344,7 +345,16 @@ export class ChaseCamera {
     const drawing = p.aiming && !sim.aimMode;
     if (drawing) this.freeLook = Math.max(this.freeLook, 0.45);
     this.drawPull = damp(this.drawPull, drawing ? p.draw : 0, 0.12, dt);
-    let want = speed > 0.6 && this.freeLook <= 0 ? p.heading : this.yaw;
+    /*
+     * Except when the wheels have let go. In a powerslide the deck swings
+     * eighty degrees across the road while the rider carries straight on, and
+     * a camera glued to the nose spun the whole town round every time the
+     * brake went down. The rig follows the line of travel to the extent the
+     * board is sliding, and is back on the nose by the time it grips again.
+     */
+    const travel = speed > 0.6 ? Math.atan2(p.vel.y, p.vel.x) : p.heading;
+    const follow = p.heading + wrapAngle(travel - p.heading) * p.slip;
+    let want = speed > 0.6 && this.freeLook <= 0 ? follow : this.yaw;
     if (this.focus && this.focusBlend > 0.05) {
       // Look past the rider toward the thing, from a little off their shoulder.
       const toward = Math.atan2(this.focus.y - p.pos.y, this.focus.x - p.pos.x);
@@ -2164,8 +2174,15 @@ export class PerspectiveRenderer {
      * none of it can drift out of time with the board.
      */
     const crouch = -p.crouch * 0.22;
-    const rising = p.stance === 'AIR' && p.vz > 0;
-    const tail = p.stance === 'AIR' ? (rising ? 0.30 : 0.10) : Math.max(0, -p.crouch) * 0.12;
+    /*
+     * The nose comes up off the pop, the front foot levels the board at the
+     * top of the arc, and it comes down flat or a touch nose-first. Driven
+     * from the vertical speed, so it is one continuous pitch rather than two
+     * fixed angles with a step between them at the apex.
+     */
+    const tail = p.stance === 'AIR'
+      ? lerp(-0.04, 0.30, clamp01((p.vz + 1.5) / (SKATE.ollieImpulse + 1.5)))
+      : Math.max(0, -p.crouch) * 0.12;
 
     /*
      * The trick is the board's, not the rider's.
@@ -2249,6 +2266,41 @@ export class PerspectiveRenderer {
     const legCol = VENEER.trousers[0];
     const sleeve = shade(VENEER.player, -0.1);
     const pushing = reach > 0.02 && p.onBoard;
+    /*
+     * Where the pushing foot is, through the stride.
+     *
+     * It used to go from the tail straight to the ground the frame the push
+     * started and straight back up the frame it ended, and while it was down
+     * it swept backwards and then *forwards* along the road — a foot sliding
+     * the wrong way on asphalt. Now it lifts off the tail, swings out and
+     * forward, comes down ahead of the hip, stays put on the road while the
+     * board rolls on past it (so in the board's frame it only ever moves
+     * backwards, by as much road as actually went by, within what a leg can
+     * reach), then lifts and swings back to the tail. The simulation delivers
+     * the speed in the same window the foot is down here, because both read
+     * the same stride constants.
+     */
+    const c0 = SKATE.pushContactStart, c1 = SKATE.pushContactEnd;
+    const pushT = p.pushPhase;
+    const sweep = Math.min(0.45, p.speed * (c1 - c0) * SKATE.pushDuration);
+    const touch = { f: 0.05, r: 0.26 };
+    const tailFoot = { f: -0.46, r: 0.13 };
+    let pushFoot = tailFoot, pushZ = 0;
+    if (pushing) {
+      if (pushT < c0) {
+        const u = smoothstep(pushT / c0);
+        pushFoot = { f: lerp(tailFoot.f, touch.f, u), r: lerp(tailFoot.r, touch.r, u) };
+        pushZ = lerp(1, 0, u) + Math.sin(u * Math.PI) * 0.10;
+      } else if (pushT < c1) {
+        const u = (pushT - c0) / (c1 - c0);
+        pushFoot = { f: touch.f - sweep * u, r: touch.r };
+        pushZ = 0;
+      } else {
+        const u = smoothstep((pushT - c1) / (1 - c1));
+        pushFoot = { f: lerp(touch.f - sweep, tailFoot.f, u), r: lerp(touch.r, tailFoot.r, u) };
+        pushZ = lerp(0, 1, u) + Math.sin(u * Math.PI) * 0.12;
+      }
+    }
 
     /*
      * Which way the rider is facing, and therefore which way a knee bends.
@@ -2293,8 +2345,20 @@ export class PerspectiveRenderer {
      * carve, through a pop, on a landing — so there is always bend in reserve
      * and the stance reads as *ready* rather than as standing to attention.
      */
-    const load = clamp01(Math.abs(lean) * 0.55 + Math.max(0, -p.crouch) * 0.8 + tuck * 1.6);
-    const hipZ = z + 0.80 - crouch - load * 0.17;
+    /*
+     * Sideways. In a slide the board is across the line of travel and the
+     * rider is braced against it: low, weight back over the trailing edge
+     * while the deck is pushed out ahead, arms wide, eyes on where they are
+     * actually going rather than where the deck points. How far the wheels
+     * have let go is the simulation's own `slip`; which way the road is
+     * going past is read from the board.
+     */
+    const travel = p.speed > 0.5 ? Math.atan2(p.vel.y, p.vel.x) : h;
+    const across = p.onBoard && p.stance !== 'AIR' ? Math.sin(travel - h) : 0;   // +1: travelling toward the toe edge
+    const sliding = p.onBoard ? p.slip : 0;
+    const load = clamp01(Math.abs(lean) * 0.55 + Math.max(0, -p.crouch) * 0.8 + tuck * 1.6 + sliding * 0.5);
+    // The standing knee bends as the other foot goes down to the road.
+    const hipZ = z + 0.80 - crouch - load * 0.17 - reach * 0.07;
 
     /*
      * On foot, the legs do something else entirely: they run.
@@ -2321,8 +2385,8 @@ export class PerspectiveRenderer {
       leftFoot = at(0.40, -0.13);
       leftZ = z + 0.12 - roll + tail * 0.35 + tuck;
       // Right foot on the tail, or off it and pushing.
-      rightFoot = pushing ? at(-0.44 - reach * 0.30, 0.26 + reach * 0.34) : at(-0.46, 0.13);
-      rightZ = pushing ? 0.03 : z + 0.12 + roll + tail + tuck;
+      rightFoot = at(pushFoot.f, pushFoot.r);
+      rightZ = pushing ? lerp(0.03, z + 0.12 + roll + tail, pushZ) : z + 0.12 + roll + tail + tuck;
     }
 
     const hipL = at(running ? 0 : 0.13, -0.09);
@@ -2348,7 +2412,10 @@ export class PerspectiveRenderer {
      */
     const dip = load * 0.09;
     const bodyF = reach * 0.20 + load * 0.05 + (running ? 0.06 : 0);
-    const bodyAt = at(bodyF, lean * 0.30);
+    // Into the carve; and in a slide, braced against the drag: weight back,
+    // over the trailing edge, the deck pushed out ahead toward the travel.
+    const bodyR = lean * 0.30 - across * sliding * 0.14;
+    const bodyAt = at(bodyF, bodyR);
     // Torso: taller than it is wide, sitting straight on top of the hips, so
     // the body reads as a body and not as a bar floating over a pair of legs.
     const torsoH = 0.28 - dip * 0.5;
@@ -2366,7 +2433,7 @@ export class PerspectiveRenderer {
      * holding a slingshot when there is one to hold.
      */
     const shoulderZ = hipZ + torsoH * 1.92;
-    const spread = 0.30 + load * 0.16 + (p.stance === 'AIR' ? 0.12 : 0);
+    const spread = 0.30 + load * 0.16 + (p.stance === 'AIR' ? 0.12 : 0) + sliding * 0.10;
     // Elbows fall back and down, the way an arm held out for balance hangs.
     const elbowTo = { x: back.x * 0.7 - fx * 0.3, y: back.y * 0.7 - fy * 0.3 };
     /*
@@ -2386,7 +2453,7 @@ export class PerspectiveRenderer {
       const l = Math.hypot(dx, dy);
       if (l > 0.5) { ax = dx / l; ay = dy / l; }
     }
-    const chest = at(bodyF, lean * 0.30);
+    const chest = at(bodyF, bodyR);
     const forkHand = sp.drawing
       ? { x: chest.x + ax * 0.44 - rx * 0.04, y: chest.y + ay * 0.44 - ry * 0.04 }
       : at(bodyF + 0.10, -0.26 + lean * 0.24);
@@ -2397,7 +2464,7 @@ export class PerspectiveRenderer {
     const arms: Record<number, { sh: { x: number; y: number; z: number }; el: { x: number; y: number; z: number }; hand: { x: number; y: number; z: number } }> = {};
     for (const side of [1, -1]) {
       // The shoulder is on the torso, not floating beside it.
-      const shoulder = at(bodyF, side * 0.17 + lean * 0.30);
+      const shoulder = at(bodyF, side * 0.17 + bodyR);
       /*
        * A grab sends one hand to the deck instead of out for balance —
        * `onBoard` is the same function the trick above turns the deck through,
@@ -2441,8 +2508,9 @@ export class PerspectiveRenderer {
       shL: arms[-1].sh, elL: arms[-1].el, handL: arms[-1].hand,
       shR: arms[1].sh, elR: arms[1].el, handR: arms[1].hand,
       facing, toes: running ? h : facing,
-      // Looking where they are going: from the chase camera, the back of the head.
-      look: h,
+      // Looking where they are going — which in a carve is round the turn,
+      // ahead of the nose, and in a slide is along the road, not the deck.
+      look: running ? h : lerp(h + lean * 0.45, travel, sliding),
     };
     this.seedBy(null);
     this.personAt(cam, 'rider', p.pos, RIDER, { tick: sim.tick, sun: sim.sun, joints, bias: 0.25 });

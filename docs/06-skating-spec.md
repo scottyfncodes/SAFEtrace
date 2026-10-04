@@ -14,7 +14,9 @@ FOOT      2.6 m/s. Can enter anywhere. Board carried. Used for tight interiors,
 PUSH      Transient. Adds impulse along heading.
 ROLL      The default. Momentum-driven.
 AIR       After an ollie or a drop. No steering authority beyond a small nudge.
-SLIDE     Powerslide. High steering authority, heavy speed bleed.
+SLIDE     Powerslide. The wheels let go: the deck swings out to about eighty
+          degrees, travel carries on, speed scrubs. Releasing drags the
+          board straight again.
 BAIL      Failure state on a bad landing. 1.1 s recovery, board rolls away.
 ```
 
@@ -27,15 +29,21 @@ Simulated at 60 Hz, in metres.
 
 ```
 maxSpeed        11.0 m/s base, 13.5 with full flow
-pushImpulse     3.1 m/s, decaying to 0 at maxSpeed (cannot push past the cap)
+pushImpulse     3.1 m/s, decaying to 0 at maxSpeed (cannot push past the cap),
+                delivered over the stride while the foot is on the road (22%–70%
+                of a 0.34 s stride, raised-cosine), not on the button frame
 pushCooldown    0.42 s (rhythm is deliberate; mashing does nothing)
 rollFriction    surface-dependent, see table
 carveRate       3.4 rad/s at low speed, falling to 1.1 rad/s at maxSpeed
                 (turning radius grows with speed — this is the whole feel)
-lateralGrip     0.86; excess lateral velocity is shed, not clamped, so hard
-                carves *drift* slightly
+lateralGrip     0.34 per frame; excess lateral velocity is shed, not clamped,
+                so hard carves *drift* slightly
+lean            against the cornering load: speed × turn rate, 6 m/s² is full
 ollieImpulse    3.6 m/s vertical, 0.52 s airtime, preserves horizontal velocity
-slideFriction   6.5 m/s², steering authority 4.6 rad/s
+slideFriction   6.5 m/s²; the wheels let go (lateral grip 0.015 per frame),
+                the deck is kicked out to 1.4 rad off the line of travel in
+                about a third of a second and never past sideways; letting go
+                drags the heading back onto the travel
 gravity         21 m/s² (heightened; suburban skating is not a physics paper)
 ```
 

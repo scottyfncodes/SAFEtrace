@@ -240,6 +240,12 @@ export class Audio {
 
   push(): void { if (this.skateGain) this.burst(this.skateGain, 1400, 260, 0.16, 0.09); }
   pop(): void { if (this.skateGain) { this.burst(this.skateGain, 2600, 700, 0.06, 0.14); this.env(this.skateGain, 210, 'square', 0.002, 0.05, 0.05); } }
+  /** Urethane dragged sideways across the road: a short, rising scrub. */
+  slide(force: number): void {
+    if (!this.skateGain) return;
+    const k = Math.max(0.2, Math.min(1, force));
+    this.burst(this.skateGain, 1600 + k * 900, 420, 0.22 + k * 0.1, 0.05 + k * 0.06);
+  }
   land(force: number): void {
     if (!this.skateGain) return;
     this.burst(this.skateGain, 900, 180, 0.09, 0.05 + force * 0.1);
