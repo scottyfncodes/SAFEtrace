@@ -109,34 +109,50 @@ export class Notebook {
       : this.selected.length === 1 ? 'And what goes with it?' : 'Connect them?';
 
     const body = threads.length === 0
-      ? `<div class="nb-empty">Nothing written down yet. It's a nice afternoon.</div>`
+      ? `<div class="nb-empty">${EMPTY_TRACE}<span>Nothing written down yet. It's a nice afternoon.</span>
+          <span class="nb-empty-hint">What you see and hear, you write down here.</span></div>`
       : threads.map(({ t, clues, deductions }) => {
         const keyed = cf.defs.deductions.some((d) => d.thread === t.id && d.key);
         const answered = keyed ? cf.threadAnswered(t.id) : deductions.length > 0;
         const open = cf.openConnections(t.id);
         return `
           <section class="nb-thread${answered ? ' answered' : ''}">
-            <h3>${esc(t.question)}</h3>
+            <h3>${esc(t.question)}${answered ? '<span class="nb-status done">✓ Answered</span>' : ''}</h3>
             ${answered ? `<div class="nb-answer">${esc(t.answered)}</div>` : ''}
             ${open > 0 ? `<div class="nb-open">Something here fits together.</div>` : ''}
-            ${deductions.map((d) => this.deduction(d)).join('')}
-            ${clues.map((c) => this.clue(c)).join('')}
+            <div class="nb-trail">
+              ${deductions.map((d) => this.deduction(d)).join('')}
+              ${clues.map((c) => this.clue(c)).join('')}
+            </div>
           </section>`;
       }).join('');
 
     const resultLine = this.result
-      ? `<div class="nb-result ${this.result.tone}">${this.result.tone === 'new' ? '<b>Worked out:</b> ' : ''}${esc(this.result.text)}</div>`
+      ? `<div class="nb-result ${this.result.tone}" role="status">${this.result.tone === 'new' ? '<b>Worked out:</b> ' : ''}${esc(this.result.text)}</div>`
       : '';
 
+    const noted = cf.clues.size;
+    const made = cf.deductions.size;
+    const meta = noted === 0 ? ''
+      : `${noted} ${noted === 1 ? 'thing' : 'things'} noted · ${made} ${made === 1 ? 'connection' : 'connections'} made`;
+    // The pair being considered, kept in view while the list scrolls.
+    const picks = this.selected.length === 0 ? '' : `<div class="nb-picks" aria-live="polite">${
+      this.selected.map((id, i) => `<span class="pk"><b>${i + 1}</b><span>${esc(cf.clue(id)?.title ?? '')}</span></span>`)
+        .join('<span class="plus">+</span>')}</div>`;
+
     this.el.innerHTML = `
-      <div class="nb-sheet" role="dialog" aria-label="Notes">
+      <div class="nb-sheet" role="dialog" aria-modal="true" aria-labelledby="nb-title">
         <header>
-          <div class="nb-title">notes</div>
-          <button class="nb-close" data-close="1">${this.touch ? 'Close' : 'Close · N'}</button>
+          <div class="nb-headline">
+            <div class="nb-title" id="nb-title">notes</div>
+            ${meta ? `<div class="nb-meta">${meta}</div>` : ''}
+          </div>
+          <button class="nb-close" data-close="1">${this.touch ? 'Close' : 'Close <kbd>N</kbd>'}</button>
         </header>
         <div class="nb-body">${this.scoreNote()}${body}</div>
         <footer>
           ${resultLine}
+          ${picks}
           <div class="nb-actions">
             <span class="nb-help">${esc(help)}</span>
             <button class="nb-connect" data-connect="1" ${this.selected.length === 2 ? '' : 'disabled'}>Connect</button>
@@ -162,8 +178,10 @@ export class Notebook {
     const sel = this.selected.includes(c.id);
     const wrong = cf.isDisproved(c.id);
     const isNew = !cf.seen.has(c.id);
+    const order = this.selected.indexOf(c.id);
     return `
-      <button class="nb-entry clue${sel ? ' sel' : ''}${wrong ? ' wrong' : ''}" data-entry="${c.id}">
+      <button class="nb-entry clue${sel ? ' sel' : ''}${wrong ? ' wrong' : ''}" data-entry="${c.id}" aria-pressed="${sel}">
+        ${order >= 0 ? `<i class="nb-pick" aria-hidden="true">${order + 1}</i>` : ''}
         <span class="nb-t">${esc(c.title)}${isNew ? '<i class="nb-new">new</i>' : ''}</span>
         <span class="nb-b">${esc(c.body)}</span>
         <span class="nb-w">${wrong ? "doesn't hold up" : esc(c.where)}</span>
@@ -179,6 +197,12 @@ export class Notebook {
       </div>`;
   }
 }
+
+/** A pencil line that has not gone anywhere yet. */
+const EMPTY_TRACE = `<svg viewBox="0 0 120 28" fill="none" aria-hidden="true">
+  <path d="M4 18c14-10 22 6 36-2s20-10 34-2 18 6 30-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="2 5"/>
+  <circle cx="108" cy="10" r="3" stroke="currentColor" stroke-width="1.4"/>
+</svg>`;
 
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

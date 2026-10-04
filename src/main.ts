@@ -267,6 +267,7 @@ class Game {
   private applySettings(): void {
     this.touch.setThrowMode(!this.settings.classicSling);
     document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
+    document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
     this.audio.applySettings();
     saveSettings(this.settings);
   }
@@ -422,20 +423,27 @@ class Game {
    * these options are for.
    */
   private showPrefs(): void {
+    document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
     const saved = loadAfternoon();
     const el = document.createElement('div');
     el.id = 'prefs';
     el.innerHTML = `
-      <div class="card">
-        <h2>Before you begin</h2>
+      <div class="card" role="dialog" aria-modal="true" aria-labelledby="pref-title">
+        <div class="st-title" aria-label="SAFETRACE"><div><b>SAFE</b><span>TRACE</span></div></div>
+        <h2 id="pref-title">Before you begin</h2>
         <p class="muted">These can be changed at any time.</p>
-        <label><input type="checkbox" id="pref-motion"> Reduce motion and flashing</label>
-        <label><input type="checkbox" id="pref-colour"> Colour-blind safe palette</label>
-        <label><input type="checkbox" id="pref-text"> Larger text</label>
+        <div class="settings-group">
+          <label class="setting"><span class="s-label">Reduce motion and flashing</span><input class="switch" type="checkbox" role="switch" id="pref-motion"></label>
+          <label class="setting"><span class="s-label">Colour-blind safe palette</span><input class="switch" type="checkbox" role="switch" id="pref-colour"></label>
+          <label class="setting"><span class="s-label">Larger text</span><input class="switch" type="checkbox" role="switch" id="pref-text"></label>
+        </div>
+        <div class="actions">
         ${saved
-          ? `<div class="go" id="pref-continue">Continue the afternoon<small>${saved.label}</small></div>
-             <div class="go quiet" id="pref-go">Start a new afternoon</div>`
-          : '<div class="go" id="pref-go">Continue</div>'}
+          ? `<button type="button" class="go" id="pref-continue">Continue the afternoon<small>${saved.label}</small></button>
+             <button type="button" class="go quiet" id="pref-go">Start a new afternoon</button>`
+          : '<button type="button" class="go" id="pref-go">Continue</button>'}
+        </div>
+        ${this.touchPrimary ? '' : `<div class="keyhint"><kbd>Enter</kbd> to ${saved ? 'continue the afternoon' : 'continue'}</div>`}
       </div>`;
     document.body.appendChild(el);
     (el.querySelector('#pref-motion') as HTMLInputElement).checked = this.settings.reduceMotion;
@@ -451,6 +459,7 @@ class Game {
       this.settings.colourSafeMachine = (el.querySelector('#pref-colour') as HTMLInputElement).checked;
       this.settings.textScale = (el.querySelector('#pref-text') as HTMLInputElement).checked ? 1.2 : 1;
       document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
+      document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
       saveSettings(this.settings);
       el.classList.add('hidden');
       window.setTimeout(() => el.remove(), 520);
@@ -467,6 +476,9 @@ class Game {
     el.querySelector('#pref-go')!.addEventListener('click', () => go(false));
     el.querySelector('#pref-continue')?.addEventListener('click', () => go(true));
     window.addEventListener('keydown', function once(e) {
+      // A focused button answers for itself: Enter on "Start a new afternoon"
+      // must start a new one, not take the shortcut's default.
+      if ((e.target as HTMLElement | null)?.closest?.('#prefs button')) return;
       if (e.code === 'Enter' || e.code === 'Space') {
         window.removeEventListener('keydown', once);
         go(!!saved);
