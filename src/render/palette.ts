@@ -35,6 +35,26 @@ export const TECH = {
 };
 
 /**
+ * The sky over the town and the ground running out to it. Daytime under
+ * heavy cloud: a dark slate lid, and a band of dirty light at the horizon so
+ * the skyline reads as silhouette. Depth comes from value, not fog.
+ */
+export const SKY = {
+  top: '#2C333A',
+  mid: '#565F66',
+  horizon: '#8C8676',
+  /** The faint far-field wash; kept light-handed so it never reads as fog. */
+  haze: '#6E7473',
+  ground: '#3A3E33',
+};
+
+/**
+ * The town's ink: a building's edges, a kerb, a slab joint. Lighter and
+ * thinner than the ink on people, so a person is always the strongest edge.
+ */
+export const CITY_INK = '#0E1114';
+
+/**
  * Wear a colour down into the town.
  *
  * Building paint comes from content, authored when Bellhaven was a pastel
@@ -47,7 +67,7 @@ export function weather(c: string, amount = 1): string {
   const [r, g, b] = hex(c);
   const grey = r * 0.3 + g * 0.55 + b * 0.15;
   const keep = 1 - 0.55 * amount;           // saturation that survives
-  const dark = 1 - 0.16 * amount;           // and the grime on top of it
+  const dark = 1 - 0.3 * amount;            // and the grime on top of it
   const tint = [150, 148, 140];             // weathered concrete
   const k = 0.12 * amount;
   const ch = (v: number, t: number) => Math.round(((grey + (v - grey) * keep) * dark) * (1 - k) + t * k);
@@ -55,24 +75,24 @@ export function weather(c: string, amount = 1): string {
 }
 
 export const VENEER = {
-  void: '#C3C9CC',
-  asphalt: '#4D545A',
-  asphaltEdge: '#40464C',
-  smoothConcrete: '#A3A49F',
-  roughConcrete: '#99958B',
-  tile: '#A89E90',
-  grass: '#6C7754',
-  grassDark: '#5C6648',
-  gravel: '#8A8478',
-  dirt: '#7F6C55',
-  water: '#5A7880',
-  shadow: 'rgba(22,28,38,0.30)',
-  shadowSoft: 'rgba(22,28,38,0.16)',
-  wallWarm: '#B9AD9C',
-  wallCool: '#A6ADB0',
-  roofTerracotta: '#80574A',
-  roofSlate: '#3E454C',
-  line: 'rgba(20,24,30,0.36)',
+  void: '#7E8483',
+  asphalt: '#30353A',
+  asphaltEdge: '#262A2E',
+  smoothConcrete: '#6F706B',
+  roughConcrete: '#67645D',
+  tile: '#6F685E',
+  grass: '#474A3D',
+  grassDark: '#3F4437',
+  gravel: '#69645B',
+  dirt: '#5C5042',
+  water: '#3D545B',
+  shadow: 'rgba(10,13,18,0.42)',
+  shadowSoft: 'rgba(10,13,18,0.24)',
+  wallWarm: '#7A7064',
+  wallCool: '#666D71',
+  roofTerracotta: '#5A3F36',
+  roofSlate: '#2C3136',
+  line: 'rgba(12,14,18,0.5)',
   roadMark: 'rgba(222,216,196,0.42)',
   accent: TECH.cyanInk,
   /**
@@ -96,7 +116,7 @@ export const VENEER = {
    * the one hue nothing else in a person's silhouette uses.
    */
   friend: '#5FBF52',
-  tree: '#4A5B44',
+  tree: '#323D30',
   /*
    * People, and telling them apart.
    *
@@ -124,8 +144,8 @@ export const VENEER = {
   responding: '#E8A33D',
   intervening: '#FF5C47',
   skin: '#F2D3B8',
-  treeLight: '#5F7150',
-  glass: 'rgba(118,146,160,0.85)',
+  treeLight: '#3F4C3B',
+  glass: 'rgba(70,88,98,0.88)',
 };
 
 export const MACHINE = {
