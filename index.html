@@ -21,22 +21,66 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
-      /* Before a single script has run: the right colour, and a quiet word. */
+      /* Before a single script has run: the right colour, the name, and a
+         line being drawn — so a slow connection looks like loading, and a
+         failure says so instead of waiting forever. */
       html, body { margin: 0; height: 100%; background: #0B1016; }
       #boot {
-        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-        color: rgba(231, 237, 242, 0.5); font: 300 12px/1 Inter, system-ui, sans-serif;
-        letter-spacing: 0.3em; text-transform: uppercase; transition: opacity 400ms ease;
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        color: #E7EDF2; font: 300 12px/1 Inter, system-ui, sans-serif; z-index: 50;
+        letter-spacing: 0.34em; text-transform: uppercase; transition: opacity 400ms ease;
       }
+      #boot .name b { font-weight: 600; }
+      #boot .name span { font-weight: 200; }
+      #boot .line { position: relative; width: 132px; height: 1px; background: rgba(231, 237, 242, 0.14); overflow: hidden; }
+      #boot .line::after {
+        content: ''; position: absolute; inset: 0; background: #4FE0C4;
+        transform-origin: left; animation: boot-trace 1.6s cubic-bezier(.16,1,.3,1) infinite;
+      }
+      #boot .place { color: rgba(231, 237, 242, 0.5); font-size: 10.5px; letter-spacing: 0.3em; }
+      #boot .fail { display: none; max-width: 300px; text-align: center; text-transform: none; letter-spacing: 0.01em; font-size: 13px; line-height: 1.6; color: #C3CDD5; }
+      #boot .fail button {
+        margin-top: 14px; font: 600 13px/1 Inter, system-ui, sans-serif; color: #10171F; background: #E7EDF2;
+        border: 0; border-radius: 999px; padding: 12px 22px; cursor: pointer;
+      }
+      #boot.failed .line, #boot.failed .place { display: none; }
+      #boot.failed .fail { display: block; }
+      @keyframes boot-trace { 0% { transform: scaleX(0); } 70% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { #boot .line::after { animation: none; transform: scaleX(0.5); } }
     </style>
   </head>
   <body>
-    <div id="boot">Bellhaven</div>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="name" aria-label="SAFETRACE"><b>SAFE</b><span>TRACE</span></div>
+      <div class="line" aria-hidden="true"></div>
+      <div class="place">Bellhaven</div>
+      <div class="fail">
+        Bellhaven didn't load. This is usually the connection, or a browser that has turned off something the game needs.
+        <br /><button type="button" onclick="location.reload()">Try again</button>
+      </div>
+    </div>
+    <script>
+      // The game removes #boot once it is running. If it is still here after
+      // an error before that point, or after a long wait, say so plainly.
+      (function () {
+        function fail() { var b = document.getElementById('boot'); if (b) b.className = 'failed'; }
+        // Capture phase, so a script that fails to load is heard too; a
+        // stylesheet or font that fails is not a reason to give up.
+        window.addEventListener('error', function (e) {
+          if (!document.getElementById('boot')) return;
+          var t = e.target;
+          if (t && t !== window && t.tagName !== 'SCRIPT') return;
+          fail();
+        }, true);
+        window.addEventListener('unhandledrejection', function () { if (document.getElementById('boot')) fail(); });
+        setTimeout(fail, 20000);
+      })();
+    </script>
     <canvas id="game"></canvas>
     <div id="ui"></div>
-    <noscript><p style="color:#E7EDF2;font-family:sans-serif;padding:24px">SAFETRACE needs JavaScript to run.</p></noscript>
+    <noscript><style>#boot .line, #boot .place { display: none; }</style><p style="position:fixed;inset:auto 0 30vh;text-align:center;color:#C3CDD5;font:13px/1.6 Inter,system-ui,sans-serif;z-index:60">SAFETRACE needs JavaScript to run.</p></noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
