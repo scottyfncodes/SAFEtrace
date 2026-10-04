@@ -16,10 +16,20 @@
  * afternoon — nodes looped, tampered with or taken down; cameras noticed and
  * so understood; clues written down; VISION unlocked. It only ever grows.
  *
- * Control is grip minus cut, clamped to -1..1: +1 is a town the system owns,
- * -1 a town the kid has lit up. Everything here is read from the simulation
- * and nothing is written to it, so the mood can never change what happens,
- * only how it looks.
+ * Control is where the town starts, plus grip, minus cut, clamped to -1..1:
+ * +1 is a town the system owns, -1 a town the kid has lit up. Everything here
+ * is read from the simulation and nothing is written to it, so the mood can
+ * never change what happens, only how it looks.
+ *
+ * **The town begins partially owned** (`START`), and the player's job is to
+ * peel ownership away. The loop this is drawn for is
+ *
+ *     pressure → identify → sabotage → relief → deeper infiltration
+ *
+ * so the numbers are set for it: a fresh afternoon sits at START, the first
+ * node looped takes the town most of the way back to an ordinary afternoon
+ * (the sqrt below makes the first one count most), and only a sustained run
+ * of sabotage and understanding takes it past ordinary into lit.
  */
 import type { Sim } from '../sim/sim';
 import type { EscalationLevel } from '../sim/surveillance/types';
@@ -33,6 +43,9 @@ export interface Mood {
   /** grip against cut: -1 (lit) .. 0 (ordinary) .. +1 (owned). */
   control: number;
 }
+
+/** Where a fresh afternoon starts: already a little owned. */
+export const START = 0.32;
 
 const LADDER: Record<EscalationLevel, number> = {
   PASSIVE: 0, MONITORING: 0.25, DRONE_DISPATCH: 0.5, PATROL_DISPATCH: 0.75, INTERVENTION: 1,
@@ -74,7 +87,7 @@ export function moodFrom(i: MoodInputs): Mood {
   const noticed = i.sensors > 0 ? i.sensorsKnown / i.sensors : 0;
   const written = 1 - Math.exp(-i.clues / 5);
   const cut = clamp01(0.55 * Math.sqrt(sabotage) + 0.2 * noticed + 0.2 * written + (i.vision ? 0.12 : 0));
-  return { grip, cut, control: clamp(grip * 1.15 - cut * 1.3, -1, 1) };
+  return { grip, cut, control: clamp(START + grip * 1.15 - cut * 1.3, -1, 1) };
 }
 
 export function readMood(sim: Sim): MoodInputs {

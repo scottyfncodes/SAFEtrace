@@ -1114,13 +1114,21 @@ export class PerspectiveRenderer {
           if (cp.length < 3) continue;
           let fill = d.fill, text = d.text;
           /*
-           * Windows answer the mood. In an owned town the lamps go out and
-           * the curtains close; in a lit one more rooms have somebody home.
+           * Windows answer the mood. In a lit town more rooms have somebody
+           * home. In an owned one the town has gone dark around the rooms
+           * that are occupied and the shops that are open, and those few
+           * hold their light and spill it onto the ground in front of them —
+           * a pool of paper-white, never lamp-yellow (that hue is the
+           * player's). Few, low and soft: the town should feel watched, not
+           * decorated.
            */
           if (d.lit) {
             const pg = this.page;
-            if (d.lit === 2 && pg.owned > 0) fill = mix(GLASS_WARM, GLASS, Math.min(1, pg.owned * 1.4));
-            else if (d.lit === 1 && pg.lit > 0.15) fill = mix(GLASS_LIT, GLASS_WARM, Math.min(1, (pg.lit - 0.15) * 1.3));
+            if (d.lit === 1 && pg.lit > 0.15) fill = mix(GLASS_LIT, GLASS_WARM, Math.min(1, (pg.lit - 0.15) * 1.3));
+            if (d.lit === 3 && pg.owned > 0) fill = mix(GLASS_LIT, GLASS_WARM, Math.min(1, pg.owned * 1.3));
+            if (d.pool && pg.owned > 0.08 && near < 75) {
+              this.lightPool(cam, d.pool, Math.min(1, (pg.owned - 0.08) / 0.4) * (d.lit === 3 ? 1 : 0.8));
+            }
           }
           // A tag is louder in a lit town and painted out in an owned one.
           if (d.tag && text) text = { ...text, colour: alpha(d.tag.col, d.tag.a * clamp(1 + 0.45 * this.page.lit - 0.7 * this.page.owned, 0.15, 1)) };
@@ -1231,29 +1239,38 @@ export class PerspectiveRenderer {
       .filter((x) => near(x.data.pos, 100))
       .map((x) => ({ id: x.data.id, pos: x.data.pos, facing: x.facing, range: x.data.range }));
     /*
-     * When the system owns the town it draws its own lines on it: a cyan
-     * wedge on the ground in front of every working camera, the way the
-     * plan draws coverage — the machine's register, leaking into the street.
-     * They come up with the mood and go the moment the town is cut loose.
+     * Where the lenses look, the ground is a little colder.
+     *
+     * In an owned town every working camera throws a faint pool of cold,
+     * paper-white light onto the ground in the direction it is facing — the
+     * way an infrared lamp under a housing lights a patch of pavement — and
+     * the one that has you is faintly warm. No edges, no outline, nothing
+     * that reads as a marker: a player who looks will learn to see which
+     * patches of street are watched; one who does not will only feel that
+     * the town is. It fades with the mood and is gone once the town is cut
+     * loose.
      */
     const owned = this.page.owned;
-    if (owned > 0.3) {
-      const k = Math.min(1, (owned - 0.3) / 0.45);
+    if (owned > 0.12) {
+      const k = Math.min(1, (owned - 0.12) / 0.5);
       const seeing = new Set(sim.sensorsSeeingPlayer().map((x) => x.data.id));
       for (const sx of sim.sensors) {
         const d = sx.data;
-        if (!(sx.state === 'ONLINE' || sx.state === 'DEGRADED') || !near(d.pos, 80)) continue;
-        const r = Math.min(14, d.range * 0.4);
-        const half = d.fov / 2;
-        const pts: Vec2[] = [{ x: d.pos.x, y: d.pos.y }];
-        for (let i = 0; i <= 6; i++) {
-          const a = sx.facing - half + (i / 6) * d.fov;
-          pts.push({ x: d.pos.x + Math.cos(a) * r, y: d.pos.y + Math.sin(a) * r });
-        }
+        if (!(sx.state === 'ONLINE' || sx.state === 'DEGRADED') || !near(d.pos, 85)) continue;
+        const reach = Math.min(12, d.range * 0.38);
         const hot = seeing.has(d.id);
-        flat(pts, alpha(hot ? SIGNAL.warning : TECH.cyan, (hot ? 0.3 : 0.2) * k), 60);
-        for (const a of [sx.facing - half, sx.facing + half]) {
-          stroke({ x: d.pos.x, y: d.pos.y }, { x: d.pos.x + Math.cos(a) * r, y: d.pos.y + Math.sin(a) * r }, 0.12, alpha(hot ? SIGNAL.warning : TECH.cyan, 0.8 * k), 60);
+        const fx = Math.cos(sx.facing), fy = Math.sin(sx.facing);
+        const c = { x: d.pos.x + fx * reach * 0.6, y: d.pos.y + fy * reach * 0.6 };
+        const col = mix(POOL_LIGHT, hot ? SIGNAL.warning : TECH.cyan, hot ? 0.32 : 0.28);
+        // Five soft rings, elongated along the look, for a falloff without a gradient.
+        for (const [ra, rb, a] of [[1, 1, 0.045], [0.82, 0.8, 0.05], [0.64, 0.6, 0.055], [0.46, 0.42, 0.06], [0.28, 0.25, 0.065]] as const) {
+          const pts: Vec2[] = [];
+          for (let i = 0; i < 14; i++) {
+            const t = (i / 14) * Math.PI * 2;
+            const u = Math.cos(t) * reach * 0.55 * ra, v = Math.sin(t) * reach * 0.36 * rb;
+            pts.push({ x: c.x + fx * u - fy * v, y: c.y + fy * u + fx * v });
+          }
+          flat(pts, alpha(col, a * k * (hot ? 1.6 : 1)), 56);
         }
       }
     }
@@ -1867,6 +1884,27 @@ export class PerspectiveRenderer {
     ctx.restore();
   }
 
+  /**
+   * A pool of light on the ground in front of a lit window or shopfront:
+   * half an ellipse, out from the wall, in five soft rings.
+   */
+  private lightPool(cam: Cam, pool: { at: Vec2; nx: number; ny: number; w: number }, k: number): void {
+    const { at, nx, ny, w } = pool;
+    const depth = 1.4 + w * 0.15;
+    const half = w * 0.5 + 0.6;
+    // Five fine rings rather than three coarse ones: on a dark road three
+    // read as banding, which is a decoration; five read as falloff.
+    for (const [s, a] of [[1, 0.07], [0.82, 0.07], [0.64, 0.08], [0.46, 0.09], [0.28, 0.1]] as const) {
+      const pts: P3[] = [];
+      for (let i = 0; i <= 10; i++) {
+        const t = -Math.PI / 2 + (i / 10) * Math.PI;
+        const out = Math.cos(t) * depth * s + 0.05, across = Math.sin(t) * half * s;
+        pts.push({ x: at.x + nx * out - ny * across, y: at.y + ny * out + nx * across, z: 0.01 });
+      }
+      this.push(cam, pts, alpha(POOL_LIGHT, a * k), undefined, undefined, Layer.Ground, 55);
+    }
+  }
+
   /** A small bird, sat on a wire, as an ink silhouette facing the eye. */
   private bird(cam: Cam, p: Vec2, z: number, flip: boolean): void {
     const d = Math.hypot(p.x - cam.pos.x, p.y - cam.pos.y);
@@ -2438,8 +2476,10 @@ export class PerspectiveRenderer {
 
 interface Decal {
   pts: P3[]; fill: string; text?: Face['text']; ink?: boolean;
-  /** A window: 1 = might be lit, 2 = somebody is home. The mood decides. */
-  lit?: 1 | 2;
+  /** A window: 1 = might be lit, 2 = somebody is home, 3 = a shopfront. The mood decides. */
+  lit?: 1 | 2 | 3;
+  /** Where its light falls: the foot of the wall under it, the wall's outward normal, its width. */
+  pool?: { at: Vec2; nx: number; ny: number; w: number };
   /** A sprayed tag: its colour and how fresh it is. The mood decides how loud. */
   tag?: { col: string; a: number };
 }
@@ -2641,6 +2681,8 @@ function dress(b: Building, sim: Sim): Dressing {
       // A glass front, a door in it, and the name over the top.
       const front = rect(e.len * 0.08, e.len * 0.92, 0.35, 2.7, GLASS_LIT);
       front.ink = true;
+      front.lit = 3;
+      front.pool = { at: { x: e.a.x + along.x * e.len * 0.5, y: e.a.y + along.y * e.len * 0.5 }, nx: e.nx, ny: e.ny, w: e.len * 0.84 };
       out.push(front);
       out.push(rect(e.len * 0.46, e.len * 0.54, 0.02, 2.4, '#3D4C58', undefined, 0.05));
       if (sign) out.push(rect(e.len * 0.12, e.len * 0.88, 3.05, 4.05, SIGN,
@@ -2659,6 +2701,7 @@ function dress(b: Building, sim: Sim): Dressing {
           const win = rect(t - 0.6, t + 0.6, z0, z0 + 1.25, pane);
           win.ink = true;
           if (pane === GLASS_WARM) win.lit = 2; else if (pane === GLASS_LIT) win.lit = 1;
+          if (win.lit === 2) win.pool = { at: { x: e.a.x + along.x * t, y: e.a.y + along.y * t }, nx: e.nx, ny: e.ny, w: 1.2 };
           out.push(win);
         }
       }
@@ -2749,6 +2792,13 @@ function dress(b: Building, sim: Sim): Dressing {
 }
 
 const POLE_H = 8.6;
+
+/**
+ * Light on the ground in an owned town: a clean paper-white, brighter than
+ * the page, so it still reads under the mood's wash. Not lamp-yellow — that
+ * hue is the player's.
+ */
+const POOL_LIGHT = '#F4F0E6';
 
 /** A bird's outline, across and up from its perch: tail, back, head, beak, breast. */
 const BIRD: ReadonlyArray<readonly [number, number]> = [

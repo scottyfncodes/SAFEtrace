@@ -1073,7 +1073,9 @@ export class Renderer {
       this.perspective.seen = this.seenPlaces;
       this.perspective.fresh = this.freshPlaces;
       const want = this.moodOverride ?? moodOf(sim).control;
-      this.mood += (want - this.mood) * (1 - Math.exp(-dt / 1.6));
+      // Relief is quick and pressure creeps: the town lightens within half
+      // a second of a sabotage, and darkens over a couple of seconds.
+      this.mood += (want - this.mood) * (1 - Math.exp(-dt / (want < this.mood ? 0.5 : 1.8)));
       this.perspective.mood = this.mood;
       this.perspective.draw(ctx, sim, eye, this.w, this.h, false);
       this.drawParticles(ctx, eye);

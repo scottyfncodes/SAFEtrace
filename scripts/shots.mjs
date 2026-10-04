@@ -26,7 +26,7 @@ const url = process.env.SHOT_URL ?? 'http://localhost:5173/';
 mkdirSync(out, { recursive: true });
 
 /* The slice: Maple Court down to Devon, plus a corner with a cabinet. */
-const SHOTS = process.env.SHOT_ONLY ? [{ name: 'maple-doorbell', pos: { x: 158, y: 236 }, heading: Math.PI - 0.1 }, { name: 'officer', near: 'patrol' }] : [
+const SHOTS = process.env.SHOT_ONLY ? [{ name: 'maple-doorbell', pos: { x: 158, y: 236 }, heading: Math.PI - 0.1 }, { name: 'officer', near: 'patrol' }, { name: 'parade', pos: { x: 404, y: 82 }, heading: -Math.PI / 2 }] : [
   { name: 'maple-start', pos: { x: 158, y: 214 }, heading: Math.PI / 2 },
   { name: 'maple-devon', pos: { x: 158, y: 262 }, heading: Math.PI / 2 },
   { name: 'maple-doorbell', pos: { x: 158, y: 236 }, heading: Math.PI - 0.1 },
