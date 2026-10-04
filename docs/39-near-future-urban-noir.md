@@ -39,16 +39,19 @@ only later *"what if it's wrong?"*
 
 All of it is in `src/render/palette.ts`. A hard-coded colour elsewhere is a bug.
 
-### The town (`VENEER`)
+### The town (`VENEER`, `SKY`, `CITY_INK`)
 ```
-Asphalt        #4D545A   Concrete smooth  #A3A49F   Concrete rough #99958B
-Grass / verge  #6C7754   Dirt             #7F6C55   Water          #5A7880
-Wall warm      #B9AD9C   Wall cool        #A6ADB0   Roof           #80574A / #3E454C
-Tree           #4A5B44   Shadow           #161C26 at 22–30%
-Sky            slate #5C6873 → #96A0A6 → low dirty light #C8B99C at the horizon
+Asphalt        #30353A   Footway          #6F706B   Forecourt      #67645D
+Verge / lawn   #474A3D   Dirt             #5C5042   Water          #3D545B
+Wall warm      #7A7064   Wall cool        #666D71   Roof           #5A3F36 / #2C3136
+Tree           #323D30   Cast shadow      #0A0D12 at 40%
+Sky            slate #2C333A → #565F66 → dirty light #8C8676 at the horizon
+City ink       #0E1114   building edges, kerbs, slab joints
 ```
-Every surface of the town is below 30% HSL saturation, and a test holds it
-there (`tests/art-direction.test.ts`).
+Every surface of the town is below 30% HSL saturation and in the low-to-mid
+values (HSL lightness at most 45%), and tests hold both
+(`tests/art-direction.test.ts`). The people are the brightest saturated
+things in the frame, by construction.
 
 Buildings keep the paint they were authored with, but `weather()` wears it down
 on the way to the glass and it is laid over a material — brick, block, render,
@@ -103,6 +106,32 @@ so no collision, sightline, forecast or test result moves.
 - **Fences as what they are.** Fences were always real (they block the rider
   and the cameras) but were drawn as a half-metre tile. A tall one is chain-link
   — posts, top rail, a see-through mesh — and a low one is a block wall.
+
+### The noir correction
+
+The first pass was right in hue and wrong in value: on a phone the frame was
+still mostly pale footway, green lawn and light sky, which reads as a muted
+suburb. The correction moved the town down the value scale and gave it
+graphic weight, without touching the camera, the people or any colour that
+means something in play:
+
+- **Value.** Asphalt near-black, footways and forecourts mid-grey, verges a
+  dead olive, the sky a dark slate lid with dirty light only at the horizon.
+  Building materials and `weather()` both run darker.
+- **Light and shade.** The shaded wall of every building drops much further
+  than the lit one, and cast shadows are twice as dense, so form reads from
+  value and silhouette rather than from colour or fog. The far-field haze
+  was cut back for the same reason.
+- **Ink.** Buildings are drawn with a firm city-ink outline, and street
+  furniture with a lighter one. Both stay thinner and fainter than the ink on
+  people, so a person is always the strongest edge. Wires are not inked.
+- **Infrastructure on the ground.** An inked kerb wherever carriageway meets
+  footway; slab joints across every footway and over open forecourts; old
+  stains on forecourts, trodden and bare patches on verges; lane markings
+  worn further back.
+
+All of it lives in `palette.ts` and the environment paths of
+`perspective.ts`. Nothing reads it but the renderer.
 
 ## 5. SAFEtrace in the street
 

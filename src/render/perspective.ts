@@ -25,16 +25,8 @@ import { hashString } from '../core/rng';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
 import type { Building, Prop, WorldData } from '../sim/worldTypes';
-import { SURFACE_COLOUR, TECH, VENEER, alpha, mix, shade, weather } from './palette';
+import { CITY_INK, SKY, SURFACE_COLOUR, TECH, VENEER, alpha, mix, shade, weather } from './palette';
 
-/** The sky over Bellhaven, and the ground that runs out to it. */
-const SKY = {
-  top: '#5C6873',
-  mid: '#96A0A6',
-  horizon: '#C8B99C',
-  haze: '#A7AFB3',
-  ground: '#5E654E',
-};
 
 /** Eye height of a teenager standing on a board. */
 export const EYE_Z = 1.62;
@@ -633,8 +625,8 @@ export class PerspectiveRenderer {
   private drawMiniatureHaze(ctx: CanvasRenderingContext2D, cam: Cam): void {
     const band = cam.h * 0.3;
     const g = ctx.createLinearGradient(0, 0, 0, band);
-    g.addColorStop(0, alpha(SKY.haze, 0.6));
-    g.addColorStop(0.45, alpha(SKY.haze, 0.18));
+    g.addColorStop(0, alpha(SKY.haze, 0.38));
+    g.addColorStop(0.45, alpha(SKY.haze, 0.1));
     g.addColorStop(1, alpha(SKY.haze, 0));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cam.w, band);
@@ -677,6 +669,12 @@ export class PerspectiveRenderer {
     const clipped = clipNear(pts);
     if (clipped.length < 3) return;
     const depth = sum / world.length;
+    if (this.inkingCity && !this.inking && !stroke && layer !== Layer.Ground) {
+      // The town's ink: thinner and lighter than a person's, so infrastructure
+      // reads as drawn form and a person is still the strongest edge.
+      stroke = alpha(CITY_INK, clamp(0.75 - depth / 160, 0.25, 0.6));
+      wide = clamp(1.1 - depth / 70, 0.5, 1);
+    }
     if (this.inking && !stroke && layer !== Layer.Ground) {
       // An ink line, thinner with distance so a far figure stays a figure
       // and does not become a black dot.
@@ -843,7 +841,7 @@ export class PerspectiveRenderer {
       this.push(cam, [
         { x: a.x, y: a.y, z: 0 }, { x: c.x, y: c.y, z: 0 },
         { x: c.x, y: c.y, z: eave }, { x: a.x, y: a.y, z: eave },
-      ], shade(dr.wall, (facing < 0 ? 0.02 : -0.12) + lit * 0.06 - 0.04), alpha(VENEER.ink, 0.22));
+      ], shade(dr.wall, (facing < 0 ? 0.03 : -0.26) + lit * 0.1 - 0.06), alpha(CITY_INK, 0.7), inkWidth(near));
       const face = this.faces[before];
       const decals = detail ? dr.walls[j] : undefined;
       if (face && decals && decals.length) {
@@ -858,12 +856,13 @@ export class PerspectiveRenderer {
       const r = dr.ridge;
       // Two slopes and two gable ends. The gables are wall-coloured, the
       // slopes are the roof, and the slope facing the sun is the lighter one.
-      this.push(cam, [r.a0, r.a1, r.top1, r.top0], shade(dr.roof, 0.04), alpha(VENEER.ink, 0.2));
-      this.push(cam, [r.b1, r.b0, r.top0, r.top1], shade(dr.roof, -0.12), alpha(VENEER.ink, 0.2));
-      this.push(cam, [r.a0, r.b0, r.top0], shade(dr.wall, -0.06), alpha(VENEER.ink, 0.18));
-      this.push(cam, [r.b1, r.a1, r.top1], shade(dr.wall, -0.06), alpha(VENEER.ink, 0.18));
+      const iw = inkWidth(near);
+      this.push(cam, [r.a0, r.a1, r.top1, r.top0], shade(dr.roof, 0.06), alpha(CITY_INK, 0.7), iw);
+      this.push(cam, [r.b1, r.b0, r.top0, r.top1], shade(dr.roof, -0.22), alpha(CITY_INK, 0.7), iw);
+      this.push(cam, [r.a0, r.b0, r.top0], shade(dr.wall, -0.12), alpha(CITY_INK, 0.7), iw);
+      this.push(cam, [r.b1, r.a1, r.top1], shade(dr.wall, -0.12), alpha(CITY_INK, 0.7), iw);
     } else {
-      this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), dr.roof, alpha(VENEER.ink, 0.2));
+      this.push(cam, poly.map((p) => ({ x: p.x, y: p.y, z: eave })), dr.roof, alpha(CITY_INK, 0.7), inkWidth(near));
       // A flat roof is where the plant goes: a parapet line and a unit or two.
       for (const u of dr.plant) this.boxAt(cam, u.at, u.rot, u.w, u.d, eave, eave + u.h, '#6E7275');
     }
@@ -879,7 +878,7 @@ export class PerspectiveRenderer {
    */
   private collectShadows(sim: Sim, cam: Cam): void {
     const sun = sim.sun;
-    const fill = alpha('#161C26', 0.22);
+    const fill = alpha('#0A0D12', 0.4);
     for (const b of sim.world.data.buildings) {
       if (b.height < 1.2) continue;
       const c = b.poly[0];
@@ -1090,10 +1089,14 @@ export class PerspectiveRenderer {
    * person's silhouette is the strongest edge in the frame.
    */
   private inking = false;
+  /** While set, street furniture and infrastructure get the town's lighter ink. */
+  private inkingCity = false;
 
   private collectActors(sim: Sim, cam: Cam): void {
+    this.inkingCity = true;
     this.collectStreetDressing(sim, cam);
     for (const p of sim.world.propsNear({ x: cam.pos.x, y: cam.pos.y }, FAR)) this.prop(cam, p, sim);
+    this.inkingCity = false;
     this.inking = true;
     this.collectPeople(sim, cam);
     this.inking = false;
@@ -1114,6 +1117,11 @@ export class PerspectiveRenderer {
       if (!near(m.c, 90)) continue;
       this.push(cam, m.poly.map((q) => ({ x: q.x, y: q.y, z: 0 })), m.fill, undefined, undefined, Layer.Ground, 20);
     }
+    const joint = alpha(CITY_INK, 0.28);
+    for (const j of sd.joints) {
+      if (!near(j.c, 45)) continue;
+      this.push(cam, j.poly.map((q) => ({ x: q.x, y: q.y, z: 0 })), joint, undefined, undefined, Layer.Ground, 21);
+    }
     for (const p of sd.poles) {
       if (!near(p.at, 130)) continue;
       // Creosote-dark timber, a crossarm, and on some a transformer can.
@@ -1121,6 +1129,8 @@ export class PerspectiveRenderer {
       this.boxAt(cam, { x: p.at.x, y: p.at.y }, p.rot, 0.12, 1.8, POLE_H - 0.55, POLE_H - 0.42, '#3B332D');
       if (p.can) this.boxAt(cam, { x: p.at.x + Math.cos(p.rot + Math.PI / 2) * 0.32, y: p.at.y + Math.sin(p.rot + Math.PI / 2) * 0.32 }, p.rot, 0.42, 0.42, POLE_H - 2.4, POLE_H - 1.3, '#6F7477');
     }
+    const wasInking = this.inkingCity;
+    this.inkingCity = false;
     for (const w of sd.wires) {
       if (!near(w.a, 120) && !near(w.b, 120)) continue;
       const STEPS = 5;
@@ -1132,9 +1142,10 @@ export class PerspectiveRenderer {
         this.push(cam, [
           { x: a.x, y: a.y, z: z0 - 0.03 }, { x: b.x, y: b.y, z: z1 - 0.03 },
           { x: b.x, y: b.y, z: z1 + 0.03 }, { x: a.x, y: a.y, z: z0 + 0.03 },
-        ], '#24282C');
+        ], '#16191C');
       }
     }
+    this.inkingCity = wasInking;
     for (const sg of sd.signs) {
       if (!near(sg.at, 70)) continue;
       this.boxAt(cam, sg.at, 0, 0.08, 0.08, 0, 3.1, '#5C6166');
@@ -1796,25 +1807,25 @@ interface Dressing {
  * block, render or siding first, and colour second.
  */
 const MATERIAL: Partial<Record<Building['kind'], string[]>> & { house: string[] } = {
-  house: ['#8E7F6C', '#7A8083', '#6F5446', '#958B7B', '#5E6A6E', '#84705C'],
-  shop: ['#6A4639', '#7A766E', '#5A6064', '#7C5A44'],
-  school: ['#7C5242', '#827D73'],
-  civic: ['#8A867D', '#6E7375'],
-  utility: ['#6F7270', '#5E6260'],
-  garage: ['#7A7670', '#6A6E70'],
-  shed: ['#6E6052', '#7A7466'],
-  structure: ['#7D7C78', '#6C6D6A'],
+  house: ['#5F5448', '#4F565A', '#5A3F35', '#665E52', '#434B4F', '#5C4C3E'],
+  shop: ['#4E342B', '#5A5650', '#41474B', '#5C4232'],
+  school: ['#5B3B30', '#5F5B53'],
+  civic: ['#66625A', '#4F5456'],
+  utility: ['#4F5250', '#424644'],
+  garage: ['#5A5650', '#4C5052'],
+  shed: ['#504538', '#5A5448'],
+  structure: ['#5C5B57', '#4D4E4B'],
 };
 
 const TAGS = ['KEZ', 'RONK', 'DV8', 'LOTUS', 'MOTH', 'SK8', 'OKAY?', 'NOVA', 'BRIX', 'ZEPH', 'TUFF', 'GHOST'];
 const SPRAY = ['#C9C2B0', '#A8473D', '#5E86A8', '#E0C34C', '#9E5A8C', '#2B2B2B', '#7FA35A'];
 
-const GLASS = '#3B4850';
-const GLASS_LIT = '#566B77';
+const GLASS = '#1F262B';
+const GLASS_LIT = '#323E46';
 /** A room with the light on: late afternoon under cloud, somebody is home. */
-const GLASS_WARM = '#B09466';
+const GLASS_WARM = '#9C7E4C';
 const DOOR = '#4E3E33';
-const SIGN = '#D9D4C8';
+const SIGN = '#BDB6A7';
 
 /** Which words go on a building's sign, if any. */
 function signFor(b: Building): string | null {
@@ -1873,7 +1884,7 @@ function dress(b: Building, sim: Sim): Dressing {
   const seed = hashString(b.id) >>> 0;
   // What it is built of, and then the paint it was given, worn down.
   const stock = MATERIAL[b.kind] ?? MATERIAL.house;
-  const wall = mix(weather(b.wall), stock[seed % stock.length], 0.55);
+  const wall = mix(weather(b.wall), stock[seed % stock.length], 0.7);
   const roof = weather(b.roof, 0.8);
   const walls: Decal[][] = [];
   const sunlit: number[] = [];
@@ -2016,6 +2027,8 @@ export interface StreetDressing {
   wires: Array<{ a: Vec2; b: Vec2; z: number; sag: number }>;
   signs: Array<{ at: Vec2; blades: Array<{ name: string; rot: number }> }>;
   marks: Array<{ c: Vec2; poly: Vec2[]; fill: string }>;
+  /** Footway slab joints: fine, and only drawn close to the eye. */
+  joints: Array<{ c: Vec2; poly: Vec2[] }>;
 }
 
 const streetCache = new WeakMap<object, StreetDressing>();
@@ -2029,7 +2042,7 @@ const streetCache = new WeakMap<object, StreetDressing>();
 export function streetDressingFor(data: WorldData): StreetDressing {
   const hit = streetCache.get(data);
   if (hit) return hit;
-  const out: StreetDressing = { poles: [], wires: [], signs: [], marks: [] };
+  const out: StreetDressing = { poles: [], wires: [], signs: [], marks: [], joints: [] };
   const nodes = new Map(data.roadNodes.map((r) => [r.id, r.pos]));
   const edges = data.roadEdges
     .map((e) => ({ e, a: nodes.get(e.a), b: nodes.get(e.b) }))
@@ -2109,15 +2122,61 @@ export function streetDressingFor(data: WorldData): StreetDressing {
         }
         out.marks.push({ c, fill: alpha('#262A2E', 0.16 + rnd() * 0.14), poly });
       }
+      /*
+       * The kerb, inked: a hard dark line where carriageway meets footway,
+       * in continuous runs, broken only where something else crosses it.
+       * And the footway's slab joints, every three metres across it.
+       */
+      const hwk = e.width / 2;
+      const isFootway = (sf: ReturnType<typeof topSurface>) => !!sf && (sf.kind === 'smoothConcrete' || sf.kind === 'roughConcrete' || sf.kind === 'tile');
+      for (const side of [1, -1]) {
+        let runStart = -1;
+        const flush = (d0: number, d1: number) => {
+          const o0 = side * (hwk - 0.06), o1 = side * (hwk + 0.1);
+          out.marks.push({
+            c: { x: a.x + ux * (d0 + d1) / 2 + nx * side * hwk, y: a.y + uy * (d0 + d1) / 2 + ny * side * hwk },
+            fill: alpha(CITY_INK, 0.55),
+            poly: [
+              { x: a.x + ux * d0 + nx * o0, y: a.y + uy * d0 + ny * o0 },
+              { x: a.x + ux * d1 + nx * o0, y: a.y + uy * d1 + ny * o0 },
+              { x: a.x + ux * d1 + nx * o1, y: a.y + uy * d1 + ny * o1 },
+              { x: a.x + ux * d0 + nx * o1, y: a.y + uy * d0 + ny * o1 },
+            ],
+          });
+        };
+        const STEP = 1.5;
+        for (let d = 0; d <= len; d += STEP) {
+          const at = (o: number) => ({ x: a.x + ux * d + nx * side * o, y: a.y + uy * d + ny * side * o });
+          const inner = topSurface(at(hwk - 0.4)), outer = topSurface(at(hwk + 0.7));
+          const kerb = !!inner && inner.kind === 'asphalt' && isFootway(outer);
+          if (kerb && runStart < 0) runStart = d;
+          if ((!kerb || d + STEP > len) && runStart >= 0) { flush(runStart, kerb ? Math.min(len, d + STEP) : d); runStart = -1; }
+          if (kerb && Math.round(d / STEP) % 2 === 0) {
+            const mid = topSurface(at(hwk + 1.1));
+            if (isFootway(mid)) {
+              const j0 = side * (hwk + 0.15), j1 = side * (hwk + 2.15);
+              out.joints.push({
+                c: at(hwk + 1.1),
+                poly: [
+                  { x: a.x + ux * (d - 0.025) + nx * j0, y: a.y + uy * (d - 0.025) + ny * j0 },
+                  { x: a.x + ux * (d + 0.025) + nx * j0, y: a.y + uy * (d + 0.025) + ny * j0 },
+                  { x: a.x + ux * (d + 0.025) + nx * j1, y: a.y + uy * (d + 0.025) + ny * j1 },
+                  { x: a.x + ux * (d - 0.025) + nx * j1, y: a.y + uy * (d - 0.025) + ny * j1 },
+                ],
+              });
+            }
+          }
+        }
+      }
       // A centre line, dashed and half worn away, on anything wide enough to have one.
       if (e.width >= 7) {
         for (let d = 3; d < len - 3; d += 9) {
           const c = { x: a.x + ux * (d + 1.5), y: a.y + uy * (d + 1.5) };
           const top = topSurface(c);
           if (!top || top.kind !== 'asphalt') continue;
-          const fade = 0.25 + rnd() * 0.3;
+          const fade = 0.16 + rnd() * 0.22;
           out.marks.push({
-            c, fill: alpha('#D8D2BE', fade),
+            c, fill: alpha('#CFC8B2', fade),
             poly: [
               { x: a.x + ux * d - nx * 0.07, y: a.y + uy * d - ny * 0.07 },
               { x: a.x + ux * (d + 3) - nx * 0.07, y: a.y + uy * (d + 3) - ny * 0.07 },
@@ -2126,6 +2185,67 @@ export function streetDressingFor(data: WorldData): StreetDressing {
             ],
           });
         }
+      }
+    }
+  }
+
+  /*
+   * Worn ground. Verges and lawns are trodden, scuffed and patched with bare
+   * earth, and open forecourts carry old stains: irregular low-contrast
+   * blotches on a jittered grid, only where that surface is the one on top.
+   */
+  {
+    let gh = 0x9e3779b9;
+    const g = () => { gh = (gh * 1103515245 + 12345) >>> 0; return (gh >>> 8) / 16777216; };
+    for (const sf of data.surfaces) {
+      const hard = sf.kind === 'smoothConcrete' || sf.kind === 'roughConcrete';
+      if (sf.kind !== 'grass' && !hard) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const q of sf.poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+      // Concrete gets grime too, but only on open forecourts, not footways.
+      if (hard && (x1 - x0) * (y1 - y0) < 400) continue;
+      for (let x = x0 + 4; x < x1 - 2; x += 11) {
+        for (let y = y0 + 4; y < y1 - 2; y += 11) {
+          const c = { x: x + (g() - 0.5) * 8, y: y + (g() - 0.5) * 8 };
+          const top = topSurface(c);
+          if (top !== sf || g() < (hard ? 0.6 : 0.45)) continue;
+          const r0 = 1.2 + g() * 2.6, squash = 0.5 + g() * 0.5, turn = g() * Math.PI;
+          const poly: Vec2[] = [];
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2, rr = r0 * (0.7 + g() * 0.45);
+            const lx = Math.cos(ang) * rr, ly = Math.sin(ang) * rr * squash;
+            poly.push({ x: c.x + lx * Math.cos(turn) - ly * Math.sin(turn), y: c.y + lx * Math.sin(turn) + ly * Math.cos(turn) });
+          }
+          const earth = !hard && g() < 0.35;
+          out.marks.push({ c, poly, fill: hard ? alpha('#24241F', 0.12 + g() * 0.12) : earth ? alpha('#5A4C3B', 0.32) : alpha('#25271F', 0.2 + g() * 0.12) });
+        }
+      }
+    }
+  }
+
+  /*
+   * Forecourts and plazas are laid in slabs: a joint grid every four metres,
+   * cut into short pieces and kept only where that concrete is the surface
+   * on top, so it never runs across a road, a planter bed or a lawn.
+   */
+  for (const sf of data.surfaces) {
+    if (sf.kind !== 'smoothConcrete' && sf.kind !== 'roughConcrete') continue;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of sf.poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    if ((x1 - x0) * (y1 - y0) < 400) continue;
+    const S = 4, H = 0.03;
+    for (let x = x0 + S; x < x1; x += S) {
+      for (let y = y0; y < y1; y += S) {
+        const c = { x, y: y + S / 2 };
+        if (topSurface(c) !== sf) continue;
+        out.joints.push({ c, poly: [{ x: x - H, y }, { x: x + H, y }, { x: x + H, y: y + S }, { x: x - H, y: y + S }] });
+      }
+    }
+    for (let y = y0 + S; y < y1; y += S) {
+      for (let x = x0; x < x1; x += S) {
+        const c = { x: x + S / 2, y };
+        if (topSurface(c) !== sf) continue;
+        out.joints.push({ c, poly: [{ x, y: y - H }, { x: x + S, y: y - H }, { x: x + S, y: y + H }, { x, y: y + H }] });
       }
     }
   }
@@ -2263,6 +2383,11 @@ function polyDist(q: Vec2, poly: Vec2[]): number {
   let best = Infinity;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) best = Math.min(best, segDist(q.x, q.y, poly[j], poly[i]));
   return best;
+}
+
+/** A building's ink line: firm up close, thinning to a hairline far off. */
+function inkWidth(near: number): number {
+  return clamp(1.3 - near / 90, 0.5, 1.2);
 }
 
 function hairFor(id: string): string {

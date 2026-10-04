@@ -42,6 +42,18 @@ describe('the town is muted and the machine is not', () => {
     for (const c of TOWN) expect({ c, s: sl(c).s < 0.3 }).toEqual({ c, s: true });
   });
 
+  it('keeps the town in the low-to-mid values, so it never reads as a pastel suburb', () => {
+    for (const c of TOWN) expect({ c, l: sl(c).l <= 0.45 }).toEqual({ c, l: true });
+  });
+
+  it('keeps the people brighter and stronger than the ground they stand on', () => {
+    // Darkening the town must make people pop more, never less.
+    const ground = [VENEER.asphalt, VENEER.smoothConcrete, VENEER.roughConcrete, VENEER.grass];
+    for (const who of [VENEER.player, VENEER.friend]) {
+      for (const g of ground) expect(sl(who).s - sl(g).s).toBeGreaterThan(0.3);
+    }
+  });
+
   it('gives SAFEtrace accents that are unmistakably saturated', () => {
     for (const c of [TECH.cyan, TECH.acid, TECH.orange]) expect(sl(c).s).toBeGreaterThan(0.8);
   });
