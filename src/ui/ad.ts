@@ -126,7 +126,7 @@ export class Advertisement {
     if (beat.title) {
       this.el.innerHTML = `
         <div class="centre">
-          <div class="titlecard">SAFETRACE<sup>™</sup></div>
+          <div class="titlecard"><b>SAFE</b>TRACE<sup>™</sup></div>
         </div>`;
       return;
     }

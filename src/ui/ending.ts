@@ -38,17 +38,18 @@ export class EndingCard {
       ? `<li class="got">${d.title}</li>`
       : '<li class="missed">something you never put together</li>').join('');
     const others = ENDING_ORDER.length - seen.length;
+    const dots = ENDING_ORDER.map((eid) => `<i class="${seen.includes(eid) ? 'on' : ''}"></i>`).join('');
     this.el.innerHTML = `
-      <div class="end-card">
+      <div class="end-card" role="dialog" aria-modal="true" aria-labelledby="end-title">
         <div class="end-kicker">The afternoon ends</div>
-        <h2>${e.title}</h2>
+        <h2 id="end-title">${e.title}</h2>
         <div class="end-body">${e.epilogue.map((l) => `<p>${l}</p>`).join('')}</div>
         <div class="end-case">
           <h4>What you worked out</h4>
-          <ul>${findings}</ul>
+          <ul class="trail">${findings}</ul>
           <div class="end-count">${cf.clues.size} things noted · ${cf.deductions.size} connections made</div>
         </div>
-        <div class="end-seen">Endings found: ${seen.length} of ${ENDING_ORDER.length}${others > 0 ? ' — the afternoon can end other ways.' : '.'}</div>
+        <div class="end-seen"><span class="end-dots" aria-hidden="true">${dots}</span><span>Endings found: ${seen.length} of ${ENDING_ORDER.length}${others > 0 ? ' — the afternoon can end other ways.' : '.'}</span></div>
         <div class="end-actions">
           <button data-act="keep">Keep skating</button>
           <button data-act="new" class="primary">A new afternoon</button>

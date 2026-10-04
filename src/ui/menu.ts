@@ -58,7 +58,20 @@ export class Menu {
         if (this.confirmNew) { this.actions.newAfternoon(); return; }
         this.confirmNew = true;
         this.render();
+      } else if (act === 'keep') {
+        // Backing out of the confirmation is only ever a way back to the
+        // first step: the second press is still the only thing that forgets.
+        this.confirmNew = false;
+        this.render();
       }
+    });
+    // The volume readout follows the slider while it is dragged; the value
+    // itself is still only applied on change, as it always was.
+    this.el.addEventListener('input', (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset.set !== 'volume') return;
+      const out = this.el.querySelector('output[data-for="volume"]');
+      if (out) out.textContent = `${Math.round(Number(t.value) * 100)}%`;
     });
     this.el.addEventListener('change', (e) => {
       const t = e.target as HTMLInputElement;
@@ -102,40 +115,54 @@ export class Menu {
     const s = this.settings;
     const seen = this.endingsSeen();
     const rows = (this.touch ? TOUCH : KEYS)
-      .map(([k, v]) => `<div class="ctl"><kbd>${k}</kbd><span>${v}</span></div>`).join('');
-    const endings = ENDING_ORDER.map((id) => seen.includes(id)
-      ? `<li>${ENDINGS[id].title}</li>`
-      : '<li class="unseen">—</li>').join('');
+      .map(([k, v]) => this.touch
+        ? `<div class="ctl"><span class="gesture">${k}</span><span>${v}</span></div>`
+        : `<div class="ctl"><kbd>${k}</kbd><span>${v}</span></div>`).join('');
+    const endings = ENDING_ORDER.map((id, i) => seen.includes(id)
+      ? `<li data-n="${String(i + 1).padStart(2, '0')}">${ENDINGS[id].title}</li>`
+      : `<li class="unseen" data-n="${String(i + 1).padStart(2, '0')}">Not found yet</li>`).join('');
+    const toggle = (key: string, on: boolean, label: string, hint = '') => `
+      <label class="setting"><span class="s-label">${label}${hint ? `<span class="s-hint">${hint}</span>` : ''}</span>
+        <input class="switch" type="checkbox" role="switch" data-set="${key}" ${on ? 'checked' : ''}></label>`;
     this.el.innerHTML = `
-      <div class="menu-card" role="dialog" aria-label="Paused">
+      <div class="menu-card" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <div class="menu-head">
-          <div class="menu-title">Paused</div>
-          <div class="menu-sub">Bellhaven waits for you.</div>
-        </div>
-        <div class="menu-actions">
-          <button data-act="resume" class="primary">Resume</button>
-          <button data-act="notes">Notes</button>
+          <div>
+            <div class="st-title" aria-hidden="true"><div><b>SAFE</b><span>TRACE</span></div></div>
+            <div class="menu-title" id="menu-title">Paused</div>
+            <div class="menu-sub">Bellhaven waits for you.</div>
+          </div>
+          <div class="menu-actions">
+            <button data-act="notes">Notes</button>
+            <button data-act="resume" class="primary">Resume</button>
+          </div>
         </div>
         <div class="menu-cols">
-          <section>
-            <h4>Settings</h4>
-            <label><input type="checkbox" data-set="motion" ${s.reduceMotion ? 'checked' : ''}> Reduce motion and flashing</label>
-            <label><input type="checkbox" data-set="colour" ${s.colourSafeMachine ? 'checked' : ''}> Colour-blind safe palette</label>
-            <label><input type="checkbox" data-set="text" ${s.textScale > 1 ? 'checked' : ''}> Larger text</label>
-            <label><input type="checkbox" data-set="shake" ${s.cameraShake > 0 ? 'checked' : ''}> Camera shake</label>
-            <label class="range">Volume <input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-set="volume"></label>
+          <section aria-labelledby="menu-settings">
+            <h4 id="menu-settings">Settings</h4>
+            ${toggle('motion', s.reduceMotion, 'Reduce motion and flashing')}
+            ${toggle('colour', s.colourSafeMachine, 'Colour-blind safe palette')}
+            ${toggle('text', s.textScale > 1, 'Larger text')}
+            ${toggle('shake', s.cameraShake > 0, 'Camera shake')}
+            <label class="setting range"><span class="s-label">Volume</span>
+              <input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-set="volume" aria-label="Volume">
+              <output data-for="volume">${Math.round(s.masterVolume * 100)}%</output></label>
+            <section class="menu-endings" aria-labelledby="menu-endings">
+              <h4 id="menu-endings">Endings found · ${seen.length} of ${ENDING_ORDER.length}</h4>
+              <ol>${endings}</ol>
+            </section>
           </section>
-          <section>
-            <h4>Controls</h4>
-            <div class="ctls">${rows}</div>
+          <section aria-labelledby="menu-controls">
+            <h4 id="menu-controls">Controls</h4>
+            <div class="ctls${this.touch ? ' touch' : ''}">${rows}</div>
           </section>
         </div>
-        <section class="menu-endings">
-          <h4>Endings found · ${seen.length} of ${ENDING_ORDER.length}</h4>
-          <ul>${endings}</ul>
-        </section>
         <div class="menu-foot">
-          <button data-act="new" class="${this.confirmNew ? 'danger' : 'quiet'}">${this.confirmNew ? 'This forgets today. Start over?' : 'Start a new afternoon'}</button>
+          ${this.confirmNew
+            ? `<span class="confirm-note" role="alert">This forgets today. Start over?</span>
+               <button data-act="keep" class="quiet">Keep this afternoon</button>
+               <button data-act="new" class="danger">Start over</button>`
+            : '<button data-act="new" class="quiet">Start a new afternoon</button>'}
         </div>
       </div>`;
   }
