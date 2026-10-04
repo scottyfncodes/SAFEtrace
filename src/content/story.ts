@@ -12,7 +12,7 @@ import type { Audio } from '../audio/audio';
 import type { Renderer } from '../render/renderer';
 import { CARE, DIALOGUE, SYSTEM } from './copy';
 import {
-  MISLEADING, PLACES, RECORD_CLUES, caseStrength, resolveEnding,
+  MISLEADING, RECORD_CLUES, readingFor, caseStrength, resolveEnding,
   type CaseStanding, type EndingId, type ReportTarget,
 } from './case';
 import {
@@ -91,6 +91,11 @@ export interface StoryState {
   toldCarvalho: boolean;
   /** Places the player has stopped to look at. */
   looked: string[];
+  /**
+   * Second looks the player has actually seen (see `SECOND_LOOKS`). Absent
+   * from saves made before there were any, which restore as none seen.
+   */
+  secondLooks: string[];
   /** When the advertisement comes back, once there is an ending to come back to. */
   finaleAt: number;
   /**
@@ -133,6 +138,7 @@ export const initialStoryState = (): StoryState => ({
   talked: {},
   toldCarvalho: false,
   looked: [],
+  secondLooks: [],
   finaleAt: -1,
   channelTogether: 0,
   closingSince: -1,
@@ -826,6 +832,7 @@ export class StoryDirector {
       const text = this.placeText(id);
       this.talk = { id, kind, lines: [{ who: '', text: text.text }], index: 0, learn: text.clue ? [text.clue] : [], choices: [] };
       if (!this.state.looked.includes(id)) this.state.looked.push(id);
+      if (text.look && !this.state.secondLooks.includes(text.look)) this.state.secondLooks.push(text.look);
     } else {
       const convo = openConversation(id, this.talkContext(id));
       if (convo.lines.length === 0) { this.ctx.sim.disengage(); return; }
@@ -835,8 +842,24 @@ export class StoryDirector {
     this.show();
   }
 
-  private placeText(id: string): { text: string; clue?: string } {
-    return PLACES[id] ?? { text: '' };
+  /** What the place shows now, given what is in the notes. */
+  private placeText(id: string): { text: string; clue?: string; look?: string } {
+    const cf = this.ctx.sim.casefile;
+    return readingFor(id, (k) => cf.has(k));
+  }
+
+  /**
+   * Places already looked at that would read differently now. That is all
+   * the plan is told — never how many, never what — so a place earns its
+   * pencil tick only by being somewhere the player has stood before.
+   */
+  freshPlaces(): string[] {
+    const out: string[] = [];
+    for (const id of this.state.looked) {
+      const look = this.placeText(id).look;
+      if (look && !this.state.secondLooks.includes(look)) out.push(id);
+    }
+    return out;
   }
 
   private fromConversation(id: string, c: Conversation): OpenTalk {
