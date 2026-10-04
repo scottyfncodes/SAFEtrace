@@ -47,7 +47,7 @@ function tap(e: TouchEngine, p: { x: number; y: number }, id = 1): void {
   e.handle('up', at(p, id, clock));
 }
 
-const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan') =>
+const button = (e: TouchEngine, id: 'sling' | 'trick' | 'plan' | 'hook') =>
   e.buttonLayout().find((b) => b.id === id)!.pos;
 
 beforeEach(() => { engine = make(); clock = 1000; });
@@ -374,7 +374,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
      */
     const fresh = new TouchEngine();
     fresh.setViewport(VIEWPORT);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['hook', 'plan', 'sling', 'trick']);
 
     fresh.setSlingAvailable(false);
     fresh.setAiming(true);
@@ -382,8 +382,8 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     fresh.setSlingAvailable(true);
     fresh.setPlanOpen(true);
     fresh.setPlanOpen(false);
-    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
-    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['plan', 'sling', 'trick']);
+    expect(fresh.buttonLayout().map((b) => b.id).sort()).toEqual(['hook', 'plan', 'sling', 'trick']);
+    expect(fresh.visual.buttons.map((b) => b.id).sort()).toEqual(['hook', 'plan', 'sling', 'trick']);
   });
 
   /*
@@ -408,7 +408,7 @@ describe('the buttons are the whole rest of the vocabulary', () => {
     const setters = Object.getOwnPropertyNames(TouchEngine.prototype)
       .filter((k) => /^set[A-Z]/.test(k));
     // setPlanOpen closes (or opens) a view, it does not add a control.
-    expect(setters.sort()).toEqual(['setAiming', 'setPlanOpen', 'setSlingAvailable', 'setSlingOut', 'setThrowMode', 'setViewport']);
+    expect(setters.sort()).toEqual(['setAiming', 'setHookReady', 'setPlanOpen', 'setSlingAvailable', 'setSlingOut', 'setThrowMode', 'setViewport']);
   });
 
   /*
@@ -500,7 +500,9 @@ describe('the buttons are the whole rest of the vocabulary', () => {
    */
   it('has no GRAB button any more', () => {
     expect(engine.buttonLayout().map((b) => b.id)).not.toContain('grab');
-    expect(engine.buttonLayout().length).toBe(3);
+    // TRICK, SLING, PLAN — and HOOK, the sling line, which is a verb of its
+    // own (held through a swing), not a variant of another button's.
+    expect(engine.buttonLayout().length).toBe(4);
   });
 
   it('grabs on a hold of TRICK, once, and does not also flip on the release', () => {

@@ -15,6 +15,8 @@ import { Rng, hashString } from '../core/rng';
 import { World } from './world';
 import type { SimEvents } from './events';
 import { GRABS, TRICKS, aimSway, makePlayer, updatePlayer, type PlayerState, maxSpeedFor } from './player';
+import { type Anchor, anchorsFor } from './traversal/anchors';
+import { LINE, arrive, bleedBoost, hook, pickAnchor, release, stepLine, type SlingLine } from './traversal/slingline';
 import {
   type Projectile, type BallisticTarget, fire, stepProjectile, resolveCameraHit,
   type DroppedRock, type RockShape, solvePitch, LAUNCH_Z, MUZZLE_MIN, MUZZLE_MAX, rebound,
@@ -210,6 +212,20 @@ export class Sim {
   npcSubjects: Subject[] = [];
   npcTracks: Track[] = [];
 
+  /**
+   * Everything a sling line can be hooked over, worked out once from the
+   * town (traversal/anchors.ts).
+   */
+  readonly anchors: Anchor[];
+  /** The line, while the rider is on one. */
+  line: SlingLine | null = null;
+  /** What a hook would catch right now. The HUD brackets it. */
+  anchorTarget: Anchor | null = null;
+  /** The last anchor let go of, and when: a chain goes somewhere new. */
+  private lastAnchor: { id: string; tick: number } | null = null;
+  /** A hook asked for a moment before there was anything to catch. Seconds. */
+  private hookBuffer = 0;
+
   projectiles: Projectile[] = [];
   /** Rocks lying where they landed. Scenery, not supply. */
   droppedRocks: DroppedRock[] = [];
@@ -335,6 +351,7 @@ export class Sim {
       this.sensorById.set(sd.id, s);
     }
 
+    this.anchors = anchorsFor(worldData);
     this.player = makePlayer(worldData.spawns.player);
     // Facing south down Maple Court, the way the advertisement's last shot looks.
     this.player.heading = Math.PI / 2;
@@ -475,13 +492,15 @@ export class Sim {
     this.updateAim(intent, pointerWorld);
     this.requestTrick(intent);
     this.requestGrab(intent);
-    updatePlayer(this.player, intent, this.world, dt);
+    updatePlayer(this.player, this.line ? onTheLine(intent) : intent, this.world, dt);
+    this.updateLine(intent, dt);
     this.holdAimAnchor();
     this.emitPlayerFeedback();
 
     this.playerSubject.pos = this.player.pos;
     this.playerSubject.vel = this.player.vel;
     this.playerSubject.speed = this.player.speed;
+    this.playerSubject.z = this.player.z;
 
     this.updateDevon(dt);
 
@@ -549,6 +568,57 @@ export class Sim {
   // ---------------------------------------------------------------- movement
 
   /**
+   * The sling line, laid over the step the board has just taken.
+   *
+   * A press hooks whatever is bracketed — or, pressed a moment early, the
+   * first thing that comes into reach. Held, the rider swings. Let go, or
+   * swing too far, and they are flung.
+   */
+  private updateLine(intent: Intent, dt: number): void {
+    const p = this.player;
+    const skip = this.lastAnchor && this.tick - this.lastAnchor.tick < LINE.reuseCooldown * 60 ? this.lastAnchor.id : null;
+    this.hookBuffer = intent.hookPressed ? 0.25 : Math.max(0, this.hookBuffer - dt);
+
+    if (this.line) {
+      const how = stepLine(p, this.line, this.world, dt);
+      if (how === 'snap' && (p.stance === 'BAIL' || !p.onBoard)) { this.dropLine(); }
+      else if (how === 'arrive') this.letGo(false, true);
+      else if (how === 'snap' || !intent.hook) this.letGo(how === 'snap');
+      this.anchorTarget = null;
+      return;
+    }
+
+    bleedBoost(p, dt);
+    this.anchorTarget = this.aimMode ? null : pickAnchor(p, this.anchors, this.world, skip);
+    if (this.hookBuffer > 0 && intent.hook && this.anchorTarget) {
+      const a = this.anchorTarget;
+      this.line = hook(p, a);
+      this.hookBuffer = 0;
+      this.anchorTarget = null;
+      this.bus.emit('line:hook', { anchorId: a.id, kind: a.kind, pos: { ...a.pos }, z: a.z });
+    }
+  }
+
+  private letGo(snapped: boolean, arrived = false): void {
+    if (!this.line) return;
+    const r = arrived ? arrive(this.player, this.line) : release(this.player, this.line, snapped);
+    this.lastAnchor = { id: r.anchor.id, tick: this.tick };
+    this.line = null;
+    this.bus.emit('line:release', {
+      anchorId: r.anchor.id, charge: r.charge, speed: r.speed, snapped, pos: { ...this.player.pos },
+    });
+    // A launch is loud the way a pop is: the tail and the band at once.
+    this.drawAttention({ ...this.player.pos }, BOARD_NOISE.pop, 2.5, 0.5);
+  }
+
+  /** Off the line without a launch: a bail, or stepping off the board. */
+  dropLine(): void {
+    if (!this.line) return;
+    this.lastAnchor = { id: this.line.anchor.id, tick: this.tick };
+    this.line = null;
+  }
+
+  /**
    * Which trick, decided here rather than by the player.
    *
    * A button that always produces a kickflip is a button that stops being
@@ -588,6 +658,7 @@ export class Sim {
     if (p.trickedThisTick) this.bus.emit('player:trick', { pos: p.pos, name: p.trickedThisTick.name });
     if (p.grabbedThisTick) this.bus.emit('player:grab', { pos: p.pos, name: p.grabbedThisTick.name });
     if (p.landedThisTick) this.bus.emit('player:land', { pos: p.pos, speed: p.speed });
+    if (p.landedThisTick && p.ground > 0) this.bus.emit('player:roof', { pos: p.pos, height: p.ground });
     if (p.bailedThisTick) this.bus.emit('player:bail', { pos: p.pos });
     this.boardNoise();
   }
@@ -2378,6 +2449,14 @@ export class Sim {
  * the stick did nothing, so "find where I am going" and "go there" could not
  * happen in the same view. Moving is what the plan is for.
  */
+/**
+ * On the line, the line steers. The board still pops and still flips, but a
+ * push or a carve would only be fighting the band.
+ */
+function onTheLine(intent: Intent): Intent {
+  return { ...intent, steer: 0, moveVector: null, push: false, pushPressed: false, brake: false };
+}
+
 function suppressWhileLooking(intent: Intent): Intent {
   return {
     ...intent,

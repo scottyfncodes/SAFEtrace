@@ -43,6 +43,7 @@ nobody. Five endings are read off what you did and what you worked out.
 | `W` | push — hold it to keep pushing, or tap it in rhythm |
 | `A` `D` | carve — turning radius grows with speed |
 | `Space` | ollie; hold briefly to load |
+| `C` (hold) | the sling line: hook the bracketed pole, camera, sign or roof mast, swing round it, let go to launch |
 | `R` | trick — which trick is the board's business, not yours |
 | `G` | grab — cycles through six, same reasoning as `R` |
 | `S` | brake / powerslide |
@@ -62,7 +63,16 @@ Nothing opens on its own. A node's panel appears because you pressed `E` — or,
 on a phone, because you tapped the thing itself — and never because you skated
 past it.
 
-A phone gets three buttons in the bottom-right: `SLING`, `TRICK` and `PLAN`.
+**The sling line** is the slingshot the other way round: hook the band over
+an anchor and you are the stone. Hold to swing round it (the arc is the
+charge), let go to be flung, faster and higher the further round you went. A
+quarter-turn clears the pole you swung round. Masts on flat roofs reel you up
+the side of the building and set you down on top. Roofs are a surface, and a
+rider above a camera's mount is out of its picture. See
+[`docs/43-the-sling-line.md`](docs/43-the-sling-line.md).
+
+A phone gets four buttons in the bottom-right: `SLING`, `TRICK`, `HOOK` and `PLAN`.
+Hold `HOOK` to swing round the bracketed anchor and let go to launch.
 Tap `TRICK` to flip the board, hold it to grab. Drag on empty glass to look
 round. `SLING` takes the slingshot out — nothing else changes, you are still
 in the street and can keep skating — and then a pull back anywhere on the

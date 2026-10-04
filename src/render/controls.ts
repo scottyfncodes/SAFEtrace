@@ -263,6 +263,26 @@ export class ControlsRenderer {
       return;
     }
 
+    if (id === 'hook') {
+      /*
+       * HOOK: a post, and the band thrown round it in a loop. The thing the
+       * control does is "swing round that", and a loop round a post says so
+       * before the word is read.
+       */
+      const top = y - s * 0.78, foot = y + s * 0.18;
+      ctx.lineWidth = Math.max(1.6, r * 0.075);
+      ctx.beginPath();
+      ctx.moveTo(x, foot); ctx.lineTo(x, top);
+      ctx.moveTo(x - s * 0.3, top + s * 0.14); ctx.lineTo(x + s * 0.3, top + s * 0.14);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(1.2, r * 0.05);
+      ctx.beginPath();
+      ctx.ellipse(x, top + s * 0.38, s * 0.62, s * 0.2, 0, Math.PI * 0.15, Math.PI * 1.85);
+      ctx.stroke();
+      label('HOOK');
+      return;
+    }
+
     /*
      * PLAN: a map pin, and the word for it.
      *

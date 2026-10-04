@@ -121,6 +121,9 @@ export const VIGILANT = {
   hearingGain: 0.5,
 };
 
+/** How far above its own mount a camera stops seeing a rider, metres. */
+export const ABOVE_LENS = 0.6;
+
 /** Effective observation cone half-angle. */
 export const halfFov = (s: Sensor): number => s.data.fov / 2;
 
@@ -146,6 +149,11 @@ export function observe(
   const d = sensor.data;
   const dd = dist(d.pos, subject.pos);
   if (dd > d.range) return null;
+
+  // Over the top of it. A camera on a pole is aimed down the street; a rider
+  // flung up past the lens, or rolling across a roof above it, is out of the
+  // picture. This is the rule that makes "go over it" a route.
+  if ((subject.z ?? 0) > d.height + ABOVE_LENS) return null;
 
   const bearing = Math.atan2(subject.pos.y - d.pos.y, subject.pos.x - d.pos.x);
   const off = Math.abs(angleDelta(sensor.facing, bearing));

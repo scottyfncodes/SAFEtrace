@@ -10,6 +10,11 @@ import { SpatialHash, unique } from '../core/spatial';
 
 /** Slower than this, a rider has stopped and settled low: low cover hides them. */
 export const SETTLED_SPEED = 0.6;
+
+/** Nothing lower than this is a roof: walls, sheds and up. */
+export const ROOF_MIN = 2.2;
+/** How far below a roof's edge a falling rider can still be caught by it, metres. */
+export const ROOF_STEP = 0.45;
 import type {
   WorldData, SurfaceKind, SurfacePatch, Building, Occluder, Cover, Prop,
   SkateFeature, RoadNode, RoadEdge, District, SensorData,
@@ -219,6 +224,26 @@ export class World {
       if (off < half && lineZ < top) return 0;
     }
     return k;
+  }
+
+  /**
+   * What a rider at height `z` over `p` would be standing on: a flat roof's
+   * height, or the street.
+   *
+   * Roofs became somewhere to be when the sling line made them reachable. A
+   * flat roof a board comes down onto is a surface like any other; a pitched
+   * one is not (houses are for clearing, not landing on), and nothing lower
+   * than a wall is a roof — ledges and kerbs stay what they always were.
+   * `z` is where the rider was: a roof above them is not under them.
+   */
+  supportAt(p: Vec2, z: number): number {
+    if (z < ROOF_MIN - 0.4) return 0;
+    let best = 0;
+    for (const b of unique(this.buildingHash.queryRadius(p, 0.1, this.scratch as Building[]))) {
+      if (b.kind === 'house' || b.height < ROOF_MIN || b.height > z + ROOF_STEP || b.height <= best) continue;
+      if (pointInPoly(b.poly, p)) best = b.height;
+    }
+    return best;
   }
 
   featureAt(p: Vec2): SkateFeature | null {

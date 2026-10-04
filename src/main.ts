@@ -107,6 +107,7 @@ class Game {
     // The world's contextual prompt names the thing the player will actually
     // do, on the device they are actually holding.
     this.renderer.interactVerb = this.touchPrimary ? 'TAP' : 'E';
+    this.renderer.hookKey = this.touchPrimary ? 'HOOK' : 'C';
     this.renderer.touchHints = this.touchPrimary;
     this.ad = new Advertisement(document.body, this.renderer, this.audio, this.touchPrimary);
     this.story = new StoryDirector({
@@ -499,6 +500,7 @@ class Game {
     this.closePlan();
     this.touch.setSlingOut(false);
     this.sim.exitAimMode();
+    this.sim.dropLine();
     this.sim.dismissFocus();
     this.touch.reset();
     this.touch.setAiming(false);
@@ -612,6 +614,13 @@ class Game {
     const bus = this.sim.bus;
     bus.on('player:push', () => this.audio.push());
     bus.on('player:pop', () => this.audio.pop());
+    // The sling line: the band catching, and the band letting go.
+    bus.on('line:hook', () => { this.audio.servo(); this.audio.hackTick(); this.renderer.kick(0.08); });
+    bus.on('line:release', ({ charge }) => {
+      this.audio.fire(0.35 + charge * 0.65);
+      this.renderer.kick(0.1 + charge * 0.25);
+    });
+    bus.on('player:roof', ({ pos }) => this.renderer.ripple(pos, 0.5));
     bus.on('player:slide', ({ speed }) => this.audio.slide(Math.min(1, speed / 12)));
     bus.on('player:land', ({ speed }) => {
       this.audio.land(Math.min(1, speed / 12));
@@ -769,6 +778,7 @@ class Game {
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
     this.touch.setSlingAvailable(!this.sim.hack);
+    this.touch.setHookReady(!!this.sim.anchorTarget || !!this.sim.line);
 
     if (this.sim.aimMode) {
       /*
