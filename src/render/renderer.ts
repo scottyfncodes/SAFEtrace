@@ -1636,13 +1636,38 @@ export class Renderer {
 
   private drawSkateHud(ctx: CanvasRenderingContext2D): void {
     if (!this.sim.playerObserved) return;
-    // The top edge warms when a lens actually has you. Deliberately not a
-    // meter: you are being looked at, not scored.
-    const g = ctx.createLinearGradient(0, 0, 0, this.h);
-    g.addColorStop(0, alpha(SIGNAL.warning, 0.16));
-    g.addColorStop(0.3, alpha(SIGNAL.warning, 0));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.w, this.h);
+    /*
+     * The top edge of the panel goes hot when a lens actually has you.
+     * Deliberately not a meter: you are being looked at, not scored.
+     *
+     * It used to be a soft wash down the top third of the glass. Over the
+     * old slate sky that read as an edge; over a paper sky it tinted the
+     * whole sky peach and read as weather. Now it is printed the way the
+     * rest of the street is: a hard rule in warning orange along the top of
+     * the frame, under the notch, with a short band of hatching hanging off
+     * it — a panel border that has turned, not a change in the light.
+     */
+    const y0 = this.safe.top;
+    const rule = 4, band = 16;
+    ctx.save();
+    ctx.fillStyle = SIGNAL.warning;
+    ctx.fillRect(0, y0, this.w, rule);
+    ctx.beginPath();
+    ctx.rect(0, y0 + rule, this.w, band);
+    ctx.clip();
+    // The hatching fades out downward, so the band reads as hanging off the rule.
+    const g = ctx.createLinearGradient(0, y0 + rule, 0, y0 + rule + band);
+    g.addColorStop(0, alpha(SIGNAL.warning, 0.85));
+    g.addColorStop(1, alpha(SIGNAL.warning, 0));
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = -band; x < this.w + band; x += 7) {
+      ctx.moveTo(x, y0 + rule);
+      ctx.lineTo(x + band, y0 + rule + band);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ------------------------------------------------------------------ layers

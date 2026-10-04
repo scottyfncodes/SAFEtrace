@@ -133,6 +133,12 @@ These are sacred, and two fixes made them so:
   amber. Now: the rider is amber; a camera that **has you** is warning orange;
   a camera turned to **your stone's noise** is your amber (it is your doing);
   an officer **responding** is warning orange, and **intervening** a true red.
+- **"A camera has you" is a printed edge, not a tint.** It used to be a soft
+  orange wash down the top third of the glass, which on the noir pass's
+  slate sky read as an edge. On a paper sky it tinted the whole sky peach
+  and read as weather. It is now a hard warning-orange rule along the top of
+  the frame, under the notch, with a short band of hatching hanging off it
+  — a panel border that has turned hot.
 
 ### The environment (`PRINT`)
 Every street colour lives in `PRINT` or in `weather()` over authored paint.
