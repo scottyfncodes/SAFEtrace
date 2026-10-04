@@ -232,6 +232,16 @@ export class Hud {
   /** The first throw retires the hints on a phone. */
   slingThrown(): void { if (this.touch) this.slung = true; }
 
+  /** In a job, the notes button is the way back to the board. */
+  setJobsMode(on: boolean): void {
+    const b = this.root.querySelector('[data-act="notes"]');
+    const label = b?.querySelector('.hb-label');
+    const key = b?.querySelector('.hb-key');
+    if (label) label.textContent = on ? 'Jobs' : 'Notes';
+    if (key && key.textContent) key.textContent = on ? 'J' : 'N';
+    b?.setAttribute('aria-label', on ? 'Job board' : 'Notes');
+  }
+
   setVisible(v: boolean): void {
     this.root.style.opacity = v ? '1' : '0';
     this.root.style.transition = 'opacity 500ms cubic-bezier(.16,1,.3,1)';

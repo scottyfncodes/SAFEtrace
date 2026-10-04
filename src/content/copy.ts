@@ -346,3 +346,21 @@ export const SHOT = {
   /** It never landed at all. */
   miss: 'MISS',
 };
+
+/**
+ * A job, out loud. The board's words are short and the city's are in its own
+ * register: the city never says you are being chased, it says it is tracking.
+ */
+export const JOB = {
+  run: {
+    go: 'JOB ACTIVE',
+    tracked: 'TRACKING ACTIVE',
+    underwatch: 'UNDERWATCH',
+    lost: 'SIGNAL LOST',
+    cut: 'LINE CUT',
+    complete: 'JOB COMPLETE',
+    chainLost: 'CHAIN LOST',
+  },
+  /** The exposure chip, by level. */
+  level: { UNSEEN: 'UNSEEN', SPOTTED: 'SPOTTED', TRACKED: 'TRACKED', UNDERWATCH: 'UNDERWATCH' },
+};

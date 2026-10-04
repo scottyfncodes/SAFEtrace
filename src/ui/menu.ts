@@ -15,6 +15,8 @@ export interface MenuActions {
   notes(): void;
   newAfternoon(): void;
   applySettings(): void;
+  /** Set while a job is the thing being played: the foot offers the job's own way out. */
+  jobs?: { active(): boolean; restart(): void; board(): void };
 }
 
 const KEYS: Array<[string, string]> = [
@@ -25,6 +27,7 @@ const KEYS: Array<[string, string]> = [
   ['F', 'steady aim: stand still and look down the sling (mouse or A D W S to aim)'],
   ['E', 'talk, look, reach into a node'], ['1–3', 'answer'],
   ['Q', 'plan — tap to open, click to pin where you are going (or hold to peek)'], ['N', 'notes'], ['Esc', 'this menu'],
+  ['J', 'job board (in a job)'], ['T', 'restart the job (in a job)'],
 ];
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],
@@ -56,6 +59,8 @@ export class Menu {
       const act = (t.closest('[data-act]') as HTMLElement | null)?.dataset.act;
       if (act === 'resume') this.hide();
       else if (act === 'notes') { this.hide(false); this.actions.notes(); }
+      else if (act === 'restart-job') { this.hide(false); this.actions.jobs?.restart(); }
+      else if (act === 'job-board') { this.hide(false); this.actions.jobs?.board(); }
       else if (act === 'new') {
         if (this.confirmNew) { this.actions.newAfternoon(); return; }
         this.confirmNew = true;
@@ -115,6 +120,7 @@ export class Menu {
 
   private render(): void {
     const s = this.settings;
+    const jobs = this.actions.jobs?.active() ?? false;
     const seen = this.endingsSeen();
     const rows = (this.touch ? TOUCH : KEYS)
       .map(([k, v]) => this.touch
@@ -135,7 +141,7 @@ export class Menu {
             <div class="menu-sub">Bellhaven waits for you.</div>
           </div>
           <div class="menu-actions">
-            <button data-act="notes">Notes</button>
+            ${jobs ? '' : '<button data-act="notes">Notes</button>'}
             <button data-act="resume" class="primary">Resume</button>
           </div>
         </div>
@@ -160,7 +166,8 @@ export class Menu {
           </section>
         </div>
         <div class="menu-foot">
-          ${this.confirmNew
+          ${jobs ? `<button data-act="job-board" class="quiet">Job board</button>
+               <button data-act="restart-job" class="quiet">Restart job${this.touch ? '' : ' <kbd>T</kbd>'}</button>` : this.confirmNew
             ? `<span class="confirm-note" role="alert">This forgets today. Start over?</span>
                <button data-act="keep" class="quiet">Keep this afternoon</button>
                <button data-act="new" class="danger">Start over</button>`

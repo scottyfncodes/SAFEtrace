@@ -196,6 +196,11 @@ export class Sim {
   sceneProps: ScenePropData[];
   /** The player's own notes. The other ledger. */
   readonly casefile = new Casefile(CASE);
+  /**
+   * Whether the afternoon's people are there to be talked to. A job is the
+   * same town without the story: nobody stops you for a conversation.
+   */
+  storyActive = true;
   /** Whatever the player could stop and attend to right now. */
   interest: Interest | null = null;
   /** Who, or what, the player is currently attending to. */
@@ -741,6 +746,7 @@ export class Sim {
       if (gone || dist(at, this.player.pos) > TALK_BREAK) this.disengage();
     }
     this.interest = null;
+    if (!this.storyActive) return;
     if (this.aimMode || this.player.speed > NOTICE_SPEED) return;
     const here = this.player.pos;
     let best: Interest | null = null;
@@ -2420,6 +2426,102 @@ export class Sim {
   get playerObserved(): boolean {
     const arr = this.observationBuffer.get(this.playerSubject.id);
     return !!arr && arr.length > 0;
+  }
+
+  // ---------------------------------------------------------------- runs
+
+  /**
+   * A fresh street for a job: the rider at the start, every camera back on
+   * its pole and facing where it was built to face, every drone back on its
+   * round, nothing remembered against anybody. The town itself — the people
+   * walking it, the clock, the light — carries on, because it is the same
+   * town; what is reset is everything a previous run did to it.
+   */
+  resetForRun(spawn: Vec2, heading: number): void {
+    Object.assign(this.player, makePlayer(spawn));
+    this.player.heading = heading;
+    this.line = null;
+    this.anchorTarget = null;
+    this.lastAnchor = null;
+    this.hookBuffer = 0;
+    this.aimMode = false;
+    this.aimAnchor = null;
+    this.projectiles = [];
+    this.droppedRocks = [];
+    for (const s of this.sensors) Object.assign(s, makeSensor(s.data));
+    for (const d of this.drones) Object.assign(d, makeDrone(d.id, d.route, d.pad));
+    for (const p of this.patrols) Object.assign(p, makePatrol(p.id, p.route, p.home));
+    for (const a of this.assets) { a.available = true; a.task = null; }
+    this.huntedBy.clear();
+    this.dispatcher = new Dispatcher();
+    this.disturbance.reset();
+    this.evidence.clear();
+    this.incidents = [];
+    this.quietIncidents.clear();
+    this.observationBuffer.clear();
+    this.hack = null;
+    for (const pr of this.world.data.props) { pr.knocked = false; pr.alarmUntil = undefined; pr.knockedAt = undefined; }
+    Object.assign(this.playerTrack, makeTrack(this.playerSubject));
+    this.playerSubject.pos = this.player.pos;
+    this.playerSubject.vel = this.player.vel;
+    this.playerSubject.speed = 0;
+    this.playerSubject.z = 0;
+    this.escalation = 'PASSIVE';
+    this.lastEscalation = 'PASSIVE';
+    this.lastPursuit = 'NOT_PURSUING';
+  }
+
+  /** Drones a job has sent after the rider, by id. The dispatcher keeps its hands off them. */
+  private readonly huntedBy = new Set<string>();
+
+  /**
+   * Send a drone after something, outside the dispatcher: a job's chase. The
+   * target is moved every tick by whoever sent it; `track` flies it at
+   * tracking height and speed rather than orbiting to investigate.
+   */
+  commandDrone(id: string, target: Vec2, track: boolean, reason: string): void {
+    const d = this.drones.find((x) => x.id === id);
+    const a = this.assets.find((x) => x.id === id);
+    if (!d || d.state === 'DESTABILISED') return;
+    if (a) { a.available = false; a.task = null; }
+    this.huntedBy.add(id);
+    if (!d.task || d.task.id !== `HUNT-${id}`) {
+      assignTask(d, {
+        id: `HUNT-${id}`, kind: track ? 'TRACK' : 'INVESTIGATE', assetId: id,
+        target: { ...target }, issuedTick: this.tick, expiresTick: Infinity, reason,
+      });
+    }
+    if (d.task) {
+      d.task.target = { x: target.x, y: target.y };
+      d.task.kind = track ? 'TRACK' : 'INVESTIGATE';
+      d.state = track ? 'TRACK' : 'INVESTIGATE';
+      d.reason = reason;
+    }
+  }
+
+  /** Call a job's drone off: it goes back to its round. */
+  releaseDrone(id: string): void {
+    if (!this.huntedBy.delete(id)) return;
+    const d = this.drones.find((x) => x.id === id);
+    if (d && d.state !== 'DESTABILISED') { assignTask(d, null); d.state = 'RETURN'; }
+    this.releaseAsset(id);
+  }
+
+  /**
+   * Everything that has the rider in its picture this tick, and how good the
+   * best picture is: cameras by sensor id, drones and ground units by asset id.
+   */
+  playerSightings(): { quality: number; ids: string[] } {
+    const arr = this.observationBuffer.get(this.playerSubject.id) ?? [];
+    let q = 0;
+    const ids: string[] = [];
+    for (const o of arr) { q = Math.max(q, o.quality); if (!ids.includes(o.sensorId)) ids.push(o.sensorId); }
+    return { quality: q, ids };
+  }
+
+  /** The drones whose cone has the rider in it right now. */
+  dronesSeeingPlayer(): Drone[] {
+    return this.drones.filter((d) => d.spotlight);
   }
 
   sensorsSeeingPlayer(): Sensor[] {

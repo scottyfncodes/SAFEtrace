@@ -8,6 +8,7 @@ import './ui/styles.css';
 // Imported after the base sheet: media queries carry no extra specificity, so
 // the mobile overrides only win if they come later in source order.
 import './ui/mobile.css';
+import './ui/jobs.css';
 import { InputManager, emptyIntent, mergeIntent, type Intent } from './core/input';
 import { TouchAdapter, TouchEngine, isTouchPrimary } from './core/touch';
 import { Loop } from './core/loop';
@@ -33,6 +34,12 @@ import {
 } from './core/save';
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
+import { JOBS } from './content/jobs';
+import { JOB } from './content/copy';
+import { JobRun } from './sim/jobs/run';
+import type { JobDef } from './sim/jobs/types';
+import { JobBoard, JobHud, JobResults } from './ui/jobs';
+import { loadJobRecords, recordJobRun } from './core/save';
 
 /**
  * How far a pull reaches along the ground, from a flick to all the way back.
@@ -75,7 +82,20 @@ class Game {
   private menu: Menu;
   private ending: EndingCard;
   /** Nothing in Bellhaven happens while the player is reading a menu. */
-  private get paused(): boolean { return this.notebook.open || this.menu.open || this.ending.open; }
+  private get paused(): boolean {
+    return this.notebook.open || this.menu.open || this.ending.open || this.board.open || this.results.open;
+  }
+  /**
+   * What is being played: the afternoon (the story), or jobs. The same town,
+   * the same board; jobs simply leave the story out.
+   */
+  private mode: 'story' | 'jobs' = 'story';
+  private run: JobRun | null = null;
+  private board!: JobBoard;
+  private jobHud!: JobHud;
+  private results!: JobResults;
+  /** Seconds after a job is done before the result comes up: let the landing land. */
+  private resultIn = -1;
   private saveDue = 0;
   /** The pin the player put on the plan, and who and what they have met. */
   private waypoint: { x: number; y: number } | null = null;
@@ -125,7 +145,8 @@ class Game {
     };
     this.hud.onButton = (which) => {
       if (this.phase !== 'play') return;
-      if (which === 'notes') this.openNotebook(); else this.openMenu();
+      if (which === 'notes') { if (this.mode === 'jobs') this.openBoard(); else this.openNotebook(); }
+      else this.openMenu();
     };
     this.notebook = new Notebook(document.body, this.sim, this.touchPrimary, () => this.resumeFromOverlay(),
       (made) => { if (!made) this.audio.hackTick(); });
@@ -134,7 +155,27 @@ class Game {
       notes: () => this.openNotebook(),
       newAfternoon: () => this.newAfternoon(),
       applySettings: () => this.applySettings(),
+      jobs: {
+        active: () => this.mode === 'jobs',
+        restart: () => { if (this.run) this.startJob(this.run.def); },
+        board: () => this.openBoard(),
+      },
     }, loadEndingsSeen);
+    this.board = new JobBoard(document.body, this.touchPrimary, {
+      start: (def) => this.startJob(def),
+      story: () => this.leaveForStory(),
+      close: () => this.resumeFromOverlay(),
+    }, loadJobRecords, () => this.run !== null || this.phase === 'play');
+    this.jobHud = new JobHud(uiRoot);
+    this.results = new JobResults(document.body, this.touchPrimary, {
+      retry: () => { if (this.run) this.startJob(this.run.def); },
+      next: () => {
+        const at = this.run ? JOBS.indexOf(this.run.def) : -1;
+        const nxt = JOBS[at + 1];
+        if (nxt) this.board.show(nxt); else this.board.show();
+      },
+      board: () => this.board.show(),
+    });
     this.ending = new EndingCard(document.body, this.sim, {
       keepSkating: () => this.resumeFromOverlay(),
       newAfternoon: () => this.newAfternoon(),
@@ -281,6 +322,93 @@ class Game {
     // straight back and offer it to "continue" on the very next screen.
     this.discarding = true;
     clearAfternoon();
+    window.location.reload();
+  }
+
+  // ----------------------------------------------------------------- jobs
+
+  /**
+   * Into jobs: the same town with the story left out. Nobody stops you for a
+   * conversation, the plan shows every camera (finding a route is the job),
+   * and the board comes up first.
+   */
+  private startJobs(): void {
+    this.mode = 'jobs';
+    this.sim.storyActive = false;
+    this.sim.visionUnlocked = true;
+    this.hud.setJobsMode(true);
+    document.documentElement.classList.add('jobs-mode');
+    this.phase = 'play';
+    this.hud.setVisible(true);
+    this.renderer.cam.scripted = null;
+    this.renderer.chase.reset(this.sim);
+    this.loop.start();
+    this.board.show();
+  }
+
+  private openBoard(): void {
+    this.closePlan();
+    if (this.menu.open) this.menu.hide(false);
+    this.clearHeldInput();
+    this.board.show();
+  }
+
+  /** A job, from the top: a fresh street, the rider at the start, the clock at zero. */
+  private startJob(def: JobDef): void {
+    this.board.hide();
+    this.results.hide();
+    this.run?.dispose();
+    this.clearTransientState();
+    this.run = new JobRun(this.sim, def, JOB.run);
+    this.resultIn = -1;
+    this.renderer.chase.reset(this.sim);
+    this.jobHud.setVisible(true);
+    this.syncJobPin();
+    this.audio.clue();
+  }
+
+  /** The pin follows the job: always the nearest thing still to do. */
+  private syncJobPin(): void {
+    const r = this.run;
+    const next = r && r.status === 'running' ? r.nextPoint() : null;
+    this.waypoint = next ? { x: next.pos.x, y: next.pos.y } : null;
+    this.renderer.waypoint = this.waypoint;
+    this.renderer.waypointLabel = next ? next.label : null;
+  }
+
+  private stepJob(dt: number): void {
+    const r = this.run;
+    if (!r) return;
+    r.step(dt);
+    for (const c of r.takeCallouts()) {
+      this.jobHud.say(c);
+      if (c.tone === 'alarm') this.audio.motif(0.7);
+      else if (c.tone === 'warn') this.audio.servo();
+      else if (c.tone === 'good') this.audio.clue();
+    }
+    this.syncJobPin();
+    if (r.status === 'complete') {
+      if (this.resultIn < 0) this.resultIn = 1.1;
+      this.resultIn -= dt;
+      if (this.resultIn <= 0 && !this.results.open && r.result) {
+        this.resultIn = Infinity;
+        const res = r.result;
+        const { record, bests } = recordJobRun(r.def.id, {
+          total: res.total, grade: res.grade, time: res.time, style: res.style,
+          exposure: res.exposure, flow: res.flow, ghost: res.ghost,
+        });
+        this.clearHeldInput();
+        this.results.show(r.def, res, record, bests, JOBS.indexOf(r.def) < JOBS.length - 1, {
+          launches: r.tally.launches, tricks: r.tally.tricks, roofs: r.tally.roofs, bestChain: r.tally.bestChain,
+        });
+        this.audio.hackDone();
+      }
+    }
+  }
+
+  /** From the board to the story: a clean page, the way the afternoon expects to start. */
+  private leaveForStory(): void {
+    this.discarding = true;
     window.location.reload();
   }
 
@@ -438,13 +566,14 @@ class Game {
           <label class="setting"><span class="s-label">Colour-blind safe palette</span><input class="switch" type="checkbox" role="switch" id="pref-colour"></label>
           <label class="setting"><span class="s-label">Larger text</span><input class="switch" type="checkbox" role="switch" id="pref-text"></label>
         </div>
-        <div class="actions">
+        <div class="actions modes">
+          <button type="button" class="go mode-jobs" id="pref-jobs">Jobs<small>Skate the city. Stay off the grid.</small></button>
         ${saved
-          ? `<button type="button" class="go" id="pref-continue">Continue the afternoon<small>${saved.label}</small></button>
-             <button type="button" class="go quiet" id="pref-go">Start a new afternoon</button>`
-          : '<button type="button" class="go" id="pref-go">Continue</button>'}
+          ? `<button type="button" class="go quiet" id="pref-continue">Continue the afternoon<small>${saved.label}</small></button>
+             <button type="button" class="go quiet" id="pref-go">Start a new afternoon<small>The story</small></button>`
+          : '<button type="button" class="go quiet" id="pref-go">The afternoon<small>The story</small></button>'}
         </div>
-        ${this.touchPrimary ? '' : `<div class="keyhint"><kbd>Enter</kbd> to ${saved ? 'continue the afternoon' : 'continue'}</div>`}
+        ${this.touchPrimary ? '' : '<div class="keyhint"><kbd>Enter</kbd> for jobs</div>'}
       </div>`;
     document.body.appendChild(el);
     (el.querySelector('#pref-motion') as HTMLInputElement).checked = this.settings.reduceMotion;
@@ -452,7 +581,7 @@ class Game {
     (el.querySelector('#pref-text') as HTMLInputElement).checked = this.settings.textScale > 1;
 
     let gone = false;
-    const go = (resume: boolean) => {
+    const go = (resume: boolean | 'jobs') => {
       if (gone) return;
       gone = true;
       this.settings.reduceMotion = (el.querySelector('#pref-motion') as HTMLInputElement).checked;
@@ -465,6 +594,7 @@ class Game {
       el.classList.add('hidden');
       window.setTimeout(() => el.remove(), 520);
       this.audio.start();
+      if (resume === 'jobs') { this.startJobs(); return; }
       if (resume && saved) {
         this.restore(saved);
         this.startPlay();
@@ -475,6 +605,7 @@ class Game {
     };
 
     el.querySelector('#pref-go')!.addEventListener('click', () => go(false));
+    el.querySelector('#pref-jobs')!.addEventListener('click', () => go('jobs'));
     el.querySelector('#pref-continue')?.addEventListener('click', () => go(true));
     window.addEventListener('keydown', function once(e) {
       // A focused button answers for itself: Enter on "Start a new afternoon"
@@ -482,7 +613,7 @@ class Game {
       if ((e.target as HTMLElement | null)?.closest?.('#prefs button')) return;
       if (e.code === 'Enter' || e.code === 'Space') {
         window.removeEventListener('keydown', once);
-        go(!!saved);
+        go('jobs');
       }
     });
   }
@@ -565,7 +696,12 @@ class Game {
       }
       if (this.phase !== 'play') return;
       if (this.ending.open) return;
+      if (this.board.key(e.code) || this.results.key(e.code)) { e.preventDefault(); return; }
       if (this.notebook.key(e.code) || this.menu.key(e.code)) { e.preventDefault(); return; }
+      if (this.mode === 'jobs') {
+        if (e.code === 'KeyT' && this.run) { this.startJob(this.run.def); e.preventDefault(); return; }
+        if (e.code === 'KeyJ' || e.code === 'KeyN' || e.code === 'Tab') { e.preventDefault(); this.openBoard(); return; }
+      }
       if (e.code === 'Escape' || e.code === 'KeyP') {
         if (this.sim.aimMode) { this.sim.exitAimMode(); return; }
         if (this.sim.planViewActive) { this.closePlan(); return; }
@@ -811,7 +947,7 @@ class Game {
       this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.012, dt);
       this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.012, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
-      this.story.update();
+      if (this.mode === 'story') this.story.update(); else this.stepJob(dt);
       return;
     }
 
@@ -832,6 +968,7 @@ class Game {
     if (tap) this.resolveTap(tap);
     this.orientMove();
     this.sim.step(dt, this.intent, this.aimPoint());
+    if (this.mode === 'jobs') { this.stepJob(dt); return; }
     this.story.update();
 
     /*
@@ -1048,6 +1185,9 @@ class Game {
       : null;
     this.renderer.render(dt);
     this.hud.update(dt);
+    if (this.run && this.mode === 'jobs') {
+      this.jobHud.update(this.run, dt, this.sim.player.pos, this.renderer.chase.yaw);
+    }
     this.audio.setDraw(this.sim.aimMode || this.sim.player.aiming ? this.sim.player.draw : 0);
 
     const p = this.sim.player;
