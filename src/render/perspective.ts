@@ -1447,12 +1447,13 @@ export class PerspectiveRenderer {
         const a = { x: lerp(w.a.x, w.b.x, t0), y: lerp(w.a.y, w.b.y, t0) };
         const b = { x: lerp(w.a.x, w.b.x, t1), y: lerp(w.a.y, w.b.y, t1) };
         /*
-         * A wire is a hairline, wherever it is. Sized in metres it was a
-         * thread down the street and a black bar across the glass once the
-         * rig swung under one, so each piece is as thick as a pixel and a
-         * half is at its own distance from the eye.
+         * A wire is never more than a hairline. Sized in metres it became a
+         * black bar across the glass once the rig swung under one, so near
+         * the eye each piece is capped at a pixel and a half; far off it is
+         * its real three centimetres, which is less than a pixel — so the
+         * distance gets less ink, not a bold line along the horizon.
          */
-        const ht = (q: Vec2, z: number) => Math.max(0.006, (0.75 * Math.hypot(q.x - cam.pos.x, q.y - cam.pos.y, z - cam.pos.z)) / cam.f);
+        const ht = (q: Vec2, z: number) => Math.min(0.03, (0.75 * Math.hypot(q.x - cam.pos.x, q.y - cam.pos.y, z - cam.pos.z)) / cam.f);
         const ha = ht(a, z0), hb = ht(b, z1);
         this.push(cam, [
           { x: a.x, y: a.y, z: z0 - ha }, { x: b.x, y: b.y, z: z1 - hb },
