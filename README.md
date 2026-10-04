@@ -36,6 +36,17 @@ side by side in your notes to work something out, and then you decide who to
 show it to — Priya Venn at the UNDERWATCH drop-in, Mara's shop window, or
 nobody. Five endings are read off what you did and what you worked out.
 
+## Jobs
+
+The title screen offers **Jobs** first: the same town with the story left
+out. Pick a job from the board, read one line, and skate. Each job is a place
+to be and whatever is watching on the way, never a route. Being seen does not
+fail a job. Your exposure climbs from UNSEEN through SPOTTED and TRACKED to
+UNDERWATCH, drones come to where you were last seen, and you skate out of it
+until the city says **SIGNAL LOST**. Runs are scored on STYLE, TIME, EXPOSURE
+and FLOW, with bests kept per job. `T` restarts a job and `J` opens the board.
+See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-getaway.md).
+
 ## Controls
 
 | | |

@@ -67,3 +67,49 @@ export function recordEndingSeen(id: string): string[] {
   try { localStorage.setItem(ENDINGS_KEY, JSON.stringify(seen)); } catch { /* best effort */ }
   return seen;
 }
+
+/**
+ * Jobs: the best each one has been done, in each of the four ways a run can
+ * be good, plus the best overall. Kept apart from the afternoon, so starting
+ * a new afternoon never costs a personal best.
+ */
+export interface JobRecord {
+  total: number;
+  grade: string;
+  time: number;
+  style: number;
+  exposure: number;
+  flow: number;
+  ghost: boolean;
+  runs: number;
+}
+const JOBS_KEY = 'underwatch.jobs.v1';
+
+export function loadJobRecords(): Record<string, JobRecord> {
+  try {
+    const raw = localStorage.getItem(JOBS_KEY);
+    const v = raw ? JSON.parse(raw) : {};
+    return v && typeof v === 'object' ? v : {};
+  } catch { return {}; }
+}
+
+/** Fold one finished run into the records. Returns the record and which bests it set. */
+export function recordJobRun(
+  id: string, r: { total: number; grade: string; time: number; style: number; exposure: number; flow: number; ghost: boolean },
+): { record: JobRecord; bests: Array<'total' | 'time' | 'style' | 'exposure' | 'flow'> } {
+  const all = loadJobRecords();
+  const prev = all[id];
+  const bests: Array<'total' | 'time' | 'style' | 'exposure' | 'flow'> = [];
+  const record: JobRecord = prev ? { ...prev, runs: prev.runs + 1 } : { ...r, runs: 1 };
+  if (prev) {
+    if (r.total > prev.total) { record.total = r.total; record.grade = r.grade; bests.push('total'); }
+    if (r.time < prev.time) { record.time = r.time; bests.push('time'); }
+    if (r.style > prev.style) { record.style = r.style; bests.push('style'); }
+    if (r.exposure < prev.exposure) { record.exposure = r.exposure; bests.push('exposure'); }
+    if (r.flow > prev.flow) { record.flow = r.flow; bests.push('flow'); }
+    record.ghost = prev.ghost || r.ghost;
+  }
+  all[id] = record;
+  try { localStorage.setItem(JOBS_KEY, JSON.stringify(all)); } catch { /* best effort */ }
+  return { record, bests };
+}
