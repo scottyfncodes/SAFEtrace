@@ -1063,3 +1063,22 @@ describe('the raised sling: the camera is the aim', () => {
     expect(e.sample().moveVector).not.toBeNull();
   });
 });
+
+describe('GRIND sits right beside TRICK', () => {
+  // Grind and flip are the two things pressed mid-line, so on every phone
+  // GRIND is TRICK's nearest neighbour, about a hundred pixels centre to
+  // centre — as close as the separation rule lets two thumb targets sit.
+  for (const v of PHONES) {
+    it(`on ${v.name}`, () => {
+      const buttons = forPhone(v).buttonLayout();
+      const trick = buttons.find((b) => b.id === 'trick')!;
+      const d = (id: string) => {
+        const b = buttons.find((x) => x.id === id)!;
+        return Math.hypot(b.pos.x - trick.pos.x, b.pos.y - trick.pos.y);
+      };
+      expect(d('grind')).toBeLessThanOrEqual(104);
+      expect(d('grind')).toBeLessThan(d('plan'));
+      expect(d('grind')).toBeLessThan(d('sling'));
+    });
+  }
+});

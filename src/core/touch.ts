@@ -92,32 +92,26 @@ export const TOUCH_TUNING = {
   /** Minimum gap between any two hit circles. */
   separation: 16,
   /**
-   * PLAN sits up and to the left of TRICK — the direction a right thumb
-   * sweeps anyway — so it is one short, deliberate flick away and its hit
-   * circle stays clear of the left-hand pad even on a 320 px phone.
+   * On a phone too narrow for a second button on the bottom row, GRIND takes
+   * the slot up and to the left of TRICK — the direction a right thumb sweeps
+   * anyway, one short flick from where it rests — and PLAN, a view opened
+   * when the player chooses to stop, moves up beside SLING. Both stay inside
+   * the reach a 320 px phone leaves the cluster, so the pad keeps its width.
    */
-  planOffset: { x: -80, y: -64 },
+  grindOffset: { x: -80, y: -64 },
+  planOffset: { x: -86, y: -158 },
   slingOffset: { x: 0, y: -112 },
   /**
-   * GRIND: pressed on the way to a rail, so it wants to be a press the right
-   * thumb can find without looking — up and to the left of SLING, the next
-   * step along the arc a thumb already sweeps from the corner. Inside the
-   * reach a 320 px phone leaves the cluster, so the movement pad keeps its
-   * width.
+   * Where GRIND goes when the phone is wide enough: on the bottom row, right
+   * beside TRICK, where the right thumb already sits — grind and flip are the
+   * two things pressed mid-line, so they are neighbours, as close as the
+   * separation rule allows. PLAN then takes the slot up and left of SLING.
    */
-  grindOffset: { x: -86, y: -158 },
-  /**
-   * Where GRIND goes when the phone is wide enough: on the bottom row, just
-   * left of TRICK, where the right thumb already sits — grind and flip are
-   * the two things pressed mid-line, so they are neighbours. PLAN then takes
-   * the slot up and left of SLING. On a phone too narrow for a second button
-   * on the bottom row without crowding the movement pad, the cluster keeps
-   * its compact arrangement (`grindOffset` / `planOffset`).
-   */
-  grindRowOffset: { x: -112, y: 0 },
+  grindRowOffset: { x: -100, y: 0 },
   planHighOffset: { x: -86, y: -158 },
-  grindRadius: 25,
-  grindHit: 38,
+  /** Drawn a little larger than PLAN, since it is pressed mid-run; hit the same size. */
+  grindRadius: 26,
+  grindHit: 34,
   /**
    * Holding TRICK this long is a grab instead of a flip.
    *
