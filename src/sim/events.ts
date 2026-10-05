@@ -107,6 +107,14 @@ export interface SimEvents extends Record<string, unknown> {
   'drone:spotlight': { droneId: string; on: boolean };
   'patrol:contact': { patrolId: string };
   'vision:unlocked': Record<string, never>;
+  /** Recon learned something: a camera spotted, or its timing worked out. */
+  'recon:intel': { sensorId: string; kind: 'spotted' | 'timed' };
+  /** PLAN pressed with a barrier on the way: the approach is committed. */
+  'plan:committed': { steps: number; unknown: number };
+  /** The rider got to the target unseen: the recon was right. */
+  'plan:held': { steps: number; seconds: number };
+  /** Something got a picture of the rider before the target, and why. */
+  'plan:blown': { sensorId: string; reason: string };
   /** The player has found the number UNDERWATCH keeps on them. */
   'score:discovered': { where: string; score: number };
   'devon:met': Record<string, never>;

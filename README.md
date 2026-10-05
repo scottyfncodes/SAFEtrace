@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 674 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
+npm test         # 704 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -50,6 +50,17 @@ MAINTENANCE (some cameras are down) — shown on the board. The first job opens
 on the Lot's kickers. See [`docs/47-the-first-minute.md`](docs/47-the-first-minute.md).
 See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-getaway.md).
 
+## Recon and the plan
+
+When a camera covers the way to where you are going, the strip under the run
+says so. Open the plan (`Q` / `PLAN`) and it is the recon layer: hold a camera
+in the middle of the map to learn its sweep and timing, and mark a spot to
+learn what a stone there would turn. Pressing `PLAN` again commits — the intel
+becomes a chain (`STONE → CM-207 TURNS → THERE`) carried out into the street
+with live timing, and the town decides whether it holds. A blown plan always
+says why, and it is always something recon could have shown you. See
+[`docs/49-recon-and-the-plan.md`](docs/49-recon-and-the-plan.md).
+
 ## Controls
 
 | | |
@@ -69,7 +80,7 @@ See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-g
 | `E` | talk to whoever you are next to, look at what is in front of you, or reach into a node |
 | `1`–`3` | answer, in a conversation; act on a node, at a node |
 | `N` | your notes: what you know, and what goes with what |
-| `Q` | the plan: tap to open and close (or hold to peek); click it to pin where you are going |
+| `Q` | recon: open the plan, hold a camera in the middle to read it, click to pin where you are going (then click elsewhere to read a spot); `Q` again commits to the plan, `Esc` just closes it |
 | `Esc` | put away whatever is open; otherwise pause |
 | `H` | hold to see every control, without stopping |
 | `F3` | diagnostics, including the pursuit state and the risk decomposition |
@@ -209,8 +220,11 @@ pin down it shows which cameras a stone there would turn. See
 
 ## Testing
 
-674 tests, all headless, in about thirty seconds.
+704 tests, all headless, in about thirty seconds.
 
+- **Recon and the plan** — what recon learns and when, how intel becomes a
+  committed plan, and that every way a plan is blown happens for the reason
+  it gives (`tests/recon.test.ts`).
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.
 - **Loop** — the slingshot, evidence, hacking and drone chains end to end,

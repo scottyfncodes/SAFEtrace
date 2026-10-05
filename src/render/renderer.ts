@@ -12,7 +12,8 @@ import type { Settings } from '../core/settings';
 import { NOISE_REACH, type Sim } from '../sim/sim';
 import { predictArc, MUZZLE_MAX, MUZZLE_MIN, LAUNCH_Z, PROJ_GRAVITY } from '../sim/slingshot';
 import { ViewCamera } from './camera';
-import { PLAN, SLING_HINT } from '../content/copy';
+import { PLAN, RECON_COPY, SLING_HINT } from '../content/copy';
+import { RECON, type CommittedPlan } from '../sim/recon';
 import { ControlsRenderer } from './controls';
 import { ChaseCamera, EYE_Z, PerspectiveRenderer, type CamState } from './perspective';
 import { MachineRenderer } from './machine';
@@ -459,6 +460,11 @@ export class Renderer {
   waypoint: Vec2 | null = null;
   /** A name on the pin, when the map put it there rather than the player: "DEVON". */
   waypointLabel: string | null = null;
+  /** A spot read in recon for what a stone there would turn, in a job. Set by the host. */
+  probe: Vec2 | null = null;
+  /** The approach the intel supports right now, while the plan is open. Set by the host. */
+  planPreview: CommittedPlan | null = null;
+  planChain: string | null = null;
   /** During the advertisement and its reprise: no prompt, no pin, no thumbs. */
   overlaysHidden = false;
   /** The top of the touch cluster in canvas pixels; Infinity on a desktop. */
@@ -500,8 +506,9 @@ export class Renderer {
     ctx.textBaseline = 'middle';
 
     // Under the words: what the player knows about who is watching.
-    const reading = readPlan(sim, this.waypoint);
+    const reading = readPlan(sim, this.probe ?? this.waypoint);
     this.drawPlanSurveillance(ctx, reading, a);
+    this.drawRecon(ctx, a);
 
     // Districts, large and quiet: the words people give directions in.
     ctx.font = '700 13px ui-monospace, Menlo, monospace';
@@ -604,8 +611,15 @@ export class Renderer {
 
     // What this view is for, and how to use it — until it has been used.
     const lines: string[] = [];
+    // The approach as it stands: what PLAN would commit to.
+    const pv = this.planPreview;
+    const barrier = !!pv && pv.steps.length > 1;
+    if (barrier && this.planChain) lines.push(RECON_COPY.preview(this.planChain));
+    const holes = pv ? pv.steps.filter((st) => st.kind === 'unknown').length : 0;
+    if (holes) lines.push(RECON_COPY.unscouted(holes));
+    else if (pv && !barrier) lines.push(RECON_COPY.noBarrier);
     if (!this.waypoint) lines.push(this.touchHints ? PLAN.markTouch : PLAN.markMouse);
-    lines.push(this.touchHints ? PLAN.moveTouch : PLAN.moveMouse);
+    lines.push(barrier ? (this.touchHints ? RECON_COPY.commitTouch : RECON_COPY.commitMouse) : (this.touchHints ? PLAN.moveTouch : PLAN.moveMouse));
     // What the plan reads off the town, above how to use it.
     const readings = reading.lines.slice(0, 3);
     lines.unshift(...readings);
@@ -623,6 +637,112 @@ export class Renderer {
       ctx.fillStyle = alpha(i === 0 && this.scoreLine ? '#F2C86B' : isReading ? PLAN_INK.reading : MACHINE.structureBright, 0.95 * a);
       ctx.fillText(l, this.w / 2, top + i * 22 + 0.5);
     });
+    ctx.restore();
+  }
+
+  /**
+   * Recon, on the plan.
+   *
+   * A pair of brackets in the middle of the map: what sits inside them is
+   * being read. A camera being read draws its progress round its mount; one
+   * whose timing is known carries it beside it. With somewhere to go, the
+   * way there is drawn, and each camera on it is marked with what the plan
+   * would do about it — a stone (and where), a gap, or a warning.
+   */
+  private drawRecon(ctx: CanvasRenderingContext2D, a: number): void {
+    const sim = this.sim;
+    const cam = this.cam;
+    const at = (p: Vec2) => cam.toScreen(p, this.w, this.h);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // The reticle: the middle of the map is where reading happens.
+    const r = (Math.min(this.w, this.h) / 2) * RECON.focusShare;
+    const cx = this.w / 2, cy = this.h / 2, k = Math.min(18, r * 0.25);
+    ctx.strokeStyle = alpha(PLAN_INK.reading, 0.5 * a);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      ctx.moveTo(cx + sx * r, cy + sy * (r - k)); ctx.lineTo(cx + sx * r, cy + sy * r); ctx.lineTo(cx + sx * (r - k), cy + sy * r);
+    }
+    ctx.stroke();
+    let reading = false;
+
+    ctx.font = '600 10px ui-monospace, Menlo, monospace';
+    for (const c of sim.recon.cameras.values()) {
+      const s = sim.sensorById.get(c.id);
+      if (!s || !c.spotted) continue;
+      const o = at(s.data.pos);
+      if (o.x < -60 || o.x > this.w + 60 || o.y < -30 || o.y > this.h + 30) continue;
+      if (!c.timed) {
+        // Being read: the arc fills as the timing comes in.
+        reading = true;
+        const f = clamp01(c.studied / RECON.study);
+        ctx.strokeStyle = alpha(PLAN_INK.reading, 0.9 * a);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(o.x, o.y, 9, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+        continue;
+      }
+      const d = s.data;
+      const text = RECON_COPY.timed(d.id, d.sweep > 0 ? Math.round((d.sweep * 2 * 180) / Math.PI) : 0, d.sweepPeriod);
+      const wd = ctx.measureText(text).width + 8;
+      ctx.fillStyle = alpha('#0B1117', 0.7 * a);
+      ctx.fillRect(o.x - wd / 2, o.y + 9, wd, 14);
+      ctx.fillStyle = alpha(PLAN_INK.reading, 0.95 * a);
+      ctx.fillText(text, o.x, o.y + 16.5);
+    }
+    if (!reading && !sim.recon.cameras.size) {
+      ctx.fillStyle = alpha(PLAN_INK.reading, 0.7 * a);
+      ctx.fillText(RECON_COPY.focus, cx, cy + r + 12);
+    }
+
+    // The probe: a spot read for what a stone there would turn.
+    if (this.probe) {
+      const c = at(this.probe);
+      ctx.strokeStyle = alpha(PLAN_INK.ghost, 0.9 * a);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+      ctx.moveTo(c.x - 10, c.y); ctx.lineTo(c.x + 10, c.y); ctx.moveTo(c.x, c.y - 10); ctx.lineTo(c.x, c.y + 10);
+      ctx.stroke();
+    }
+
+    // The way, and what the plan would do at each camera on it.
+    const pv = this.planPreview;
+    if (pv && pv.steps.length > 1) {
+      if (pv.route.length > 2) {
+        ctx.strokeStyle = alpha(VENEER.player, 0.65 * a);
+        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        pv.route.forEach((p, i) => { const q = at(p); if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const st of pv.steps) {
+        if (!st.sensorId) continue;
+        const s = sim.sensorById.get(st.sensorId);
+        if (!s) continue;
+        const o = at(s.data.pos);
+        const hole = st.kind === 'unknown' || st.kind === 'covered';
+        const col = hole ? PLAN_INK.hot : PLAN_INK.ghost;
+        ctx.strokeStyle = alpha(col, 0.95 * a);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(o.x, o.y, 13, 0, Math.PI * 2); ctx.stroke();
+        if (st.kind === 'distract' && st.at) {
+          const t = at(st.at);
+          ctx.setLineDash([3, 4]);
+          ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(t.x - 5, t.y - 5); ctx.lineTo(t.x + 5, t.y + 5); ctx.moveTo(t.x + 5, t.y - 5); ctx.lineTo(t.x - 5, t.y + 5); ctx.stroke();
+        }
+        if (st.kind === 'unknown') {
+          ctx.font = '700 12px ui-monospace, Menlo, monospace';
+          ctx.fillStyle = alpha(col, a);
+          ctx.fillText('?', o.x, o.y - 22);
+        }
+      }
+    }
     ctx.restore();
   }
 

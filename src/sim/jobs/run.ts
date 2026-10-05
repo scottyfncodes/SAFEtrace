@@ -88,6 +88,7 @@ export class JobRun {
         if (seconds > 0.4) move(STYLE.grindPerSecond * seconds, `${name} ${seconds.toFixed(1)}s`);
       }),
       bus.on('player:roof', () => { this.tally.roofs++; move(STYLE.roof, 'ROOFTOP'); }),
+      bus.on('plan:held', () => move(STYLE.plan, 'PLAN HELD')),
       bus.on('player:land', () => {
         if (this.status !== 'running') return;
         const air = this.tally.airTime;

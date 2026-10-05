@@ -26,7 +26,7 @@ export const KEYS: Array<[string, string]> = [
   ['Left mouse', 'slingshot: drag back from anywhere and let go — or point at a thing and hold'],
   ['F', 'steady aim: stand still and look down the sling (mouse or A D W S to aim)'],
   ['E', 'talk, look, reach into a node'], ['1–3', 'answer'],
-  ['Q', 'plan — tap to open, click to pin where you are going (or hold to peek)'], ['N', 'notes'], ['Esc', 'this menu'],
+  ['Q', 'recon — open the plan, read what is in the middle, pin where you are going; Q again commits'], ['N', 'notes'], ['Esc', 'this menu'],
   ['J', 'job board (in a job)'], ['T', 'restart the job (in a job)'],
   ['H', 'hold to see every control, without stopping'],
 ];
@@ -35,7 +35,7 @@ const TOUCH: Array<[string, string]> = [
   ['TRICK', 'tap to flip the board, hold to grab it'],
   ['GRIND', 'press near a rail, ledge or bench: it pops you onto it. Ollie or TRICK to get off'],
   ['SLING', 'tap to raise it: drag to aim (the middle of the screen), hold THROW to draw, let go to throw, quick tap to lower'],
-  ['PLAN', 'the map: tap it to pin where you are going, and follow the pin'],
+  ['PLAN', 'recon: read what is in the middle, tap to pin where you are going; PLAN again commits'],
   ['Tap a person or thing', 'talk, look, reach in'], ['Notes', 'what you know'],
 ];
 

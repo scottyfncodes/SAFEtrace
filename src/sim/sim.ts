@@ -46,6 +46,7 @@ import { SYSTEM, CARE, SHOT } from '../content/copy';
 import { CASE } from '../content/case';
 import { Casefile, type ConnectResult } from './casefile';
 import { updatePerson } from './people';
+import { Recon, draftPlan, stepPlan, type CommittedPlan } from './recon';
 import type { PersonData, PlaceData, ScenePropData } from './worldTypes';
 
 /**
@@ -338,6 +339,13 @@ export class Sim {
   /** 0..1 blend into the plan view; the renderer drives the peel from this. */
   planViewBlend = 0;
   planViewActive = false;
+  /**
+   * Recon (recon.ts): what the plan view has found out, and the plan the
+   * player last committed to. The host says where the map is looking.
+   */
+  readonly recon = new Recon();
+  plan: CommittedPlan | null = null;
+  reconFocus: { centre: Vec2; radius: number } | null = null;
   /** A forced, brief crack in the veneer. Seconds. */
   crackTimer = 0;
 
@@ -567,6 +575,7 @@ export class Sim {
     for (const s of this.sensors) updateSensor(s, this.tick, this.time);
     this.gatherObservations();
     this.updateKnownSensors();
+    if (this.plan && !looking) this.executePlan(dt);
 
     // 6-9. Fusion, behaviour, prediction, risk.
     this.updateTracking();
@@ -2389,7 +2398,18 @@ export class Sim {
       this.planViewActive = true;
       return;
     }
+    const opening = intent.planView && !this.planViewActive;
     this.planViewActive = intent.planView;
+    // Going back into recon is re-planning: the plan in hand is put down.
+    if (opening && this.plan?.status === 'executing') this.plan = null;
+    if (this.planViewActive && this.planViewBlend > 0.9 && this.reconFocus) {
+      const found = this.recon.observe(this, this.reconFocus.centre, this.reconFocus.radius, dt);
+      for (const id of found.spotted) {
+        this.knownSensors.add(id);
+        this.bus.emit('recon:intel', { sensorId: id, kind: 'spotted' });
+      }
+      for (const id of found.timed) this.bus.emit('recon:intel', { sensorId: id, kind: 'timed' });
+    }
     // With VISION, the plan brackets every subject with their number — yours too.
     if (this.visionUnlocked && this.planViewActive && this.planViewBlend > 0.9) this.discoverScore('the plan');
     const target = this.planViewActive ? 1 : 0;
@@ -2397,6 +2417,37 @@ export class Sim {
     // returns a little too suddenly, which is the correct feeling.
     const rate = this.planViewActive ? 1.45 : 2.3;
     this.planViewBlend += Math.sign(target - this.planViewBlend) * Math.min(Math.abs(target - this.planViewBlend), rate * dt);
+  }
+
+  /**
+   * A pin dropped in recon: what a stone there would turn is written down,
+   * and kept, so a plan can use it later from anywhere.
+   */
+  probe(pos: Vec2): ReturnType<Sim['earshot']> {
+    const e = this.earshot(pos);
+    this.recon.noteNoise(pos, e.stone, e.wary);
+    return e;
+  }
+
+  /**
+   * PLAN: commit to an approach from here to the target, built from the
+   * intel. Nothing to commit to if nothing watches the way.
+   */
+  commitPlan(target: Vec2, label: string | null = null): CommittedPlan | null {
+    const plan = draftPlan(this, this.recon, this.player.pos, target, label);
+    if (plan.steps.length <= 1) { this.plan = null; return null; }
+    this.plan = plan;
+    this.bus.emit('plan:committed', {
+      steps: plan.steps.length - 1, unknown: plan.steps.filter((s) => s.kind === 'unknown').length,
+    });
+    return plan;
+  }
+
+  private executePlan(dt: number): void {
+    const plan = this.plan!;
+    const changed = stepPlan(this, plan, this.playerSightings().ids, dt);
+    if (changed === 'held') this.bus.emit('plan:held', { steps: plan.steps.length - 1, seconds: plan.elapsed });
+    else if (changed === 'blown' && plan.failure) this.bus.emit('plan:blown', { sensorId: plan.failure.sensorId, reason: plan.failure.reason });
   }
 
   crackTheVeneer(seconds: number): void {
@@ -2515,6 +2566,8 @@ export class Sim {
     this.escalation = 'PASSIVE';
     this.lastEscalation = 'PASSIVE';
     this.lastPursuit = 'NOT_PURSUING';
+    this.recon.reset();
+    this.plan = null;
   }
 
   /** Drones a job has sent after the rider, by id. The dispatcher keeps its hands off them. */
