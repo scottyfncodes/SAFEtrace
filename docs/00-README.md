@@ -52,6 +52,7 @@ before implementation and is the authority for what the game is trying to be.
 | 45 | [Grinds, Ramps and the Lot](45-grinds-ramps-and-the-lot.md) | The hook goes; a grind button, real kickers, and a poured skate lot between Commons Street and Ridgeline Road |
 | 46 | [The Observation System](46-the-observation-system.md) | A visual identity pass: one squared, bracketed, mono-labelled language over every screen, an observation frame that lights only when the system has you, and nothing in the game changed |
 | 47 | [The First Minute](47-the-first-minute.md) | The board opens on air off the Lot, the sling teaches itself on its own button, the match lands on Devon, each day has its own conditions, and the town's sound follows the system's attention |
+| 48 | [Fourteen](48-fourteen.md) | The rider and Devon drawn as teenagers: a shorter frame with a larger head and narrow shoulders, then an oversized hoodie, baggy trousers, chunky shoes and a slouchy beanie with hair escaping it |
 
 ## The one-sentence pitch
 
