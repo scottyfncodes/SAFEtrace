@@ -42,6 +42,22 @@ import { riskLabel } from '../sim/surveillance/risk';
 import { resolveRecords } from '../sim/worldTypes';
 import { INSPECT, PHONE, SYSTEM } from '../content/copy';
 import type { TalkView } from '../content/story';
+import { ObservationFrame, type WatchState } from './frame';
+import { ICON } from './icons';
+
+/** The afternoon's clock, for the stamp on a card: the frame keeps the same one. */
+const CLOCK_START = 16 * 3600 + 2 * 60;
+const stamp = (tick: number): string => {
+  const s = CLOCK_START + Math.floor(tick / 60);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(Math.floor(s / 3600) % 24)}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+};
+
+/** The glyph a node's record is headed with, by what kind of thing it is. */
+const NODE_ICON: Record<string, string> = {
+  CAMERA: ICON.camera, PLATE_READER: ICON.eye, SERVICE: ICON.archive, JUNCTION: ICON.signal,
+  UPLINK: ICON.signal, SPEAKER: ICON.signal, SIGN: ICON.grid, DOOR: ICON.lock,
+};
 
 
 /** Record lines that carry the argument, by what they talk about. */
@@ -64,6 +80,8 @@ export class Hud {
 
   private talk: HTMLElement;
   private toasts: HTMLElement;
+  /** The corners of the glass, and the system's one line about its view of you. */
+  readonly frame: ObservationFrame;
   private notesBadge: HTMLElement;
   private buttons: HTMLElement;
   private talkView: TalkView | null = null;
@@ -103,7 +121,7 @@ export class Hud {
       <div id="score-chip" aria-live="polite"></div>
       </div>
       ${touch ? `<div id="pause-corner">
-        <button class="hud-button" data-act="menu" aria-label="Pause"><span class="hb-label">II</span></button>
+        <button class="hud-button" data-act="menu" aria-label="Pause">${ICON.pause}</button>
       </div>` : ''}
       <div id="notifications"></div>
       <div id="inspect"></div>
@@ -113,6 +131,7 @@ export class Hud {
       <div id="toasts"></div>
       <div id="debug"></div>
     `;
+    this.frame = new ObservationFrame(root);
     this.notifications = root.querySelector('#notifications')!;
     this.inspect = root.querySelector('#inspect')!;
     this.prompts = root.querySelector('#prompts')!;
@@ -205,7 +224,7 @@ export class Hud {
     const choices = view.choices.length
       ? `<div class="choices">${view.choices.map((c, i) =>
         `<button class="choice" data-choice="${escapeHtml(c.id)}">${this.touch ? '' : `<kbd>${i + 1}</kbd>`}${escapeHtml(c.label)}</button>`).join('')}</div>`
-      : `<div class="next">${view.more ? `${key} ▸` : `${key} — done`}</div>`;
+      : `<div class="next">${view.more ? `${key} ${ICON.chevron}` : `${key} — done`}</div>`;
     this.talk.innerHTML = `${who}<div class="said${view.kind === 'place' ? ' narration' : ''}">${escapeHtml(view.text)}</div>${choices}`;
     this.talk.classList.add('show');
   }
@@ -216,7 +235,7 @@ export class Hud {
   private toast(kind: string, title: string, strong: boolean): void {
     const el = document.createElement('div');
     el.className = `toast${strong ? ' strong' : ''}`;
-    el.innerHTML = `<span class="tk">${escapeHtml(kind)}</span><span class="tt">${escapeHtml(title)}</span>`;
+    el.innerHTML = `<span class="tk">${strong ? ICON.link : ICON.note}${escapeHtml(kind)}</span><span class="tt">${escapeHtml(title)}</span>`;
     this.toasts.appendChild(el);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
     window.setTimeout(() => { el.classList.add('leaving'); window.setTimeout(() => el.remove(), 400); }, strong ? 4200 : 3000);
@@ -231,6 +250,9 @@ export class Hud {
   private slung = false;
   /** The first throw retires the hints on a phone. */
   slingThrown(): void { if (this.touch) this.slung = true; }
+
+  /** A job's exposure meter speaks for the frame while the job runs. */
+  setWatchOverride(level: WatchState | null): void { this.frame.override = level; }
 
   /** In a job, the notes button is the way back to the board. */
   setJobsMode(on: boolean): void {
@@ -251,6 +273,7 @@ export class Hud {
     this.drainMessages();
     this.updateScoreChip(dt);
     this.updateInspect();
+    this.frame.update(this.sim, dt);
 
     if (this.dialogueTimer > 0) {
       this.dialogueTimer -= dt;
@@ -371,7 +394,7 @@ export class Hud {
       el.dataset.key = key;
       const brand = m.register === 'SYSTEM' ? 'UNDERWATCH CITY' : 'UNDERWATCH CARE';
       el.innerHTML =
-        `<div class="brand"><span>${brand}</span><span>now</span></div>` +
+        `<div class="brand"><span>${m.priority === 'critical' ? ICON.alert : ''}${brand}</span><span>${stamp(this.sim.tick)}</span></div>` +
         m.lines.map((l) => `<div class="line">${escapeHtml(l)}</div>`).join('');
       // Critical first, so the eye lands on it without hunting.
       if (m.priority === 'critical') this.notifications.prepend(el);
@@ -413,6 +436,9 @@ export class Hud {
   private updateInspect(): void {
     const node = this.sim.focusNode;
     if (!node) { this.inspect.classList.remove('show'); return; }
+    // Opening a record is the system reading the thing for you: the panel's
+    // own scan line runs, and the frame makes one pass with it.
+    if (!this.inspect.classList.contains('show')) this.frame.pulse('scan');
     this.inspect.classList.add('show');
 
     const hack = this.sim.hack;
@@ -423,7 +449,7 @@ export class Hud {
 
     this.inspect.innerHTML =
       `<div class="node-head">` +
-        `<span class="node-kind">${escapeHtml(INSPECT.heading)} · ${escapeHtml(INSPECT.kind[node.kind] ?? 'Node')}</span>` +
+        `<span class="node-kind">${NODE_ICON[node.kind] ?? ICON.target}${escapeHtml(INSPECT.heading)} · ${escapeHtml(INSPECT.kind[node.kind] ?? 'Node')}</span>` +
         `<button class="verb close" data-close="1">${escapeHtml(INSPECT.dismiss)}</button>` +
       `</div>` +
       `<div class="node-id">${escapeHtml(node.id)}</div>` +

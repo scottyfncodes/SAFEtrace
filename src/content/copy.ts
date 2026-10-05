@@ -364,3 +364,28 @@ export const JOB = {
   /** The exposure chip, by level. */
   level: { UNSEEN: 'UNSEEN', SPOTTED: 'SPOTTED', TRACKED: 'TRACKED', UNDERWATCH: 'UNDERWATCH' },
 };
+
+/**
+ * The observation frame: what the system prints at the edge of the glass
+ * about its own view of you. Terse, because it is bookkeeping, and only ever
+ * read in the corner of the eye.
+ */
+export const FRAME = {
+  /** The recording light's label. */
+  rec: 'REC',
+  /** No sensor has the rider in its picture. */
+  noCamera: 'NO FIX',
+  /** A sensor does, by its id. */
+  camera: (id: string) => id,
+  /** The state tag, by what the system is doing about you. */
+  state: {
+    UNSEEN: 'UNOBSERVED',
+    SPOTTED: 'OBSERVED',
+    TRACKED: 'TRACKING',
+    UNDERWATCH: 'SUBJECT HELD',
+  } as Record<string, string>,
+  /** The sector the rider is in, for the readout. */
+  sector: (name: string) => name,
+  /** What the title screen says the system is doing. */
+  ready: 'SYSTEM READY',
+};

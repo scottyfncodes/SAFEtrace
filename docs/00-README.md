@@ -47,6 +47,7 @@ before implementation and is the authority for what the game is trying to be.
 | 40 | [The Inked Town](40-the-inked-town.md) | First original art pass on the street view: ink on paper, a line hierarchy, screentone, silhouette figures, three sacred signals, and the player's investigation drawn into the street in amber pencil |
 | 41 | [The Mood of the Town](41-the-mood-of-the-town.md) | The picture answers the game: the system's grip darkens the town, sabotage and uncovering light it; plus porches, drainpipes, aerials, birds and chalk |
 | 42 | [Natural Skating](42-natural-skating.md) | The push comes through the foot, the body leans against the load, the brake is a powerslide that lets the wheels go and grips again, and Devon rides the same board on the same simulation |
+| 46 | [The Observation System](46-the-observation-system.md) | A visual identity pass: one squared, bracketed, mono-labelled language over every screen, an observation frame that lights only when the system has you, and nothing in the game changed |
 
 ## The one-sentence pitch
 
