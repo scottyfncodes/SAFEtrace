@@ -341,6 +341,11 @@ kbd {
 #frame[data-watch="spotted"] { --fk: rgba(var(--sys-rgb), 0.7); --ft: 0.5; }
 #frame[data-watch="tracked"] { --fk: var(--warn); --ft: 0.75; }
 #frame[data-watch="underwatch"] { --fk: var(--risk); --ft: 1; }
+#frame[data-watch="match"] { --fk: var(--st-acid); --ft: 0.6; }
+#frame[data-watch="match"] .fc.tl { transform: translate(4px, 4px); }
+#frame[data-watch="match"] .fc.tr { transform: translate(-4px, 4px); }
+#frame[data-watch="match"] .fc.bl { transform: translate(4px, -4px); }
+#frame[data-watch="match"] .fc.br { transform: translate(-4px, -4px); }
 #frame[data-watch="tracked"] .fc.tl, #frame[data-watch="underwatch"] .fc.tl { transform: translate(4px, 4px); }
 #frame[data-watch="tracked"] .fc.tr, #frame[data-watch="underwatch"] .fc.tr { transform: translate(-4px, 4px); }
 #frame[data-watch="tracked"] .fc.bl, #frame[data-watch="underwatch"] .fc.bl { transform: translate(4px, -4px); }
@@ -406,6 +411,7 @@ kbd {
 #frame[data-watch="spotted"] .f-state { color: var(--sys); border-color: var(--sys-line); }
 #frame[data-watch="tracked"] .f-state { color: var(--warn); border-color: rgba(var(--st-orange-rgb), 0.5); background: rgba(var(--st-orange-rgb), 0.08); }
 #frame[data-watch="underwatch"] .f-state { color: #FFF; border-color: var(--risk); background: rgba(var(--risk-rgb), 0.55); }
+#frame[data-watch="match"] .f-state { color: #10170A; border-color: var(--st-acid); background: var(--st-acid); font-weight: 600; }
 /* The frame steps back with the rest of the HUD while somebody talks, and
    its readout gets out of the way of a node record on a desktop. */
 #ui.talking #frame .f-read { opacity: 0.4; }
@@ -615,6 +621,26 @@ html.reduce-motion #inspect.show::after { animation: none; }
 }
 #prompts > span { display: inline-flex; align-items: center; }
 #prompts kbd { margin-right: 6px; background: rgba(255,255,255,0.12); }
+
+/* ------------------------------------------------------------------- keys
+   Every control, held open by H, over the street rather than instead of it. */
+#keys {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(560px, 90vw); max-height: 80vh; overflow: hidden;
+  background: var(--brackets), var(--glass);
+  --bk: var(--sys-line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--ink-line-strong); clip-path: var(--clip-panel);
+  padding: 16px 18px; color: var(--ink-text); font-size: var(--fs-small);
+  transition: opacity var(--t-fast) var(--ease);
+}
+#keys.hidden { opacity: 0; }
+#keys:empty { display: none; }
+#keys { top: calc(50% + 34px); max-height: calc(100vh - 150px); font-size: var(--fs-meta); padding: 12px 16px; }
+#keys .ctl { display: grid; grid-template-columns: 9em 1fr; gap: 12px; align-items: baseline; padding: 1px 0; }
+#keys .ctl kbd { justify-self: start; font-size: 10.5px; }
+#keys .ctl span { color: var(--ink-text-2); line-height: 1.3; }
 
 /* --------------------------------------------------------------------- talk */
 #dialogue.hidden { opacity: 0 !important; }

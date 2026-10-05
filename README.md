@@ -7,7 +7,7 @@ to stay free of it is to become something it cannot predict.
 ```
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 491 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
+npm test         # 674 tests: simulation, escalation, story, the case, determinism, architecture, touch, feel
 npm run build
 ```
 
@@ -45,6 +45,9 @@ fail a job. Your exposure climbs from UNSEEN through SPOTTED and TRACKED to
 UNDERWATCH, drones come to where you were last seen, and you skate out of it
 until the city says **SIGNAL LOST**. Runs are scored on STYLE, TIME, EXPOSURE
 and FLOW, with bests kept per job. `T` restarts a job and `J` opens the board.
+Each day has its own conditions — CLEAR, DUSK (every camera sees less) or
+MAINTENANCE (some cameras are down) — shown on the board. The first job opens
+on the Lot's kickers. See [`docs/47-the-first-minute.md`](docs/47-the-first-minute.md).
 See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-getaway.md).
 
 ## Controls
@@ -68,6 +71,7 @@ See [`docs/44-jobs-exposure-and-the-getaway.md`](docs/44-jobs-exposure-and-the-g
 | `N` | your notes: what you know, and what goes with what |
 | `Q` | the plan: tap to open and close (or hold to peek); click it to pin where you are going |
 | `Esc` | put away whatever is open; otherwise pause |
+| `H` | hold to see every control, without stopping |
 | `F3` | diagnostics, including the pursuit state and the risk decomposition |
 
 Nothing opens on its own. A node's panel appears because you pressed `E` — or,
@@ -205,7 +209,7 @@ pin down it shows which cameras a stone there would turn. See
 
 ## Testing
 
-491 tests, all headless, in about thirty seconds.
+674 tests, all headless, in about thirty seconds.
 
 - **Simulation** — cone geometry, occlusion, confidence decay, misattribution,
   risk decomposition, ballistic reconstruction, subject linking, escalation.

@@ -18,6 +18,16 @@ import { exposureShare } from '../sim/jobs/exposure';
 import { wrapAngle } from '../core/math';
 import { PERKS, repFor, type PerkDef } from '../sim/jobs/kit';
 import { ICON } from './icons';
+import type { Condition } from '../sim/jobs/conditions';
+
+/** What the board says about today: the condition, and how many cameras it took down. */
+export interface TodayView { condition: Condition; down: number; }
+
+const todayHtml = (t: TodayView | null): string => {
+  if (!t) return '';
+  const c = JOB.condition[t.condition.id];
+  return `<div class="jb-today c-${t.condition.id.toLowerCase()}"><span class="jr-tag">${ICON.signal}${JOB.today}</span><b>${c.name}</b><span>${c.line(t.down)}</span></div>`;
+};
 
 /** Rep from whatever the records hold. */
 export const repOf = (recs: Record<string, JobRecord>): number => repFor(Object.values(recs).map((r) => r.grade));
@@ -59,6 +69,8 @@ export class JobBoard {
   open = false;
   private picked: JobDef | null = null;
   private focusIndex = 0;
+  /** Set by the host: today's conditions, which every run on the board shares. */
+  today: TodayView | null = null;
 
   constructor(host: HTMLElement, private touch: boolean, private actions: BoardActions,
     private records: () => Record<string, JobRecord>, private canClose: () => boolean) {
@@ -154,6 +166,7 @@ export class JobBoard {
             <h2 id="jb-title">Skate the city. Stay off the grid.</h2>
           </div>
         </div>
+        ${todayHtml(this.today)}
         ${this.kitHtml(recs)}
         <div class="jb-list">${rows}</div>
         <div class="jb-foot">
@@ -186,6 +199,7 @@ export class JobBoard {
           <div><dt>${j.stages.length > 1 ? 'Route' : 'Destination'}</dt><dd>${dest}</dd></div>
           <div><dt>Threat</dt><dd>${j.threat}</dd></div>
           <div><dt>Time</dt><dd>${fmtClock(j.target)} <small>target</small></dd></div>
+          ${this.today ? `<div><dt>Conditions</dt><dd>${JOB.condition[this.today.condition.id].name}</dd></div>` : ''}
           ${r ? `<div><dt>Best</dt><dd><b class="g-${r.grade}">${r.grade}</b> ${num(r.total)} · ${fmtTime(r.time)} · seen ${pct(r.exposure)}${r.ghost ? ' · GHOST' : ''}</dd></div>` : ''}
         </dl>
         <p class="brief-kind">${KIND_NOTE[j.kind]} ${j.kind === 'GHOST' ? 'Exposure counts double.' : 'Being seen never ends a job — it starts a chase.'}</p>
@@ -221,6 +235,8 @@ export class JobHud {
   private toast: HTMLElement;
   private calloutTimer = 0;
   private toastAt = -1;
+  /** Today's condition, named on the run's top line when it is not an ordinary day. */
+  condition: string | null = null;
 
   constructor(host: HTMLElement) {
     this.el = document.createElement('div');
@@ -283,7 +299,7 @@ export class JobHud {
     const pending = run.tally.pending > 0 ? `<span class="jh-chain">CHAIN ${num(run.tally.pending)} ×${run.tally.multiplier}</span>` : '';
     this.el.className = `lvl-${level.toLowerCase()}${quiet ? ' quiet' : ''}`;
     this.el.innerHTML = `
-      <div class="jh-top"><span class="jh-job">JOB ${pad2(d.number)} · ${d.kind}</span>
+      <div class="jh-top"><span class="jh-job">JOB ${pad2(d.number)} · ${d.kind}${this.condition ? ` · ${this.condition}` : ''}</span>
         <span class="jh-time${over ? ' over' : ''}">${fmtClock(run.elapsed)} <small>/ ${fmtClock(d.target)}</small></span></div>
       <div class="jh-obj">${objective}<span class="jh-obj-time${over ? ' over' : ''}">${fmtClock(run.elapsed)}</span></div>
       <div class="jh-exp">

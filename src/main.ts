@@ -23,7 +23,7 @@ import { Hud, availableVerbs } from './ui/hud';
 import { Advertisement } from './ui/ad';
 import { StoryDirector } from './content/story';
 import { VERBS, type HackVerb } from './sim/surveillance/network';
-import { HINTS, PHONE } from './content/copy';
+import { HINTS, PHONE, SYSTEM } from './content/copy';
 import { riskLabel } from './sim/surveillance/risk';
 import { dist, damp } from './core/math';
 import { Notebook } from './ui/notebook';
@@ -37,6 +37,7 @@ import type { StorySnapshot } from './content/story';
 import { JOBS } from './content/jobs';
 import { FRAME, JOB } from './content/copy';
 import { JobRun } from './sim/jobs/run';
+import { applyCondition, camerasDown, conditionFor, dayIndex, type Condition } from './sim/jobs/conditions';
 import type { JobDef } from './sim/jobs/types';
 import { JobBoard, JobHud, JobResults, repOf } from './ui/jobs';
 import { PERKS, kitFor } from './sim/jobs/kit';
@@ -59,6 +60,10 @@ const MOUSE_PITCH = 0.0021;
 const NODE_REACH = 16;
 
 type Phase = 'prefs' | 'ad' | 'play' | 'reprise';
+
+/** Set once this browser has thrown a stone: the sling lesson never shows again. */
+const SLING_TAUGHT_KEY = 'underwatch.slingTaught.v1';
+const slingTaught = (): boolean => { try { return localStorage.getItem(SLING_TAUGHT_KEY) === '1'; } catch { return false; } };
 
 class Game {
   private settings: Settings = loadSettings();
@@ -94,6 +99,11 @@ class Game {
    */
   private mode: 'story' | 'jobs' = 'story';
   private run: JobRun | null = null;
+  /** Whether something has the rider in a job, as last written to the document. */
+  private hudBusy = false;
+  /** Which day it is in the player's calendar, and so which conditions the board has today. */
+  private readonly day = (() => { const d = new Date(); return dayIndex(d.getFullYear(), d.getMonth(), d.getDate()); })();
+  private readonly condition: Condition = conditionFor(this.day);
   /** Heat, police, and being grounded: jobs and free skate only. */
   private trouble: Trouble | null = null;
   private troubleHud!: TroubleHud;
@@ -129,6 +139,7 @@ class Game {
 
     this.sim = new Sim(worldData);
     this.renderer = new Renderer(canvas, this.sim, this.settings);
+    this.renderer.controls.teachSling = this.touchPrimary && !slingTaught();
     this.audio = new Audio(this.settings);
     this.hud = new Hud(uiRoot, this.sim, this.settings, this.touchPrimary, (verb, nodeId) => {
       if (this.sim.hack) this.sim.cancelHack();
@@ -175,7 +186,9 @@ class Game {
       story: () => this.leaveForStory(),
       close: () => this.resumeFromOverlay(),
     }, loadJobRecords, () => this.run !== null || this.phase === 'play');
+    this.board.today = { condition: this.condition, down: camerasDown(this.sim, this.condition, this.day, JOBS).length };
     this.jobHud = new JobHud(uiRoot);
+    this.jobHud.condition = this.condition.id === 'CLEAR' ? null : JOB.condition[this.condition.id].name;
     this.troubleHud = new TroubleHud(uiRoot);
     this.busted = new BustedCard(document.body, this.touchPrimary);
     this.results = new JobResults(document.body, this.touchPrimary, {
@@ -350,6 +363,7 @@ class Game {
     this.trouble = new Trouble(this.sim, loadTrouble());
     this.hud.setJobsMode(true);
     document.documentElement.classList.add('jobs-mode');
+    document.documentElement.classList.toggle('hints-retired', Object.keys(loadJobRecords()).length > 0);
     this.phase = 'play';
     this.hud.setVisible(true);
     this.renderer.cam.scripted = null;
@@ -375,6 +389,9 @@ class Game {
     // The kit is what the records have earned so far.
     this.sim.kit = kitFor(repOf(loadJobRecords()));
     this.run = new JobRun(this.sim, def, JOB.run);
+    // Today's street: the light, and which cameras are down for the day.
+    applyCondition(this.sim, this.condition, this.day, JOBS);
+    this.renderer.moodBias = this.condition.daylight < 1 ? (1 - this.condition.daylight) * 0.7 : 0;
     this.resultIn = -1;
     this.renderer.chase.reset(this.sim);
     this.jobHud.setVisible(true);
@@ -414,6 +431,7 @@ class Game {
           exposure: res.exposure, flow: res.flow, ghost: res.ghost,
         });
         this.clearHeldInput();
+        document.documentElement.classList.add('hints-retired');
         this.results.show(r.def, res, record, bests, JOBS.indexOf(r.def) < JOBS.length - 1, {
           grinds: r.tally.grinds, tricks: r.tally.tricks, airs: r.tally.airs, bestChain: r.tally.bestChain,
         }, PERKS.filter((p) => p.rep > repBefore && p.rep <= repOf(loadJobRecords())));
@@ -734,6 +752,10 @@ class Game {
     // with a drone possibly already on its way.
     for (let i = 1; i <= 9; i++) this.verbKeys.set(`Digit${i}`, i - 1);
 
+    // H, held: every control, over the street, without stopping anything.
+    window.addEventListener('keydown', (e) => { if (e.code === 'KeyH' && !e.repeat && this.phase === 'play') this.hud.showKeys(true); });
+    window.addEventListener('keyup', (e) => { if (e.code === 'KeyH') this.hud.showKeys(false); });
+    window.addEventListener('blur', () => this.hud.showKeys(false));
     window.addEventListener('keydown', (e) => {
       if (this.phase === 'ad' || this.phase === 'reprise') {
         if (e.code === 'Escape') this.ad.skip();
@@ -819,7 +841,16 @@ class Game {
       this.renderer.kick(0.5);
       this.renderer.ripple(pos, 0.6);
     });
+    // The false positive, where it happened: on Devon, and in the frame.
+    bus.on('match:false-positive', ({ identity, confidence }) => {
+      this.renderer.lockOnDevon(SYSTEM.matchSubject(identity), SYSTEM.matchConfidence(confidence));
+      this.hud.frame.hold(FRAME.match(confidence), 8);
+    });
     bus.on('player:fire', ({ draw }) => {
+      if (this.renderer.controls.teachSling) {
+        this.renderer.controls.teachSling = false;
+        try { localStorage.setItem(SLING_TAUGHT_KEY, '1'); } catch { /* private mode */ }
+      }
       this.audio.fire(draw);
       this.renderer.onRelease(draw);
       this.hud.slingThrown();
@@ -1250,7 +1281,10 @@ class Game {
     this.renderer.render(dt);
     // In a job the exposure meter is the system's own account of you; the
     // frame's corners say the same thing the strip at the top does.
-    this.hud.setWatchOverride(this.run && this.mode === 'jobs' && this.run.status === 'running' ? this.run.exposure.level : null);
+    const level = this.run && this.mode === 'jobs' && this.run.status === 'running' ? this.run.exposure.level : null;
+    this.hud.setWatchOverride(level);
+    const busy = !!level && level !== 'UNSEEN';
+    if (busy !== this.hudBusy) { this.hudBusy = busy; document.documentElement.classList.toggle('hud-busy', busy); }
     this.hud.update(dt);
     this.troubleHud.update(this.mode === 'jobs' ? this.trouble : null);
     if (this.run && this.mode === 'jobs') {
@@ -1263,7 +1297,7 @@ class Game {
       p.speed, this.sim.playerMaxSpeed,
       this.sim.world.surfaceAt(p.pos),
       p.stance !== 'AIR' && p.onBoard,
-      this.sim.planViewBlend, p.flow,
+      this.sim.planViewBlend, p.flow, this.hud.frame.watchLevel,
     );
     this.audio.duck(this.paused ? 0.75 : this.sim.planViewBlend);
     const d = this.sim.world.districtAt(p.pos)?.id ?? '';

@@ -19,7 +19,7 @@ export interface MenuActions {
   jobs?: { active(): boolean; restart(): void; board(): void };
 }
 
-const KEYS: Array<[string, string]> = [
+export const KEYS: Array<[string, string]> = [
   ['W', 'push (hold to keep pushing)'], ['A D', 'carve'], ['Space', 'ollie (hold to load)'], ['S', 'brake / slide'],
   ['C', 'grind: on the ground it pops, in the air it catches the rail, ledge or bench under you'],
   ['R', 'trick'], ['G', 'grab'], ['Shift', 'step off the board'], ['Right mouse drag', 'look around'],
@@ -28,6 +28,7 @@ const KEYS: Array<[string, string]> = [
   ['E', 'talk, look, reach into a node'], ['1–3', 'answer'],
   ['Q', 'plan — tap to open, click to pin where you are going (or hold to peek)'], ['N', 'notes'], ['Esc', 'this menu'],
   ['J', 'job board (in a job)'], ['T', 'restart the job (in a job)'],
+  ['H', 'hold to see every control, without stopping'],
 ];
 const TOUCH: Array<[string, string]> = [
   ['Left thumb', 'push the way you want to go'], ['Drag on empty glass', 'look around'],

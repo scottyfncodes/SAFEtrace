@@ -19,7 +19,7 @@ import { MachineRenderer } from './machine';
 import { readPlan, type PlanReading } from './plan';
 import { moodOf } from './mood';
 import { VeneerRenderer, ROOF_K, roundRect, taperedStroke } from './veneer';
-import { MACHINE, PRINT, SIGNAL, VENEER, alpha, mix, riskColour, shade } from './palette';
+import { MACHINE, PRINT, SIGNAL, TECH, VENEER, alpha, mix, riskColour, shade } from './palette';
 
 /** The plan's own inks: the player's sketch, not the machine's colours. */
 const PLAN_INK = {
@@ -80,6 +80,15 @@ export class Renderer {
    * that nothing about the advertisement changed — only the player did.
    */
   annotationOverlay = 0;
+  /** Set by the host: a darker town for a low-light day (a job's DUSK). Added to the mood. */
+  moodBias = 0;
+  /**
+   * The match, drawn where it happened: a bracket that closes on Devon and
+   * the system's two lines about him resolving beside it. Set by the host on
+   * the false positive; the words come from the system's own copy.
+   */
+  private matchLock: { lines: [string, string]; t: number } | null = null;
+  lockOnDevon(subject: string, confidence: string): void { this.matchLock = { lines: [subject, confidence], t: 0 }; }
   private mask: HTMLCanvasElement | null = null;
   private maskCtx: CanvasRenderingContext2D | null = null;
 
@@ -1075,7 +1084,7 @@ export class Renderer {
       this.perspective.slingPose = this.slingPose();
       this.perspective.seen = this.seenPlaces;
       this.perspective.fresh = this.freshPlaces;
-      const want = this.moodOverride ?? moodOf(sim).control;
+      const want = this.moodOverride ?? Math.min(1, moodOf(sim).control + this.moodBias);
       // Relief is quick and pressure creeps: the town lightens within half
       // a second of a sabotage, and darkens over a couple of seconds.
       this.mood += (want - this.mood) * (1 - Math.exp(-dt / (want < this.mood ? 0.5 : 1.8)));
@@ -1094,6 +1103,7 @@ export class Renderer {
       this.drawSkateHud(ctx);
       this.drawSpeech(ctx, eye, dt);
       this.drawInteractPrompt(ctx, eye, dt);
+      this.drawMatchLock(ctx, eye, dt);
       this.drawBeacon(ctx, eye, 1 - sim.planViewBlend);
     }
     if (sim.planViewBlend <= 0.001) {
@@ -1649,6 +1659,73 @@ export class Renderer {
     ctx.moveTo(at.x, boxY + 15);
     ctx.lineTo(at.x, at.y - 12);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * The false positive, on the person it is about.
+   *
+   * Fast and plain: four corners close on Devon in about a third of a
+   * second, the subject line types out beside him, then the number. It is
+   * in the system's colour for certainty — the acid green of a match — and it
+   * is gone in under eight seconds. Nothing about it is dramatic; the system
+   * is simply sure.
+   */
+  private drawMatchLock(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
+    const m = this.matchLock;
+    if (!m) return;
+    m.t += dt;
+    const LIFE = 7.5;
+    if (m.t > LIFE) { this.matchLock = null; return; }
+    const sim = this.sim;
+    if (this.overlaysHidden || !sim.devonVisible) return;
+    const foot = this.perspective.screenOf(eye, sim.devonPos, 0, this.w, this.h);
+    const head = this.perspective.screenOf(eye, sim.devonPos, 1.9, this.w, this.h);
+    if (!foot || !head) return;
+    const reduce = this.settings.reduceMotion;
+    const lock = reduce ? 1 : smoothstep(clamp01(m.t / 0.35));
+    const out = 1 - clamp01((m.t - (LIFE - 0.8)) / 0.8);
+    const a = out * (reduce ? 1 : clamp01(m.t / 0.12));
+    const cx = (foot.x + head.x) / 2, cy = (foot.y + head.y) / 2;
+    const half = Math.max(16, Math.abs(foot.y - head.y) * 0.75) * (1 + (1 - lock) * 0.8);
+    const arm = Math.max(6, half * 0.42);
+    ctx.save();
+    ctx.strokeStyle = alpha(TECH.acid, 0.95 * a);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as Array<[number, number]>) {
+      const x = cx + sx * half, y = cy + sy * half;
+      ctx.moveTo(x, y - sy * arm); ctx.lineTo(x, y); ctx.lineTo(x - sx * arm, y);
+    }
+    ctx.stroke();
+    if (lock >= 1) {
+      // The two lines resolve, a character at a time, the second after the first.
+      const reveal = (text: string, from: number) => text.slice(0, reduce ? text.length : Math.max(0, Math.floor((m.t - from) * 48)));
+      const one = reveal(m.lines[0], 0.35);
+      const two = reveal(m.lines[1], 0.35 + m.lines[0].length / 48 + 0.15);
+      ctx.font = '600 11px ui-monospace, Menlo, monospace';
+      const wid = Math.max(ctx.measureText(m.lines[0]).width, ctx.measureText(m.lines[1]).width) + 16;
+      const right = cx + half + 10 + wid < this.w - 8;
+      const bx = right ? cx + half + 10 : cx - half - 10 - wid;
+      const by = cy - half;
+      ctx.fillStyle = alpha('#0A1016', 0.86 * a);
+      ctx.fillRect(bx, by, wid, 36);
+      ctx.fillStyle = alpha(TECH.acid, 0.95 * a);
+      ctx.fillRect(right ? bx : bx + wid - 2, by, 2, 36);
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = alpha('#EEF3F6', 0.95 * a);
+      ctx.fillText(one, bx + 8, by + 11);
+      ctx.fillStyle = alpha(TECH.acid, a);
+      ctx.fillText(two, bx + 8, by + 25);
+      // The leader from the bracket to the record.
+      ctx.strokeStyle = alpha(TECH.acid, 0.5 * a);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(right ? cx + half : cx - half, by + 11);
+      ctx.lineTo(right ? bx : bx + wid, by + 11);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

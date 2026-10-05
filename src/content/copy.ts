@@ -363,6 +363,13 @@ export const JOB = {
   },
   /** The exposure chip, by level. */
   level: { UNSEEN: 'UNSEEN', SPOTTED: 'SPOTTED', TRACKED: 'TRACKED', UNDERWATCH: 'UNDERWATCH' },
+  /** Today's conditions, on the board and in the brief. */
+  today: 'TODAY',
+  condition: {
+    CLEAR: { name: 'CLEAR', line: () => 'An ordinary afternoon. Every camera is up.' },
+    DUSK: { name: 'DUSK', line: () => 'Low light. Every camera sees less.' },
+    MAINTENANCE: { name: 'MAINTENANCE', line: (n: number) => `${n} cameras down for service. Different gaps every day.` },
+  } as Record<string, { name: string; line: (down: number) => string }>,
 };
 
 /**
@@ -388,4 +395,6 @@ export const FRAME = {
   sector: (name: string) => name,
   /** What the title screen says the system is doing. */
   ready: 'SYSTEM READY',
+  /** The frame, while the system is sure of somebody. */
+  match: (confidence: number) => `MATCH ${confidence.toFixed(1)}%`,
 };

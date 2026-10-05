@@ -46,6 +46,25 @@ export class ObservationFrame {
   /** A job supplies its own level; the story reads the pursuit instead. */
   override: WatchState | null = null;
   private sweepTimer = 0;
+  /** A held reading — the match — that outranks the watch state for a few seconds. */
+  private held: { label: string; left: number } | null = null;
+
+  /**
+   * The system being sure of something: the state tag reads the match and
+   * the corners take the colour of certainty, then it hands back.
+   */
+  hold(label: string, seconds: number): void {
+    this.held = { label, left: seconds };
+    this.lastState = '';
+    this.el.dataset.watch = 'match';
+    this.state.textContent = label;
+    this.pulse('scan');
+  }
+
+  /** 0..1: how hard the system is looking, for the sound of the town. */
+  get watchLevel(): number {
+    return this.held ? 1 : this.lastState === '' ? 0 : RANK[this.lastState] / 3;
+  }
 
   constructor(host: HTMLElement) {
     this.el = document.createElement('div');
@@ -119,6 +138,11 @@ export class ObservationFrame {
       this.sig.dataset.bars = String(bars);
     }
 
+    if (this.held) {
+      this.held.left -= dt;
+      if (this.held.left > 0) return;
+      this.held = null;
+    }
     const state = this.override ?? storyState(sim, rec);
     if (state !== this.lastState) {
       const was = this.lastState;
@@ -128,6 +152,7 @@ export class ObservationFrame {
       // Climbing a rung is the system reading you again; dropping off the
       // top of the ladder is it losing you. Either way, one pass of the line.
       if (was !== '') this.pulse(rank(state) < rank(was) ? 'lost' : 'scan');
+      else if (this.el.dataset.watch !== 'unseen') this.pulse('scan');
     }
   }
 }

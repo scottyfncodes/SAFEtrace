@@ -47,7 +47,11 @@ before implementation and is the authority for what the game is trying to be.
 | 40 | [The Inked Town](40-the-inked-town.md) | First original art pass on the street view: ink on paper, a line hierarchy, screentone, silhouette figures, three sacred signals, and the player's investigation drawn into the street in amber pencil |
 | 41 | [The Mood of the Town](41-the-mood-of-the-town.md) | The picture answers the game: the system's grip darkens the town, sabotage and uncovering light it; plus porches, drainpipes, aerials, birds and chalk |
 | 42 | [Natural Skating](42-natural-skating.md) | The push comes through the foot, the body leans against the load, the brake is a powerslide that lets the wheels go and grips again, and Devon rides the same board on the same simulation |
+| 43 | [The Sling Line](43-the-sling-line.md) | The reshape into a skateboarding traversal game; the hook it introduced was later removed, the roof surfaces and above-the-lens rule stayed |
+| 44 | [Jobs, Exposure and the Getaway](44-jobs-exposure-and-the-getaway.md) | A board of jobs in the same town, an exposure meter from UNSEEN to UNDERWATCH, a chase you skate out of, and runs scored on style, time, exposure and flow |
+| 45 | [Grinds, Ramps and the Lot](45-grinds-ramps-and-the-lot.md) | The hook goes; a grind button, real kickers, and a poured skate lot between Commons Street and Ridgeline Road |
 | 46 | [The Observation System](46-the-observation-system.md) | A visual identity pass: one squared, bracketed, mono-labelled language over every screen, an observation frame that lights only when the system has you, and nothing in the game changed |
+| 47 | [The First Minute](47-the-first-minute.md) | The board opens on air off the Lot, the sling teaches itself on its own button, the match lands on Devon, each day has its own conditions, and the town's sound follows the system's attention |
 
 ## The one-sentence pitch
 
