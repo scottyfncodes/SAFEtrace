@@ -26,6 +26,7 @@ const KEY_STAGES: Array<{ until: number; html: string }> = [
   { until: 110, html: '<span><kbd>Space</kbd>ollie</span><span><kbd>R</kbd>trick</span><span><kbd>S</kbd>slide</span>' },
   { until: 200, html: '<span><kbd>C</kbd>grind the lit rail</span><span>ramps launch you</span>' },
   { until: 320, html: '<span><kbd>LMB</kbd>pull back · throw</span><span><kbd>Q</kbd>plan</span><span><kbd>E</kbd>talk / look</span>' },
+  { until: 420, html: '<span><kbd>H</kbd>hold for every control</span>' },
 ];
 /*
  * On a phone the hint is one line at the top, out from under the thumbs, and
@@ -43,6 +44,7 @@ import { resolveRecords } from '../sim/worldTypes';
 import { INSPECT, PHONE, SYSTEM } from '../content/copy';
 import type { TalkView } from '../content/story';
 import { ObservationFrame, type WatchState } from './frame';
+import { KEYS } from './menu';
 import { ICON } from './icons';
 
 /** The afternoon's clock, for the stamp on a card: the frame keeps the same one. */
@@ -129,6 +131,8 @@ export class Hud {
       <div id="dialogue"></div>
       <div id="talk"></div>
       <div id="toasts"></div>
+      <div id="keys" class="hidden" aria-hidden="true">${touch ? '' : `<div class="eyebrow">Controls</div>${
+        KEYS.map(([k, v]) => `<div class="ctl"><kbd>${k}</kbd><span>${v}</span></div>`).join('')}`}</div>
       <div id="debug"></div>
     `;
     this.frame = new ObservationFrame(root);
@@ -251,6 +255,14 @@ export class Hud {
   /** The first throw retires the hints on a phone. */
   slingThrown(): void { if (this.touch) this.slung = true; }
 
+  /** The controls card, held open by H. Play carries on underneath it. */
+  showKeys(on: boolean): void {
+    if (this.touch) return;
+    const el = this.root.querySelector('#keys');
+    el?.classList.toggle('hidden', !on);
+    el?.setAttribute('aria-hidden', String(!on));
+  }
+
   /** A job's exposure meter speaks for the frame while the job runs. */
   setWatchOverride(level: WatchState | null): void { this.frame.override = level; }
 
@@ -297,7 +309,9 @@ export class Hud {
     this.prompts.style.visibility = this.sim.aimMode ? 'hidden' : '';
     // On a phone the hint and the toasts share the top of the glass; a toast
     // is news, so the hint steps aside for it.
-    if (this.touch) this.prompts.classList.toggle('behind-toast', this.toasts.childElementCount > 0);
+    // The system's cards are news too, and on a phone they share the same
+    // strip of glass.
+    if (this.touch) this.prompts.classList.toggle('behind-toast', this.toasts.childElementCount > 0 || this.live.size > 0);
     // Nor does a node panel sit over the plan: the plan cannot reach into
     // anything, so a panel full of verbs on top of it is only in the way.
     this.inspect.classList.toggle('hidden', this.sim.aimMode || this.sim.planViewActive);

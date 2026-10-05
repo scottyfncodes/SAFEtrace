@@ -135,7 +135,13 @@ export class Audio {
     }
   }
 
-  update(speed: number, maxSpeed: number, surface: string, onGround: boolean, machineBlend: number, flow: number): void {
+  /**
+   * `watch` is how hard the system is looking at the rider, 0..1 (the
+   * frame's state). It does what risk has always done here — no stinger —
+   * only sooner: the afternoon thins, and the machine's own hum, in key with
+   * the motif, comes up underneath it. Unseen, it is silent.
+   */
+  update(speed: number, maxSpeed: number, surface: string, onGround: boolean, machineBlend: number, flow: number, watch = 0): void {
     if (!this.ctx || !this.rollGain || !this.rollFilter) return;
     const t = this.ctx.currentTime;
     const k = Math.min(1, speed / Math.max(maxSpeed, 0.01));
@@ -155,12 +161,12 @@ export class Audio {
     this.rollGain.gain.setTargetAtTime(onGround ? k * 0.11 * amp : 0, t, 0.06);
 
     if (this.machineGain) {
-      this.machineGain.gain.setTargetAtTime(machineBlend * 0.09, t, 0.12);
+      this.machineGain.gain.setTargetAtTime(Math.max(machineBlend * 0.09, watch * 0.035), t, watch > machineBlend ? 0.6 : 0.12);
     }
     if (this.bedGain) {
       // Risk does not trigger stinger music. The world bed thins instead:
       // silence is the tension system. Flow warms it back up.
-      this.bedGain.gain.setTargetAtTime(0.05 * (1 - machineBlend * 0.85) + flow * 0.012, t, 0.3);
+      this.bedGain.gain.setTargetAtTime(0.05 * (1 - Math.max(machineBlend * 0.85, watch * 0.5)) + flow * 0.012, t, 0.3);
     }
   }
 

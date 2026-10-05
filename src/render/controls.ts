@@ -35,6 +35,17 @@ export class ControlsRenderer {
   private homeFade = 0;
   private buttonFade = 0;
   private pulse = 0;
+  /**
+   * Set by the host until the first stone this browser has ever thrown.
+   *
+   * The sling is the one gesture nothing on the glass advertised. So until it
+   * has been used once, SLING breathes the way the cold-start ring does, and
+   * once raised, THROW shows a ring filling round it: hold, and let go. The
+   * first throw retires both for good.
+   */
+  teachSling = false;
+  private teachFade = 0;
+  private teachClock = 0;
 
   constructor(private settings: Settings) {}
 
@@ -53,6 +64,9 @@ export class ControlsRenderer {
     // only permanent statement of what this game lets you do.
     this.buttonFade = to(this.buttonFade, !v.aiming, 4);
     this.pulse = (this.pulse + dt * (this.settings.reduceMotion ? 0 : 0.85)) % 1;
+    // Only once the cold-start ring has gone: one thing taught at a time.
+    this.teachFade = to(this.teachFade, this.teachSling && (!showHome || v.slingOut) && !v.pull && !planView, 2.5);
+    this.teachClock = v.slingOut ? this.teachClock + dt : 0;
   }
 
   draw(
@@ -61,6 +75,7 @@ export class ControlsRenderer {
   ): void {
     if (v.aiming) return;
     if (this.buttonFade > 0.01) this.drawButtons(ctx, v);
+    if (this.teachFade > 0.01) this.drawSlingLesson(ctx, v);
     if (v.pull) this.drawPull(ctx, v.pull);
     if (this.homeFade > 0.01) this.drawHome(ctx, v);
     if (this.stickFade > 0.01) this.drawStick(ctx, v);
@@ -84,6 +99,43 @@ export class ControlsRenderer {
     ctx.beginPath(); ctx.arc(x, y, 22 + breathe * 18, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = alpha('#FFFFFF', 0.12 * a);
     ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * The lesson, on the button itself. Lowered: SLING breathes. Raised: a ring
+   * fills round THROW over the time a full draw takes, holds, and empties —
+   * "hold, then let go" — and while the button is held the ring is the draw.
+   */
+  private drawSlingLesson(ctx: CanvasRenderingContext2D, v: ControlVisual): void {
+    const b = v.buttons.find((x) => x.id === 'sling');
+    if (!b || !b.enabled) return;
+    const a = smoothstep(this.teachFade) * smoothstep(this.buttonFade);
+    ctx.save();
+    ctx.lineCap = 'round';
+    if (!v.slingOut) {
+      const breathe = this.settings.reduceMotion ? 0.5 : (Math.sin(this.pulse * Math.PI * 2) * 0.5 + 0.5);
+      ctx.strokeStyle = alpha(OWN, (0.55 - breathe * 0.45) * a);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, b.radius + 4 + breathe * 10, 0, Math.PI * 2); ctx.stroke();
+    } else if (!b.pressed) {
+      // 1.1 s to fill, a beat held full, a short fade: then again.
+      const cycle = this.settings.reduceMotion ? 1.1 : this.teachClock % 1.8;
+      const fill = clamp01(cycle / 1.1);
+      const fade = cycle > 1.4 ? 1 - clamp01((cycle - 1.4) / 0.4) : 1;
+      const r = b.radius + 6;
+      ctx.strokeStyle = alpha('#FFFFFF', 0.18 * a);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = alpha(OWN, 0.9 * a * fade);
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, r, -Math.PI / 2, -Math.PI / 2 + fill * Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = alpha(OWN, 0.95 * a);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 ${Math.round(b.radius * 0.22)}px ui-monospace, Menlo, monospace`;
+      ctx.fillText(fill < 1 ? 'HOLD' : 'LET GO', b.pos.x, b.pos.y - r - 10);
+    }
     ctx.restore();
   }
 

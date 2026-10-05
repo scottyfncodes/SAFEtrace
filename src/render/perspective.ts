@@ -418,12 +418,20 @@ export class ChaseCamera {
      */
     const f = this.focusBlend;
     const k = clamp(focalFor(this.viewport.w, this.viewport.h) / 1040, 0.5, 1.15);
-    const far = lerp(lerp(36.0, 44.0, t), 20.0, f) * k * (1 - this.drawPull * 0.16);
-    this.dist = damp(this.dist, far, 0.3, dt);
-    this.height = damp(this.height, lerp(lerp(17.0, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
-    // Slightly flatter at speed, so a little more of the road ahead is in shot.
     // An upright phone has sky to spare and street to want: tip it down a touch.
     const tall = clamp01(1 - this.viewport.w / Math.max(1, this.viewport.h));
+    /*
+     * Closer on an upright phone while rolling slowly, and back out to the
+     * full miniature with speed. On a 390-wide glass the rider at rest was a
+     * few dozen pixels tall — the town read, the skating did not. Slow is when
+     * the player is looking at the board; fast is when they need the road.
+     */
+    const nearBase = lerp(36.0, 29.0, tall);
+    const lowBase = lerp(17.0, 14.0, tall);
+    const far = lerp(lerp(nearBase, 44.0, t), 20.0, f) * k * (1 - this.drawPull * 0.16);
+    this.dist = damp(this.dist, far, 0.3, dt);
+    this.height = damp(this.height, lerp(lerp(lowBase, 20.0, t), 9.0, f) * k + this.crane * 5 * k, 0.3, dt);
+    // Slightly flatter at speed, so a little more of the road ahead is in shot.
     // Less sky than it had: a quarter of an upright screen was horizon, and
     // the rider sat in the bottom half under it.
     const upright = tall * 0.24;
