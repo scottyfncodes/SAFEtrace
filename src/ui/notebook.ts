@@ -15,6 +15,7 @@ import type { Sim } from '../sim/sim';
 import type { ClueDef, DeductionDef } from '../sim/casefile';
 import { PHONE } from '../content/copy';
 import { riskLabel } from '../sim/surveillance/risk';
+import { ICON } from './icons';
 
 export class Notebook {
   private el: HTMLElement;
@@ -117,9 +118,9 @@ export class Notebook {
         const open = cf.openConnections(t.id);
         return `
           <section class="nb-thread${answered ? ' answered' : ''}">
-            <h3>${esc(t.question)}${answered ? '<span class="nb-status done">✓ Answered</span>' : ''}</h3>
+            <h3>${esc(t.question)}${answered ? `<span class="nb-status done">${ICON.check}Answered</span>` : ''}</h3>
             ${answered ? `<div class="nb-answer">${esc(t.answered)}</div>` : ''}
-            ${open > 0 ? `<div class="nb-open">Something here fits together.</div>` : ''}
+            ${open > 0 ? `<div class="nb-open">${ICON.link}Something here fits together.</div>` : ''}
             <div class="nb-trail">
               ${deductions.map((d) => this.deduction(d)).join('')}
               ${clues.map((c) => this.clue(c)).join('')}
@@ -128,7 +129,7 @@ export class Notebook {
       }).join('');
 
     const resultLine = this.result
-      ? `<div class="nb-result ${this.result.tone}" role="status">${this.result.tone === 'new' ? '<b>Worked out:</b> ' : ''}${esc(this.result.text)}</div>`
+      ? `<div class="nb-result ${this.result.tone}" role="status">${this.result.tone === 'new' ? `${ICON.check}<b>Worked out:</b> ` : ''}${esc(this.result.text)}</div>`
       : '';
 
     const noted = cf.clues.size;

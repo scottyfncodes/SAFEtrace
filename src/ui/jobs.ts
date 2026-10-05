@@ -17,6 +17,7 @@ import type { RunResult } from '../sim/jobs/score';
 import { exposureShare } from '../sim/jobs/exposure';
 import { wrapAngle } from '../core/math';
 import { PERKS, repFor, type PerkDef } from '../sim/jobs/kit';
+import { ICON } from './icons';
 
 /** Rep from whatever the records hold. */
 export const repOf = (recs: Record<string, JobRecord>): number => repFor(Object.values(recs).map((r) => r.grade));
@@ -133,12 +134,15 @@ export class JobBoard {
       const unlocked = jobUnlocked(j, fin);
       const r = recs[j.id];
       const focus = unlocked && open[this.focusIndex] === j;
-      return `<button class="job-row${unlocked ? '' : ' locked'}${focus ? ' focus' : ''}" data-act="pick" data-id="${j.id}" ${unlocked ? '' : 'disabled'}>
+      const status = !unlocked ? `<span class="jr-tag restricted">${ICON.lock}RESTRICTED</span>`
+        : r ? `<span class="jr-tag archived">${ICON.archive}ARCHIVED</span>`
+        : `<span class="jr-tag open">OPEN</span>`;
+      return `<button class="job-row${unlocked ? '' : ' locked'}${r ? ' done' : ''}${focus ? ' focus' : ''}" data-act="pick" data-id="${j.id}" ${unlocked ? '' : 'disabled'}>
         <span class="jr-num">JOB ${pad2(j.number)}</span>
         <span class="jr-kind k-${j.kind.toLowerCase()}">${j.kind}</span>
-        <span class="jr-title">${unlocked ? j.title : 'LOCKED — FINISH ANOTHER JOB'}</span>
-        <span class="jr-meta">${unlocked ? `${j.start.label} · ${j.threat}` : ''}</span>
-        <span class="jr-best">${r ? `<b class="g-${r.grade}">${r.grade}</b>${r.ghost ? '<i>GHOST</i>' : ''}<em>${fmtTime(r.time)}</em>` : unlocked ? '<em>—</em>' : ''}</span>
+        <span class="jr-title">${unlocked ? j.title : '<span class="redact" aria-hidden="true"></span><span class="sr">LOCKED</span>'}</span>
+        <span class="jr-meta">${unlocked ? `${j.start.label} · ${j.threat}` : 'Finish another job to open this one'}</span>
+        <span class="jr-best">${status}${r ? `<b class="g-${r.grade}">${r.grade}</b>${r.ghost ? '<i>GHOST</i>' : ''}<em>${fmtTime(r.time)}</em>` : ''}</span>
       </button>`;
     }).join('');
     this.el.innerHTML = `
@@ -146,7 +150,7 @@ export class JobBoard {
         <div class="jb-head">
           <div class="st-title" aria-hidden="true"><div><b>UNDER</b><span>WATCH</span></div></div>
           <div class="jb-sub">
-            <div class="jb-eyebrow">JOB BOARD · BELLHAVEN</div>
+            <div class="jb-eyebrow">JOB BOARD · BELLHAVEN · ${pad2(open.length)} OPEN</div>
             <h2 id="jb-title">Skate the city. Stay off the grid.</h2>
           </div>
         </div>
@@ -174,7 +178,7 @@ export class JobBoard {
     const dest = destinationOf(j);
     return `
       <div class="jb-card brief" role="dialog" aria-modal="true" aria-labelledby="jb-brief-title">
-        <div class="jb-eyebrow">JOB ${pad2(j.number)} · <span class="k-${j.kind.toLowerCase()}">${j.kind}</span></div>
+        <div class="jb-eyebrow">${ICON.target}JOB ${pad2(j.number)} · <span class="k-${j.kind.toLowerCase()}">${j.kind}</span> · BRIEF</div>
         <h2 id="jb-brief-title" class="brief-title">${j.title}</h2>
         <p class="brief-line">${j.brief}</p>
         <dl class="brief-facts">
@@ -238,7 +242,7 @@ export class JobHud {
   }
 
   say(c: Callout): void {
-    this.callout.textContent = c.text;
+    this.callout.innerHTML = `<i></i><span>${c.text}</span><i></i>`;
     this.callout.className = '';
     void this.callout.offsetWidth;   // restart the animation
     this.callout.className = `show t-${c.tone}`;
@@ -342,9 +346,9 @@ export class JobResults {
     const k = this.touch ? '' : ' <kbd>';
     this.el.innerHTML = `
       <div class="jr-card" role="dialog" aria-modal="true" aria-labelledby="jr-title">
-        <div class="jb-eyebrow">JOB ${pad2(def.number)} · ${def.kind} · COMPLETE</div>
+        <div class="jb-eyebrow">${ICON.archive}JOB ${pad2(def.number)} · ${def.kind} · COMPLETE</div>
         <h2 id="jr-title" class="brief-title">${def.title}</h2>
-        <div class="jr-grade g-${r.grade}">${r.grade}${r.ghost ? '<small>GHOST</small>' : ''}</div>
+        <div class="jr-grade g-${r.grade}"><span class="jr-box"><b>${r.grade}</b></span>${r.ghost ? '<small>GHOST</small>' : ''}</div>
         <div class="jr-total">${num(r.total)} ${best('total')}</div>
         <dl class="jr-stats">
           <div><dt>Style</dt><dd>${num(r.style)} ${best('style')}</dd></div>

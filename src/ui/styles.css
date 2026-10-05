@@ -1,13 +1,22 @@
 /* UNDERWATCH interface system.
 
-   Two registers share this sheet, and keeping them apart is the design:
+   The player is operating an observation system that was built for a real
+   organisation, and the system is looking back. One visual language runs
+   through every screen so three of them, seen without a logo, are plainly
+   the same instrument:
 
-   - UNDERWATCH's own voice (notifications, node records, the advertisement):
-     teal on paper or on void, calm, tabular, never urgent. Nothing here is
-     ever jittery or flashing — not even INTERVENTION, which slides in as
-     gently as a weather update.
-   - The player's own things (notes, buttons, the people who talk to you):
-     warm paper, pencil ink, and an amber that UNDERWATCH never uses.
+   - geometry: squared panels with one clipped corner and thin bracket marks
+     at the corners; hairline rules; no pills, no rounded cards;
+   - type: a technical mono hand for identifiers, stamps, readouts and
+     labels, and a plain sans for anything a person has to read at speed;
+   - colour: a dark neutral ground, one cold cyan accent for the system at
+     work, acid green for the system being sure, orange for attention and
+     red for a hold — each of them appearing only where it means something.
+
+   Two registers still share the sheet, and keeping them apart is the design:
+   UNDERWATCH's own voice (cards, records, the frame) is cyan on ink; the
+   player's own things (notes, the people who talk to you) are paper, pencil
+   and an amber UNDERWATCH never uses.
 
    Every colour, radius, duration and type size below comes from the tokens
    in :root. A hard-coded value further down is a bug. */
@@ -25,20 +34,33 @@
   --st-cyan-rgb: 47, 227, 242;
   --st-cyan-ink-rgb: 11, 127, 142;
   --st-acid: #B6F23A;              /* MATCH 98.7% — certainty */
+  --st-acid-rgb: 182, 242, 58;
   --st-orange: #FF6326;            /* attention, never alarm */
+  --st-orange-rgb: 255, 99, 38;
   --st-record: #9DB8BE;            /* the body text of a record */
+
+  /* --- the system's working colour, and the washes it is drawn with ------ */
+  --sys: var(--st-teal-bright);
+  --sys-rgb: var(--st-cyan-rgb);
+  --sys-line: rgba(var(--sys-rgb), 0.34);
+  --sys-line-soft: rgba(var(--sys-rgb), 0.18);
+  --sys-wash: rgba(var(--sys-rgb), 0.07);
 
   /* --- ink: the cool neutral the whole interface stands on --------------- */
   --ink-void: #070B10;
   --ink-bg: #0B1016;
   --ink-surface: #10171F;
   --ink-raised: #161F29;
+  --ink-text-rgb: 231, 237, 242;
   --ink-line: rgba(231, 237, 242, 0.10);
   --ink-line-strong: rgba(231, 237, 242, 0.22);
   --ink-text: #E7EDF2;
   --ink-text-2: #C3CDD5;
   --ink-muted: #8D9AA6;            /* 6.0:1 on --ink-surface */
   --ink-faint: #5C6874;            /* decorative only */
+  /* A panel over the street: dark glass, one hairline, no glow. */
+  --glass: rgba(9, 14, 20, 0.84);
+  --glass-soft: rgba(9, 14, 20, 0.66);
 
   /* --- paper: the player's own surfaces ---------------------------------- */
   --paper: #F6F2E8;
@@ -53,13 +75,14 @@
 
   /* --- the player's accent: amber, which UNDERWATCH never uses ------------ */
   --own: #F2C86B;                  /* on ink */
+  --own-rgb: 242, 200, 107;
   --own-strong: #C58A1A;
   --own-ink: #8A5A0C;              /* on paper (5.4:1) */
   --own-wash: rgba(242, 200, 107, 0.16);
 
   /* --- semantic states. Never the only signal: each is paired with a
          shape, a word, or a weight wherever it is used. -------------------- */
-  --ok: var(--st-teal-bright);
+  --ok: var(--st-acid);
   --warn: var(--st-orange);
   --risk: #FF4A3D;
   --risk-rgb: 255, 74, 61;
@@ -74,6 +97,7 @@
   /* --- type ------------------------------------------------------------- */
   --font-sans: Inter, "Helvetica Neue", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs-tech: 10px;                 /* readouts, stamps, tags: mono, tracked */
   --fs-eyebrow: 10.5px;            /* uppercase labels, tracked */
   --fs-meta: 12px;
   --fs-small: 13px;
@@ -82,16 +106,40 @@
   --fs-h3: 15px;
   --fs-h2: 22px;
   --track-eyebrow: 0.16em;
+  --track-tech: 0.12em;
 
-  /* --- shape & depth ----------------------------------------------------- */
-  --r-xs: 4px;
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-pill: 999px;
-  --shadow-chip: 0 4px 14px rgba(7, 11, 16, 0.16);
-  --shadow-card: 0 10px 30px rgba(7, 11, 16, 0.22);
+  /* --- shape & depth. Squared: the only rounding left is the width of a
+         hairline, so a panel never reads as a web card. ------------------- */
+  --r-xs: 1px;
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 2px;
+  --r-pill: 2px;
+  --cut: 9px;                      /* the clipped corner on a panel */
+  --cut-sm: 6px;                   /* on a button */
+  --bracket: 11px;                 /* the corner marks */
+  --shadow-chip: 0 2px 10px rgba(7, 11, 16, 0.22);
+  --shadow-card: 0 10px 30px rgba(7, 11, 16, 0.28);
   --shadow-sheet: 0 30px 80px rgba(0, 0, 0, 0.45);
+
+  /* The corner marks, as eight hairline layers a panel can stack under its
+     own fill: `background: var(--brackets), <fill>`. Drawn as background so
+     they stay on the panel's frame when the panel scrolls. */
+  --bk: var(--sys-line);
+  --brackets:
+    linear-gradient(var(--bk), var(--bk)) 0 0 / var(--bracket) 1px no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 0 0 / 1px var(--bracket) no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 100% 0 / var(--bracket) 1px no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 100% 0 / 1px var(--bracket) no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 0 100% / var(--bracket) 1px no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 0 100% / 1px var(--bracket) no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 100% 100% / var(--bracket) 1px no-repeat,
+    linear-gradient(var(--bk), var(--bk)) 100% 100% / 1px var(--bracket) no-repeat;
+  /* One clipped corner, top-right, on a panel; bottom-right on a button. */
+  --clip-panel: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  --clip-btn: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%);
+  /* Hatching: a restricted record, a redacted line. */
+  --hatch: repeating-linear-gradient(135deg, rgba(var(--ink-text-rgb), 0.09) 0 1px, transparent 1px 6px);
 
   /* --- motion. One curve; nothing urgent. ------------------------------- */
   --ease: cubic-bezier(.16, 1, .3, 1);
@@ -126,7 +174,8 @@ button { font-family: inherit; }
 /* Primitives                                                              */
 /* ====================================================================== */
 
-/* Focus is always visible from a keyboard, and never on a tap. */
+/* Focus is always visible from a keyboard, and never on a tap. A clipped
+   corner clips an outline, so controls that are clipped draw it inside. */
 :focus { outline: none; }
 :focus-visible {
   outline: 2px solid var(--focus);
@@ -134,10 +183,18 @@ button { font-family: inherit; }
 }
 .on-paper :focus-visible, .nb-sheet :focus-visible { --focus: var(--st-teal-ink); }
 
+/* Inline glyphs: one grid, one stroke, sized to the text they sit in. */
+.ic { width: 1.15em; height: 1.15em; flex: 0 0 auto; vertical-align: -0.2em; }
+.ic + * { margin-left: 0; }
+
+/* Visually hidden, read aloud. */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 /* The game's own name. Not the company's wordmark in the advertisement —
    that one is in teal, with a ™, and belongs to UNDERWATCH the product. This
-   is the title of the thing you are playing: UNDER set solid, WATCH set as a thin line, and a
-   rule underneath that runs to a point — a record, and where it ends. */
+   is the title of the thing you are playing: UNDER set solid, WATCH set as a
+   thin line, and a rule underneath that runs to a point — a record, and
+   where it ends. */
 .st-title {
   display: inline-flex; flex-direction: column; gap: 7px;
   font-size: 12px; letter-spacing: 0.34em; text-transform: uppercase;
@@ -148,49 +205,70 @@ button { font-family: inherit; }
 .st-title::after {
   content: ''; display: block; height: 5px; width: 100%;
   background:
-    radial-gradient(circle at calc(100% - 2.5px) 50%, var(--st-teal-bright) 2.2px, transparent 2.8px),
+    linear-gradient(var(--sys), var(--sys)) calc(100% - 1px) 50% / 3px 3px no-repeat,
     linear-gradient(var(--ink-line-strong), var(--ink-line-strong)) 0 50% / calc(100% - 8px) 1px no-repeat;
 }
 
-/* Small uppercase labels: section headings in every panel. */
+/* The system's one-line status under a title: a lit point and a stamp. */
+.sys-line {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: var(--track-tech);
+  text-transform: uppercase; color: var(--ink-muted);
+}
+.sys-line i { width: 5px; height: 5px; background: var(--sys); box-shadow: 0 0 6px rgba(var(--sys-rgb), 0.6); }
+
+/* Small uppercase labels: section headings in every panel. A short rule
+   runs out from each one, the way a drawing labels a detail. */
 .eyebrow, .menu-card h4, .end-card h4 {
-  margin: 0 0 10px; font-size: var(--fs-eyebrow); font-weight: 600;
-  letter-spacing: var(--track-eyebrow); text-transform: uppercase;
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 10px; font-family: var(--font-mono); font-size: var(--fs-tech); font-weight: 500;
+  letter-spacing: var(--track-tech); text-transform: uppercase;
   color: var(--ink-muted);
 }
+.eyebrow::after, .menu-card h4::after, .end-card h4::after {
+  content: ''; flex: 1; height: 1px; background: var(--ink-line);
+}
 
-/* Buttons. One shape everywhere: a pill, sentence case, a weight that does
-   the work colour would otherwise have to. */
+/* Buttons. One shape everywhere: squared, one corner clipped, a label set
+   in small tracked capitals, and a weight that does the work colour would
+   otherwise have to. Each state is a different thing to look at — hover
+   lifts the border, pressed drops a pixel, selected fills, disabled fades,
+   and restricted is hatched. */
 .btn, .nb-close, .nb-connect, .menu-card button, .end-card button {
-  font: inherit; cursor: pointer;
+  font: inherit; cursor: pointer; position: relative;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 36px; padding: 0 16px; border-radius: var(--r-pill);
-  font-size: var(--fs-small); font-weight: 500; letter-spacing: 0.01em;
+  min-height: 38px; padding: 0 16px; border-radius: var(--r-sm);
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
   border: 1px solid var(--ink-line-strong); background: transparent; color: inherit;
+  clip-path: var(--clip-btn);
   transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
     color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
   -webkit-user-select: none; user-select: none;
 }
-.btn:hover, .menu-card button:hover, .end-card button:hover { background: rgba(231, 237, 242, 0.07); border-color: rgba(231, 237, 242, 0.34); }
-.btn:active, .menu-card button:active, .end-card button:active { transform: translateY(1px); }
+.btn:focus-visible, .nb-close:focus-visible, .nb-connect:focus-visible, .menu-card button:focus-visible, .end-card button:focus-visible {
+  outline: none; box-shadow: inset 0 0 0 2px var(--focus);
+}
+.btn:hover, .menu-card button:hover, .end-card button:hover { background: var(--sys-wash); border-color: var(--sys-line); }
+.btn:active, .menu-card button:active, .end-card button:active { transform: translateY(1px); background: rgba(var(--sys-rgb), 0.14); }
 .btn.primary, .menu-card button.primary, .end-card button.primary {
-  background: var(--ink-text); color: var(--ink-surface); border-color: var(--ink-text); font-weight: 600;
+  background: var(--ink-text); color: var(--ink-surface); border-color: var(--ink-text);
 }
 .btn.primary:hover, .menu-card button.primary:hover, .end-card button.primary:hover { background: #FFF; border-color: #FFF; }
-.btn.quiet, .menu-card button.quiet { border-color: transparent; color: var(--ink-muted); }
-.btn.quiet:hover, .menu-card button.quiet:hover { color: var(--ink-text); background: rgba(231, 237, 242, 0.05); border-color: var(--ink-line); }
+.btn.quiet, .menu-card button.quiet { border-color: var(--ink-line); color: var(--ink-muted); }
+.btn.quiet:hover, .menu-card button.quiet:hover { color: var(--ink-text); border-color: var(--ink-line-strong); background: rgba(var(--ink-text-rgb), 0.05); }
 .btn.danger, .menu-card button.danger {
   border-color: rgba(var(--risk-rgb), 0.6); color: #FFC2B8; background: rgba(var(--risk-rgb), 0.08);
 }
 .btn.danger:hover, .menu-card button.danger:hover { background: rgba(var(--risk-rgb), 0.16); border-color: var(--risk); }
 .btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+.btn kbd, .menu-card button kbd, .end-card button kbd { text-transform: none; letter-spacing: 0; }
 
 /* Key caps. */
 kbd {
   font-family: var(--font-mono); font-size: 0.86em; font-weight: 500;
   padding: 1px 6px; border-radius: var(--r-xs);
-  background: rgba(231, 237, 242, 0.12); color: inherit;
-  border-bottom: 1px solid rgba(231, 237, 242, 0.16);
+  background: rgba(231, 237, 242, 0.10); color: inherit;
+  border: 1px solid rgba(231, 237, 242, 0.16);
 }
 
 /* Settings rows: a whole-row target, a label that says what it does, and a
@@ -206,17 +284,17 @@ kbd {
 .setting .s-hint { font-size: var(--fs-meta); color: var(--ink-muted); }
 .switch {
   appearance: none; -webkit-appearance: none; margin: 0; flex: 0 0 auto;
-  position: relative; width: 38px; height: 22px; border-radius: var(--r-pill);
-  background: rgba(231, 237, 242, 0.14); border: 1px solid var(--ink-line-strong);
+  position: relative; width: 38px; height: 20px; border-radius: var(--r-sm);
+  background: rgba(231, 237, 242, 0.08); border: 1px solid var(--ink-line-strong);
   cursor: pointer; transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease);
 }
 .switch::after {
-  content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-  border-radius: 50%; background: var(--ink-muted);
+  content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: var(--r-xs); background: var(--ink-muted);
   transition: transform var(--t-base) var(--ease), background var(--t-base) var(--ease);
 }
-.switch:checked { background: var(--st-teal); border-color: var(--st-teal); }
-.switch:checked::after { transform: translateX(16px); background: #FFF; }
+.switch:checked { background: rgba(var(--sys-rgb), 0.18); border-color: var(--sys); }
+.switch:checked::after { transform: translateX(18px); background: var(--sys); }
 .setting.range { cursor: default; }
 .setting input[type=range] { accent-color: var(--st-teal); flex: 1; max-width: 220px; min-height: 28px; cursor: pointer; }
 .setting output { font-family: var(--font-mono); font-size: var(--fs-meta); color: var(--ink-muted); min-width: 3.2em; text-align: right; }
@@ -225,13 +303,13 @@ kbd {
    shows a sequence it wants read as one unbroken record. */
 .trail { position: relative; margin: 0; padding: 0 0 0 22px; list-style: none; }
 .trail::before {
-  content: ''; position: absolute; left: 5px; top: 10px; bottom: 10px; width: 1px;
+  content: ''; position: absolute; left: 4px; top: 10px; bottom: 10px; width: 1px;
   background: currentColor; opacity: 0.18;
 }
 .trail > li { position: relative; padding: 4px 0; }
 .trail > li::before {
   content: ''; position: absolute; left: -21px; top: 0.78em; width: 9px; height: 9px;
-  border-radius: 50%; box-sizing: border-box;
+  box-sizing: border-box; transform: rotate(45deg) scale(0.8);
   border: 1.5px solid currentColor; background: var(--trail-bg, var(--ink-surface));
   opacity: 0.55;
 }
@@ -241,79 +319,181 @@ kbd {
 /* HUD                                                                     */
 /* ====================================================================== */
 
+/* -------------------------------------------------------------- the frame
+   Four corner marks at the edge of the glass and one line of the system's
+   bookkeeping along the bottom. Quiet while nobody is looking; the corners
+   take the system's colour and tighten a few pixels when something has
+   you, and REC lights only while a camera genuinely does. The scanlines
+   are a single gradient layer that fades in with the watch state and is
+   not painted at all while it is unseen. */
+#frame { position: absolute; inset: 0; --fk: rgba(var(--ink-text-rgb), 0.26); --ft: 0; transition: opacity var(--t-slow) var(--ease); }
+#frame.hidden { opacity: 0; }
+#frame .fc {
+  position: absolute; width: 16px; height: 16px;
+  border: 0 solid var(--fk);
+  filter: drop-shadow(0 0 1px rgba(7, 11, 16, 0.7));
+  transition: border-color 500ms var(--ease), transform 500ms var(--ease);
+}
+#frame .fc.tl { top: calc(var(--safe-top, 0px) + 5px); left: calc(var(--safe-left, 0px) + 5px); border-top-width: 1px; border-left-width: 1px; }
+#frame .fc.tr { top: calc(var(--safe-top, 0px) + 5px); right: calc(var(--safe-right, 0px) + 5px); border-top-width: 1px; border-right-width: 1px; }
+#frame .fc.bl { bottom: calc(var(--safe-bottom, 0px) + 5px); left: calc(var(--safe-left, 0px) + 5px); border-bottom-width: 1px; border-left-width: 1px; }
+#frame .fc.br { bottom: calc(var(--safe-bottom, 0px) + 5px); right: calc(var(--safe-right, 0px) + 5px); border-bottom-width: 1px; border-right-width: 1px; }
+#frame[data-watch="spotted"] { --fk: rgba(var(--sys-rgb), 0.7); --ft: 0.5; }
+#frame[data-watch="tracked"] { --fk: var(--warn); --ft: 0.75; }
+#frame[data-watch="underwatch"] { --fk: var(--risk); --ft: 1; }
+#frame[data-watch="tracked"] .fc.tl, #frame[data-watch="underwatch"] .fc.tl { transform: translate(4px, 4px); }
+#frame[data-watch="tracked"] .fc.tr, #frame[data-watch="underwatch"] .fc.tr { transform: translate(-4px, 4px); }
+#frame[data-watch="tracked"] .fc.bl, #frame[data-watch="underwatch"] .fc.bl { transform: translate(4px, -4px); }
+#frame[data-watch="tracked"] .fc.br, #frame[data-watch="underwatch"] .fc.br { transform: translate(-4px, -4px); }
+#frame::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.10) 0 1px, transparent 1px 3px);
+  opacity: calc(var(--ft) * 0.55); visibility: visible;
+  transition: opacity 700ms var(--ease), visibility 700ms;
+}
+#frame[data-watch="unseen"]::before, #frame:not([data-watch])::before { visibility: hidden; opacity: 0; }
+/* The hold: the edge of the picture goes to the system's hold colour. */
+#frame::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 58%, rgba(var(--risk-rgb), 0.16) 100%);
+  opacity: 0; transition: opacity 800ms var(--ease);
+}
+#frame[data-watch="underwatch"]::after { opacity: 1; }
+
+/* One pass of the line, once, when the state changes. */
+#frame .f-sweep {
+  position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--sys) 25%, var(--sys) 75%, transparent);
+  box-shadow: 0 0 18px 4px rgba(var(--sys-rgb), 0.14);
+  opacity: 0; pointer-events: none;
+}
+#frame .f-sweep.on { animation: f-sweep 560ms var(--ease) 1; }
+#frame .f-sweep.lost {
+  background: linear-gradient(90deg, transparent, var(--ink-text) 25%, var(--ink-text) 75%, transparent);
+  box-shadow: 0 0 18px 4px rgba(var(--ink-text-rgb), 0.10);
+}
+@keyframes f-sweep { 0% { top: 0; opacity: 0.85; } 100% { top: 100%; opacity: 0; } }
+
+#frame .f-read {
+  position: absolute;
+  left: calc(var(--safe-left, 0px) + 14px);
+  bottom: calc(var(--safe-bottom, 0px) + 9px);
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: var(--track-tech);
+  color: rgba(var(--ink-text-rgb), 0.62); text-shadow: 0 1px 2px rgba(7, 11, 16, 0.6);
+  white-space: nowrap; line-height: 1;
+}
+#frame .f-read > span { display: inline-flex; align-items: center; gap: 5px; }
+#frame .f-rec { color: rgba(var(--ink-text-rgb), 0.34); transition: color 300ms; }
+#frame .f-rec i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+#frame .f-rec.on { color: var(--risk); }
+#frame .f-rec.on i { animation: rec-blink 1.3s steps(1) infinite; }
+@keyframes rec-blink { 50% { opacity: 0.25; } }
+#frame .f-cam .ic { width: 1.3em; height: 1.3em; opacity: 0.8; }
+#frame .f-cam.none { color: rgba(var(--ink-text-rgb), 0.34); }
+#frame .f-cam b { font-weight: 500; }
+#frame .f-sig { gap: 2px; align-items: flex-end; height: 9px; }
+#frame .f-sig i { width: 2px; background: rgba(var(--ink-text-rgb), 0.22); }
+#frame .f-sig i:nth-child(1) { height: 3px; } #frame .f-sig i:nth-child(2) { height: 5px; }
+#frame .f-sig i:nth-child(3) { height: 7px; } #frame .f-sig i:nth-child(4) { height: 9px; }
+#frame .f-sig[data-bars="1"] i:nth-child(-n+1), #frame .f-sig[data-bars="2"] i:nth-child(-n+2),
+#frame .f-sig[data-bars="3"] i:nth-child(-n+3), #frame .f-sig[data-bars="4"] i:nth-child(-n+4) { background: var(--sys); }
+#frame .f-state {
+  padding: 3px 6px; border: 1px solid rgba(var(--ink-text-rgb), 0.18);
+  color: rgba(var(--ink-text-rgb), 0.5); font-weight: 500;
+  transition: color 300ms, border-color 300ms, background 300ms;
+}
+#frame[data-watch="spotted"] .f-state { color: var(--sys); border-color: var(--sys-line); }
+#frame[data-watch="tracked"] .f-state { color: var(--warn); border-color: rgba(var(--st-orange-rgb), 0.5); background: rgba(var(--st-orange-rgb), 0.08); }
+#frame[data-watch="underwatch"] .f-state { color: #FFF; border-color: var(--risk); background: rgba(var(--risk-rgb), 0.55); }
+/* The frame steps back with the rest of the HUD while somebody talks, and
+   its readout gets out of the way of a node record on a desktop. */
+#ui.talking #frame .f-read { opacity: 0.4; }
+
 /* ------------------------------------------------------------- notifications
-   Phone notifications, animating in the way a phone would. */
+   The system's cards. Each is an intercept: a stamp, a source, and the lines,
+   on dark glass with the source's colour as a rule down the left. */
 #notifications {
   position: absolute; top: 24px; right: 24px;
   width: calc(340px * var(--text-scale));
-  display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
 }
 
 .note {
-  width: 100%;
-  background: var(--paper-glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-card), 0 1px 0 rgba(255,255,255,0.6) inset;
-  padding: 11px 14px 11px 13px;
-  transform: translateX(24px);
+  position: relative; width: 100%;
+  background: var(--brackets), var(--glass);
+  --bk: var(--ink-line-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--ink-line);
+  border-left: 2px solid var(--sys);
+  border-radius: var(--r-sm);
+  clip-path: var(--clip-panel);
+  padding: 9px 12px 10px 12px;
+  color: var(--ink-text);
+  transform: translateX(16px);
   opacity: 0;
   animation: note-in var(--t-slow) var(--ease) forwards;
-  border-left: 3px solid var(--st-teal);
 }
 .note.leaving { animation: note-out 240ms var(--ease) forwards; }
 .note.strong { border-left-color: var(--warn); }
 
 /*
  * Four tiers of attention, so a weather advert cannot look like a patrol being
- * authorised. Size, weight, opacity and border all move together: the player
+ * authorised. Size, weight, opacity and rule all move together: the player
  * should be able to rank a stack of these at a glance, before reading a word.
  */
 .note.p-critical {
-  border-left-width: 5px;
+  border-left-width: 3px;
   border-left-color: var(--risk);
-  box-shadow: 0 10px 34px rgba(16, 23, 31, 0.30), 0 0 0 1px rgba(200, 74, 62, 0.28);
+  background: var(--brackets), linear-gradient(90deg, rgba(var(--risk-rgb), 0.14), transparent 60%), var(--glass);
+  --bk: rgba(var(--risk-rgb), 0.5);
 }
-.note.p-critical .brand { color: var(--risk-ink); }
-.note.p-critical .line:first-of-type { font-weight: 600; }
-.note.p-important { border-left-width: 4px; border-left-color: var(--warn); }
-.note.p-important .brand { color: var(--own-ink); }
+.note.p-critical .brand { color: #FF8F85; }
+.note.p-critical .line:first-of-type { font-weight: 600; color: #FFF; }
+.note.p-important { border-left-color: var(--warn); --bk: rgba(var(--st-orange-rgb), 0.45); }
+.note.p-important .brand { color: #FFAD85; }
 .note.p-context { opacity: 0.94; }
 .note.p-ambient {
   width: 82%;
-  padding: 8px 12px;
+  padding: 7px 10px;
   opacity: 0.72;
-  border-left-width: 2px;
-  box-shadow: var(--shadow-chip);
+  border-left-width: 1px;
 }
 .note.p-ambient .line { font-size: calc(11px * var(--text-scale)); }
 
 .note .brand {
+  font-family: var(--font-mono);
   font-size: calc(9px * var(--text-scale));
-  letter-spacing: 0.14em;
+  letter-spacing: var(--track-tech);
   text-transform: uppercase;
-  color: var(--st-teal-ink);
-  font-weight: 600;
-  margin-bottom: 4px;
-  display: flex; justify-content: space-between;
+  color: var(--sys);
+  font-weight: 500;
+  margin-bottom: 5px;
+  display: flex; justify-content: space-between; gap: 8px;
 }
-.note .brand span:last-child { color: var(--pencil-muted); font-weight: 500; }
+.note .brand span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+.note .brand span:last-child { color: var(--ink-muted); font-weight: 400; letter-spacing: 0.06em; }
 .note .line {
   font-size: calc(12.5px * var(--text-scale));
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   line-height: 1.42;
-  color: var(--ink-surface);
+  color: var(--ink-text-2);
 }
 .note.system .line {
   font-family: var(--font-mono);
   letter-spacing: 0.03em;
-  font-size: calc(11.5px * var(--text-scale));
+  font-size: calc(11px * var(--text-scale));
+  color: var(--st-record);
 }
-.note.care .line { font-size: calc(13px * var(--text-scale)); color: var(--pencil-2); }
+.note.system .line:first-of-type { color: var(--ink-text); font-weight: 500; }
+/* CARE is the consumer face of the same company: softer rule, a person's type. */
+.note.care { border-left-color: rgba(var(--ink-text-rgb), 0.5); }
+.note.care .brand { color: var(--ink-text-2); }
+.note.care .line { font-size: calc(13px * var(--text-scale)); color: var(--ink-text); }
 
 @keyframes note-in { to { transform: translateX(0); opacity: 1; } }
-@keyframes note-out { to { transform: translateX(24px); opacity: 0; height: 0; padding: 0; margin: 0; } }
+@keyframes note-out { to { transform: translateX(16px); opacity: 0; height: 0; padding: 0; margin: 0; } }
 
 /* -------------------------------------------------------------------- corner
    The player's own two buttons, top-left. There is no score widget any more:
@@ -326,47 +506,50 @@ kbd {
 #score-chip {
   font-family: var(--font-mono);
   font-size: calc(10px * var(--text-scale)); letter-spacing: 0.06em;
-  padding: 5px 10px 5px 9px; border-radius: var(--r-pill);
-  background: var(--paper-glass); color: var(--pencil-2);
-  border-left: 3px solid var(--st-teal);
-  box-shadow: var(--shadow-chip);
+  padding: 6px 10px 6px 9px; border-radius: var(--r-sm);
+  background: var(--glass); color: var(--ink-text);
+  border: 1px solid var(--ink-line);
+  border-left: 2px solid var(--sys);
   opacity: 0; transform: translateY(-4px);
   transition: opacity 260ms var(--ease), transform 260ms var(--ease);
 }
 #score-chip:empty { display: none; }
 #score-chip.show { opacity: 1; transform: translateY(0); }
 #score-chip[data-band="warn"] { border-left-color: var(--warn); }
-#score-chip[data-band="risk"] { border-left-color: var(--risk); border-left-width: 5px; }
+#score-chip[data-band="risk"] { border-left-color: var(--risk); border-left-width: 3px; }
 #inspect .rec.held { color: var(--own); }
 
 /* ------------------------------------------------------------------ inspect
-   A node's own record, read at the node. UNDERWATCH's register: void, teal,
+   A node's own record, read at the node. UNDERWATCH's register: void, cyan,
    monospace — a document, not a dialog. */
 .node-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-bottom: 8px; padding-bottom: 8px;
-  border-bottom: 1px solid rgba(var(--st-cyan-rgb), 0.16);
+  border-bottom: 1px solid var(--sys-line-soft);
 }
 .node-kind {
-  font-family: var(--font-sans);
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
   font-size: calc(9.5px * var(--text-scale));
-  letter-spacing: var(--track-eyebrow); text-transform: uppercase;
-  color: var(--st-teal-bright); font-weight: 600;
+  letter-spacing: var(--track-tech); text-transform: uppercase;
+  color: var(--sys); font-weight: 500;
 }
+.node-kind .ic { width: 1.4em; height: 1.4em; }
 .verb.close {
   padding: 3px 9px; font-size: calc(9px * var(--text-scale));
   opacity: 0.8; letter-spacing: 0.08em;
 }
 #inspect.hidden { opacity: 0; pointer-events: none; }
 #inspect {
-  position: absolute; bottom: 24px; left: 24px;
+  position: absolute; bottom: 40px; left: 24px;
   width: calc(340px * var(--text-scale));
-  background: rgba(8, 15, 21, 0.92);
+  background: var(--brackets), var(--glass);
+  --bk: var(--sys-line);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(var(--st-cyan-rgb), 0.30);
-  border-radius: var(--r-md); padding: 12px 14px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--sys-line-soft);
+  border-radius: var(--r-sm); padding: 12px 14px;
+  clip-path: var(--clip-panel);
   color: #DCEFEA;
   font-family: var(--font-mono);
   font-size: calc(11px * var(--text-scale));
@@ -386,7 +569,7 @@ kbd {
 @keyframes st-scan { 0% { top: 0; opacity: 0.85; } 100% { top: 100%; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #inspect.show::after { animation: none; } }
 html.reduce-motion #inspect.show::after { animation: none; }
-#inspect .node-id { color: var(--st-teal-bright); font-size: calc(13px * var(--text-scale)); font-weight: 500; letter-spacing: 0.08em; }
+#inspect .node-id { color: var(--sys); font-size: calc(13px * var(--text-scale)); font-weight: 500; letter-spacing: 0.08em; }
 #inspect .rec { color: var(--st-record); }
 /* The line the case turns on: the same document, in a hand you can read. */
 #inspect .rec .pct { color: var(--st-acid); font-weight: 600; }
@@ -397,11 +580,12 @@ html.reduce-motion #inspect.show::after { animation: none; }
 #inspect .verbs { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 #inspect .verb {
   font-family: var(--font-mono);
-  border: 1px solid rgba(var(--st-cyan-rgb), 0.4); border-radius: var(--r-xs);
-  padding: 2px 8px; font-size: calc(9.5px * var(--text-scale)); color: var(--st-teal-bright);
+  border: 1px solid var(--sys-line); border-radius: var(--r-xs);
+  padding: 2px 8px; font-size: calc(9.5px * var(--text-scale)); color: var(--sys);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%);
   transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-#inspect .verb:hover { background: rgba(var(--st-cyan-rgb), 0.12); border-color: var(--st-teal-bright); }
+#inspect .verb:hover { background: var(--sys-wash); border-color: var(--sys); }
 /* A verb with a trace line under it stacks the two. */
 #inspect .verb[data-verb] { flex-direction: column; justify-content: center; line-height: 1.15; }
 #inspect .verb .trace {
@@ -411,7 +595,7 @@ html.reduce-motion #inspect.show::after { animation: none; }
   opacity: 0.7;
   margin-top: 1px;
 }
-#inspect .verb.busy { border-color: var(--warn); color: var(--warn); background: rgba(232, 163, 61, 0.08); }
+#inspect .verb.busy { border-color: var(--warn); color: var(--warn); background: rgba(var(--st-orange-rgb), 0.08); }
 
 /* ------------------------------------------------------------------ prompts */
 #prompts {
@@ -420,17 +604,17 @@ html.reduce-motion #inspect.show::after { animation: none; }
   /* Eight verbs is wider than a narrow window, and a control strip that runs
      off the edge of the glass is worse than one that takes two lines. */
   flex-wrap: wrap; justify-content: center; max-width: min(92vw, 760px);
-  background: rgba(11, 16, 22, 0.62);
+  background: var(--glass-soft);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  padding: 8px 16px; border-radius: var(--r-pill);
-  border: 1px solid rgba(231, 237, 242, 0.08);
+  padding: 8px 16px; border-radius: var(--r-sm);
+  border: 1px solid var(--ink-line);
   color: #EDF2F5;
   font-size: calc(11px * var(--text-scale)); letter-spacing: 0.04em;
   transition: opacity 500ms var(--ease);
 }
 #prompts > span { display: inline-flex; align-items: center; }
-#prompts kbd { margin-right: 6px; background: rgba(255,255,255,0.15); }
+#prompts kbd { margin-right: 6px; background: rgba(255,255,255,0.12); }
 
 /* --------------------------------------------------------------------- talk */
 #dialogue.hidden { opacity: 0 !important; }
@@ -510,10 +694,10 @@ html.reduce-motion #inspect.show::after { animation: none; }
 #ad .titlecard sup { font-size: 0.24em; vertical-align: super; }
 #ad .skip {
   position: absolute; bottom: 22px; right: 26px;
-  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--track-tech); text-transform: uppercase;
   color: rgba(255,255,255,0.72);
-  padding: 6px 12px; border-radius: var(--r-pill);
-  background: rgba(10, 16, 22, 0.32);
+  padding: 7px 12px; border-radius: var(--r-sm);
+  background: rgba(10, 16, 22, 0.4); border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 /* ====================================================================== */
@@ -531,11 +715,15 @@ html.reduce-motion #inspect.show::after { animation: none; }
 }
 #prefs.hidden { opacity: 0; pointer-events: none; }
 #prefs .card {
-  width: min(420px, 100%); color: var(--ink-text);
+  width: min(440px, 100%); color: var(--ink-text);
   font-size: var(--fs-small); line-height: 1.6; letter-spacing: 0.01em;
+  padding: 26px 26px 24px;
+  background: var(--brackets), rgba(var(--ink-text-rgb), 0.015);
+  --bk: var(--sys-line);
   animation: rise 600ms var(--ease) both;
 }
-#prefs .st-title { margin-bottom: 40px; }
+#prefs .st-title { margin-bottom: 10px; }
+#prefs .sys-line { display: flex; margin-bottom: 34px; }
 #prefs h2 { font-weight: 300; font-size: var(--fs-h2); margin: 0 0 4px; letter-spacing: -0.005em; line-height: 1.25; }
 #prefs .muted { color: var(--ink-muted); font-size: var(--fs-small); margin: 0 0 18px; }
 #prefs .settings-group { border-top: 1px solid var(--ink-line); border-bottom: 1px solid var(--ink-line); margin-bottom: 28px; }
@@ -544,16 +732,18 @@ html.reduce-motion #inspect.show::after { animation: none; }
 #prefs .go {
   pointer-events: auto; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 48px; padding: 10px 22px; border-radius: var(--r-pill);
-  font: inherit; font-size: var(--fs-small); font-weight: 600; letter-spacing: 0.02em;
+  min-height: 50px; padding: 9px 22px; border-radius: var(--r-sm);
+  clip-path: var(--clip-btn);
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
   background: var(--ink-text); color: var(--ink-surface); border: 1px solid var(--ink-text);
-  transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
 #prefs .go:hover { background: #FFF; }
 #prefs .go:active { transform: translateY(1px); }
-#prefs .go small { display: block; font-size: 11px; font-weight: 400; letter-spacing: 0.02em; opacity: 0.68; margin-top: 2px; }
-#prefs .go.quiet { background: transparent; color: var(--ink-muted); border-color: var(--ink-line-strong); font-weight: 500; }
-#prefs .go.quiet:hover { color: var(--ink-text); border-color: rgba(231, 237, 242, 0.4); }
+#prefs .go:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--focus); }
+#prefs .go small { display: block; font-size: 11px; font-weight: 400; letter-spacing: 0.02em; text-transform: none; opacity: 0.68; margin-top: 3px; }
+#prefs .go.quiet { background: transparent; color: var(--ink-text-2); border-color: var(--ink-line-strong); font-weight: 500; }
+#prefs .go.quiet:hover { color: var(--ink-text); border-color: var(--sys-line); background: var(--sys-wash); }
 #prefs .keyhint { margin-top: 14px; text-align: center; font-size: var(--fs-meta); color: var(--ink-muted); }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
@@ -573,64 +763,70 @@ html.reduce-motion #inspect.show::after { animation: none; }
 .fade-black.on { opacity: 1; }
 
 /* ------------------------------------------------------------- hud buttons
-   Two small chips under the phone: the player's own notes, and a way to stop.
-   Paper, like the phone, because they are the player's — not UNDERWATCH's. */
-#hud-buttons { display: flex; flex-direction: row; gap: 8px; }
+   Two small chips, top-left: the player's own notes, and a way to stop.
+   Dark glass like every other panel, with a small tracked label, so the
+   buttons are part of the instrument rather than stickers on it. */
+#hud-buttons { display: flex; flex-direction: row; gap: 6px; }
 .hud-button {
   pointer-events: auto; cursor: pointer;
-  font: inherit; display: inline-flex; align-items: center; gap: 7px;
-  background: rgba(247, 245, 240, 0.92); color: var(--pencil-2);
+  font: inherit; display: inline-flex; align-items: center; gap: 8px;
+  background: var(--brackets), var(--glass);
+  --bk: rgba(var(--ink-text-rgb), 0.3);
+  color: var(--ink-text);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 0; border-radius: var(--r-pill); padding: 7px 13px;
-  font-size: calc(11.5px * var(--text-scale)); font-weight: 500; letter-spacing: 0.02em;
-  box-shadow: var(--shadow-chip), 0 0 0 1px rgba(16, 23, 31, 0.04);
-  transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  border: 1px solid var(--ink-line); border-radius: var(--r-sm); padding: 0 12px; min-height: 36px;
+  font-family: var(--font-mono); font-size: calc(10.5px * var(--text-scale)); font-weight: 500;
+  letter-spacing: var(--track-tech); text-transform: uppercase;
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.hud-button:hover { background: #FFF; transform: translateY(-1px); }
-.hud-button:focus-visible { outline-color: var(--st-teal-ink); outline-offset: 3px; }
+.hud-button:hover { border-color: var(--sys-line); --bk: var(--sys); }
+.hud-button:active { transform: translateY(1px); }
+.hud-button:focus-visible { outline-color: var(--sys); outline-offset: 3px; }
+.hud-button .ic { width: 14px; height: 14px; }
 .hud-button .hb-key {
-  font-family: var(--font-mono); font-size: 0.82em; color: var(--pencil-muted);
-  padding-left: 7px; border-left: 1px solid var(--paper-line-strong);
+  font-family: var(--font-mono); font-size: 0.86em; color: var(--ink-muted); letter-spacing: 0.04em;
+  padding-left: 8px; border-left: 1px solid var(--ink-line-strong);
 }
 .hud-button .hb-key:empty { display: none; }
 .hud-button .badge {
-  min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px;
-  background: var(--own-ink); color: #FFF; font-size: 10px; font-weight: 700;
+  min-width: 17px; height: 17px; border-radius: var(--r-xs); padding: 0 5px;
+  background: var(--own); color: #17120A; font-size: 10px; font-weight: 700; letter-spacing: 0;
   display: inline-flex; align-items: center; justify-content: center;
   animation: pop var(--t-slow) var(--ease);
 }
 .hud-button .badge:empty { display: none; }
 /* Nothing in the notes yet: readable, but plainly not asking for anything. */
-#hud-buttons:not(.has-notes) .hud-button[data-act="notes"] {
-  background: rgba(247, 245, 240, 0.72); color: var(--pencil-muted); box-shadow: var(--shadow-chip);
-}
+#hud-buttons:not(.has-notes) .hud-button[data-act="notes"] { color: var(--ink-muted); --bk: rgba(var(--ink-text-rgb), 0.16); }
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ------------------------------------------------------------------- talk
    Somebody is speaking to you. Low, centred, and in a person's typeface: this
-   is the one panel in the game that is not a machine talking. */
+   is the one panel in the game that is not a machine talking — the same
+   geometry as everything else, in the player's own amber. */
 #talk {
   position: absolute; left: 50%; bottom: 86px; transform: translate(-50%, 10px);
   width: min(560px, 90vw);
-  background: rgba(14, 20, 27, 0.92);
+  background: var(--brackets), var(--glass);
+  --bk: rgba(var(--own-rgb), 0.55);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(242, 200, 107, 0.26);
-  border-radius: var(--r-lg); padding: 14px 18px 12px;
+  border: 1px solid rgba(var(--own-rgb), 0.22);
+  border-radius: var(--r-sm); padding: 14px 18px 12px;
+  clip-path: var(--clip-panel);
   color: #F1EEE7; opacity: 0; pointer-events: none;
   transition: opacity var(--t-base) var(--ease), transform var(--t-base) var(--ease);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 #talk.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; cursor: pointer; }
 #talk.hidden { opacity: 0 !important; pointer-events: none !important; }
 #talk .who {
   display: flex; align-items: center; gap: 8px;
-  font-size: calc(10px * var(--text-scale)); letter-spacing: var(--track-eyebrow); text-transform: uppercase;
-  color: var(--own); font-weight: 600; margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--text-scale)); letter-spacing: var(--track-tech); text-transform: uppercase;
+  color: var(--own); font-weight: 500; margin-bottom: 6px;
 }
 #talk .who::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto;
+  content: ''; width: 6px; height: 6px; background: currentColor; flex: 0 0 auto; transform: rotate(45deg) scale(0.85);
 }
 #talk .who.look { color: #A9BAC6; }
 #talk .who.look::before { background: transparent; border: 1.5px solid currentColor; }
@@ -644,16 +840,18 @@ html.reduce-motion #inspect.show::after { animation: none; }
 #talk .choice {
   pointer-events: auto; cursor: pointer; font: inherit; text-align: left;
   display: flex; align-items: center;
-  background: rgba(242, 200, 107, 0.06); color: #F1EEE7;
-  border: 1px solid rgba(242, 200, 107, 0.3); border-radius: var(--r-sm);
+  background: rgba(var(--own-rgb), 0.06); color: #F1EEE7;
+  border: 1px solid rgba(var(--own-rgb), 0.3); border-radius: var(--r-sm);
+  clip-path: var(--clip-btn);
   padding: 9px 12px; font-size: calc(13.5px * var(--text-scale));
   transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-#talk .choice:hover { background: rgba(242, 200, 107, 0.16); border-color: rgba(242, 200, 107, 0.55); }
-#talk .choice:focus-visible { outline-color: var(--own); }
+#talk .choice:hover { background: rgba(var(--own-rgb), 0.16); border-color: rgba(var(--own-rgb), 0.55); }
+#talk .choice:active { background: rgba(var(--own-rgb), 0.24); }
+#talk .choice:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--own); }
 #talk .choice kbd {
   font-size: 0.8em; color: var(--own); background: transparent;
-  border: 1px solid rgba(242, 200, 107, 0.4); padding: 0 5px; margin-right: 10px;
+  border: 1px solid rgba(var(--own-rgb), 0.4); padding: 0 5px; margin-right: 10px;
 }
 
 /* ----------------------------------------------------------------- toasts
@@ -663,18 +861,21 @@ html.reduce-motion #inspect.show::after { animation: none; }
   display: flex; flex-direction: column; align-items: center; gap: 6px;
 }
 .toast {
-  display: flex; gap: 10px; align-items: baseline;
+  display: flex; gap: 10px; align-items: center;
   background: var(--paper-glass); color: var(--pencil);
-  border-radius: var(--r-pill); padding: 7px 15px;
-  box-shadow: var(--shadow-card);
+  border-radius: var(--r-sm); padding: 7px 14px;
+  border-left: 2px solid var(--own-strong);
+  box-shadow: var(--shadow-chip);
   font-size: calc(12.5px * var(--text-scale)); font-weight: 500;
   animation: toast-in 380ms var(--ease) both;
 }
-.toast .tk { font-size: 0.72em; letter-spacing: 0.18em; color: var(--own-ink); font-weight: 700; }
-.toast .tk::before { content: '✎ '; letter-spacing: 0; }
-.toast.strong { background: var(--pencil); color: var(--paper); }
+.toast .tk {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 0.74em; letter-spacing: var(--track-tech); color: var(--own-ink); font-weight: 600;
+}
+.toast .tk .ic { width: 1.5em; height: 1.5em; }
+.toast.strong { background: var(--pencil); color: var(--paper); border-left-color: var(--own); }
 .toast.strong .tk { color: var(--own); }
-.toast.strong .tk::before { content: '→ '; }
 .toast.leaving { animation: toast-out 380ms var(--ease) forwards; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(-6px); } }
@@ -696,33 +897,34 @@ html.reduce-motion #inspect.show::after { animation: none; }
 #notebook.hidden > *, #menu.hidden > *, #ending.hidden > * { transform: translateY(10px) scale(0.99); }
 
 /* --------------------------------------------------------------- notebook
-   Squared paper, a pencil hand, and nothing corporate on it. */
+   Squared paper, a pencil hand, and nothing corporate on it: the player's
+   own evidence board. */
 .nb-sheet {
   width: min(760px, 94vw); height: min(680px, 88vh);
   display: flex; flex-direction: column;
   background:
     linear-gradient(rgba(var(--st-cyan-ink-rgb), 0.065) 1px, transparent 1px) 0 0 / 100% 24px,
     var(--paper);
-  color: var(--pencil); border-radius: var(--r-lg); overflow: hidden;
+  color: var(--pencil); border-radius: var(--r-sm); overflow: hidden;
   box-shadow: var(--shadow-sheet);
   --focus: var(--st-teal-ink);
   --trail-bg: var(--paper);
 }
 .nb-sheet header {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  padding: 16px 22px 12px; border-bottom: 1px solid var(--paper-line);
+  padding: 16px 22px 12px; border-bottom: 1px solid var(--paper-line-strong);
   background: rgba(246, 242, 232, 0.96);
 }
 .nb-headline { display: flex; align-items: baseline; gap: 14px; min-width: 0; flex-wrap: wrap; }
 .nb-title { font-size: 24px; font-weight: 300; letter-spacing: 0.01em; line-height: 1.1; }
-.nb-meta { font-size: var(--fs-meta); color: var(--pencil-muted); }
+.nb-meta { font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: 0.06em; text-transform: uppercase; color: var(--pencil-muted); }
 .nb-close, .nb-connect { border-color: var(--paper-line-strong); }
 .nb-close:hover { background: rgba(35, 48, 58, 0.06); }
-.nb-close kbd { background: rgba(35, 48, 58, 0.08); border-bottom-color: rgba(35, 48, 58, 0.14); margin-left: 2px; }
+.nb-close kbd { background: rgba(35, 48, 58, 0.08); border-color: rgba(35, 48, 58, 0.14); margin-left: 2px; }
 .nb-body { flex: 1; overflow-y: auto; padding: 6px 22px 20px; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; }
 .nb-score {
   margin: 14px 0 4px; padding: 10px 12px; border-radius: var(--r-sm);
-  background: var(--own-wash); border-left: 3px solid #E0A93A;
+  background: var(--own-wash); border-left: 2px solid var(--own-strong);
   font-size: var(--fs-small); line-height: 1.5; color: #3A342A;
 }
 
@@ -741,14 +943,14 @@ html.reduce-motion #inspect.show::after { animation: none; }
 }
 .nb-thread.answered h3 { color: #4E5A64; font-weight: 500; }
 .nb-status {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
-  padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: var(--r-xs); white-space: nowrap;
 }
-.nb-status.done { color: var(--st-teal-ink); background: rgba(31, 111, 106, 0.10); }
+.nb-status.done { color: var(--st-teal-ink); background: rgba(31, 111, 106, 0.10); border: 1px solid rgba(var(--st-cyan-ink-rgb), 0.3); }
 .nb-status.open { color: var(--own-ink); background: var(--own-wash); }
 .nb-answer { font-size: var(--fs-body); color: var(--st-teal-ink); margin: 0 0 8px; font-style: italic; }
-.nb-open { font-size: var(--fs-meta); color: var(--own-ink); margin-bottom: 8px; }
-.nb-open::before { content: '✎ '; }
+.nb-open { display: flex; align-items: center; gap: 6px; font-size: var(--fs-meta); color: var(--own-ink); margin-bottom: 8px; }
 
 /* A thread's entries hang off one line: the record of how you got here. */
 .nb-trail { position: relative; padding-left: 20px; }
@@ -765,7 +967,7 @@ html.reduce-motion #inspect.show::after { animation: none; }
 }
 .nb-entry::before {
   content: ''; position: absolute; left: -19px; top: 15px; width: 9px; height: 9px;
-  border-radius: 50%; box-sizing: border-box;
+  box-sizing: border-box; transform: rotate(45deg) scale(0.8);
   border: 1.5px solid var(--pencil-faint); background: var(--paper);
 }
 .nb-entry.deduction::before { background: var(--pencil); border-color: var(--pencil); }
@@ -782,9 +984,9 @@ button.nb-entry:hover { border-color: var(--paper-line-strong); background: rgba
 /* Which of the two it is, in a number, so selection never rests on colour. */
 .nb-pick {
   position: absolute; top: 9px; right: 10px;
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 22px; height: 22px; border-radius: var(--r-xs);
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--own-ink); color: #FFF; font-size: 11px; font-weight: 700; font-style: normal;
+  background: var(--own-ink); color: #FFF; font-family: var(--font-mono); font-size: 11px; font-weight: 700; font-style: normal;
   animation: pop var(--t-base) var(--ease);
 }
 .nb-entry.wrong { opacity: 0.6; }
@@ -797,46 +999,49 @@ button.nb-entry:hover { border-color: var(--paper-line-strong); background: rgba
 @keyframes nb-fresh { from { box-shadow: 0 0 0 6px rgba(242, 200, 107, 0.6); } to { box-shadow: 0 0 0 0 rgba(242, 200, 107, 0); } }
 .nb-t { font-weight: 600; font-size: 14px; line-height: 1.35; }
 .nb-b { font-size: var(--fs-small); line-height: 1.55; }
-.nb-w { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pencil-muted); margin-top: 2px; }
+.nb-w { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pencil-muted); margin-top: 3px; }
 .nb-new {
-  font-style: normal; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  font-style: normal; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
   background: var(--own-ink); color: #FFF; border-radius: var(--r-xs); padding: 1px 5px; margin-left: 8px; vertical-align: 2px;
 }
 .nb-sheet footer {
-  border-top: 1px solid var(--paper-line); padding: 12px 22px 14px;
+  border-top: 1px solid var(--paper-line-strong); padding: 12px 22px 14px;
   background: rgba(246, 242, 232, 0.97);
 }
 .nb-picks { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: var(--fs-meta); }
 .nb-picks .pk {
   display: inline-flex; align-items: center; gap: 6px; max-width: 46%;
-  padding: 3px 10px 3px 4px; border-radius: var(--r-pill);
+  padding: 3px 10px 3px 4px; border-radius: var(--r-sm);
   background: var(--own-wash); border: 1px solid rgba(197, 138, 26, 0.35); color: var(--pencil);
 }
 .nb-picks .pk b {
-  width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto;
+  width: 16px; height: 16px; border-radius: var(--r-xs); flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--own-ink); color: #FFF; font-size: 9.5px;
+  background: var(--own-ink); color: #FFF; font-family: var(--font-mono); font-size: 9.5px;
 }
 .nb-picks .pk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb-picks .plus { color: var(--pencil-muted); }
 .nb-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .nb-help { font-size: var(--fs-small); color: var(--pencil-muted); }
-.nb-connect { background: var(--pencil); color: #F4F1EA; border-color: var(--pencil); font-weight: 600; }
+.nb-connect { background: var(--pencil); color: #F4F1EA; border-color: var(--pencil); }
 .nb-connect:hover:not(:disabled) { background: #10171F; }
 .nb-connect:disabled { opacity: 0.35; cursor: default; }
 .nb-result {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: var(--fs-small); margin-bottom: 10px; padding: 8px 12px; border-radius: var(--r-sm);
   animation: rise var(--t-slow) var(--ease);
 }
-.nb-result.new { color: var(--st-teal-ink); background: rgba(31, 111, 106, 0.09); }
-.nb-result.new::before { content: '✓ '; font-weight: 700; }
+.nb-result.new { color: var(--st-teal-ink); background: rgba(31, 111, 106, 0.09); border-left: 2px solid var(--st-teal-ink); }
 .nb-result.nothing, .nb-result.known { color: var(--pencil-muted); font-style: italic; background: rgba(35, 48, 58, 0.05); }
 
 /* ------------------------------------------------------------------- menu */
 .menu-card, .end-card {
   width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; overscroll-behavior: contain;
-  background: var(--ink-surface); color: var(--ink-text); border-radius: var(--r-lg);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--brackets), var(--ink-surface);
+  --bk: var(--sys-line);
+  color: var(--ink-text); border-radius: var(--r-sm);
+  border: 1px solid var(--ink-line-strong);
+  clip-path: var(--clip-panel);
   padding: 26px 28px; box-shadow: var(--shadow-sheet);
   -webkit-overflow-scrolling: touch; touch-action: pan-y;
   --trail-bg: var(--ink-surface);
@@ -859,29 +1064,24 @@ button.nb-entry:hover { border-color: var(--paper-line-strong); background: rgba
   padding: 3px 0;
 }
 .ctl kbd { justify-self: start; text-align: center; min-width: 30px; font-size: 10.5px; white-space: normal; line-height: 1.5; }
-.ctl .gesture { font-size: var(--fs-meta); font-weight: 600; color: var(--ink-text); letter-spacing: 0.01em; }
-.ctls.touch .ctl { grid-template-columns: 9.5em 1fr; }
+.ctl .gesture { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-text); }
 .ctl span { color: var(--ink-text-2); line-height: 1.45; }
 .menu-endings { margin-top: 26px; }
-/* Five slots: found ones filled and named, the rest left open and saying so. */
+/* Five files: found ones filled and named, the rest left open and saying so. */
 .menu-endings ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .menu-endings li {
   position: relative; display: flex; align-items: center; gap: 10px;
   min-height: 34px; padding: 6px 12px 6px 10px; border-radius: var(--r-sm);
   background: var(--ink-raised); border: 1px solid var(--ink-line);
+  border-left: 2px solid var(--own);
   font-size: var(--fs-small); line-height: 1.35; color: var(--ink-text);
 }
 .menu-endings li::before {
   content: attr(data-n);
-  font-family: var(--font-mono); font-size: 10px; color: var(--own);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--own);
 }
-.menu-endings li::after {
-  content: ''; order: -1; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
-  background: var(--own);
-}
-.menu-endings li.unseen { color: var(--ink-muted); font-style: italic; background: transparent; border-style: dashed; }
+.menu-endings li.unseen { color: var(--ink-muted); font-style: italic; background: var(--hatch); border-style: dashed; border-left: 1px dashed var(--ink-line-strong); }
 .menu-endings li.unseen::before { color: var(--ink-faint); }
-.menu-endings li.unseen::after { background: transparent; border: 1.5px solid var(--ink-faint); box-sizing: border-box; }
 .menu-foot {
   margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--ink-line);
   display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
@@ -889,10 +1089,10 @@ button.nb-entry:hover { border-color: var(--paper-line-strong); background: rgba
 .menu-foot .confirm-note { margin-right: auto; color: #FFC2B8; font-size: var(--fs-small); }
 
 /* ----------------------------------------------------------------- ending */
-.end-card { width: min(640px, 94vw); padding: 32px 34px 26px; }
+.end-card { width: min(640px, 94vw); padding: 32px 34px 26px; --bk: rgba(var(--own-rgb), 0.5); }
 .end-kicker {
   display: flex; align-items: center; gap: 10px;
-  font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--own);
+  font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: 0.2em; text-transform: uppercase; color: var(--own);
 }
 .end-kicker::after { content: ''; flex: 1; height: 1px; background: linear-gradient(to right, rgba(242, 200, 107, 0.4), transparent); }
 .end-card h2 { font-weight: 200; font-size: clamp(30px, 4.4vw, 44px); margin: 12px 0 18px; letter-spacing: -0.015em; line-height: 1.1; }
@@ -900,12 +1100,12 @@ button.nb-entry:hover { border-color: var(--paper-line-strong); background: rgba
 .end-case { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--ink-line); }
 .end-case .trail { color: var(--ink-text); font-size: var(--fs-body); line-height: 1.5; }
 .end-case li.got { color: var(--ink-text); }
-.end-case li.got::after { content: ' ✓'; color: var(--st-teal-bright); font-weight: 700; }
+.end-case li.got .ic { color: var(--st-teal-bright); margin-left: 6px; }
 .end-case li.missed { color: var(--ink-muted); font-style: italic; }
-.end-count { font-size: var(--fs-meta); color: var(--ink-muted); margin-top: 10px; }
+.end-count { font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); margin-top: 10px; }
 .end-seen { display: flex; align-items: center; gap: 12px; font-size: var(--fs-small); color: var(--ink-muted); margin-top: 20px; flex-wrap: wrap; }
 .end-dots { display: inline-flex; gap: 6px; }
-.end-dots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-faint); box-sizing: border-box; }
+.end-dots i { width: 8px; height: 8px; border: 1.5px solid var(--ink-faint); box-sizing: border-box; transform: rotate(45deg) scale(0.85); }
 .end-dots i.on { background: var(--own); border-color: var(--own); }
 .end-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; flex-wrap: wrap; }
 .end-actions button { min-height: 42px; padding: 0 22px; }

@@ -35,7 +35,7 @@ import {
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
 import { JOBS } from './content/jobs';
-import { JOB } from './content/copy';
+import { FRAME, JOB } from './content/copy';
 import { JobRun } from './sim/jobs/run';
 import type { JobDef } from './sim/jobs/types';
 import { JobBoard, JobHud, JobResults, repOf } from './ui/jobs';
@@ -603,6 +603,7 @@ class Game {
     el.innerHTML = `
       <div class="card" role="dialog" aria-modal="true" aria-labelledby="pref-title">
         <div class="st-title" aria-label="UNDERWATCH"><div><b>UNDER</b><span>WATCH</span></div></div>
+        <div class="sys-line" aria-hidden="true"><i></i>${FRAME.ready} · BELLHAVEN</div>
         <h2 id="pref-title">Before you begin</h2>
         <p class="muted">These can be changed at any time.</p>
         <div class="settings-group">
@@ -1247,6 +1248,9 @@ class Game {
       ? (e.kind === 'person' ? (e.id === 'devon' ? this.sim.devonPos : this.sim.person(e.id)?.pos ?? e.pos) : e.pos)
       : null;
     this.renderer.render(dt);
+    // In a job the exposure meter is the system's own account of you; the
+    // frame's corners say the same thing the strip at the top does.
+    this.hud.setWatchOverride(this.run && this.mode === 'jobs' && this.run.status === 'running' ? this.run.exposure.level : null);
     this.hud.update(dt);
     this.troubleHud.update(this.mode === 'jobs' ? this.trouble : null);
     if (this.run && this.mode === 'jobs') {

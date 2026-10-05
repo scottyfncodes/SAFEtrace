@@ -9,6 +9,7 @@
  */
 import type { Sim } from '../sim/sim';
 import { ENDINGS, ENDING_ORDER, type EndingId } from '../content/case';
+import { ICON } from './icons';
 
 export class EndingCard {
   private el: HTMLElement;
@@ -35,7 +36,7 @@ export class EndingCard {
     const cf = this.sim.casefile;
     const keys = cf.defs.deductions.filter((d) => d.key);
     const findings = keys.map((d) => cf.deductions.has(d.id)
-      ? `<li class="got">${d.title}</li>`
+      ? `<li class="got">${d.title}${ICON.check}</li>`
       : '<li class="missed">something you never put together</li>').join('');
     const others = ENDING_ORDER.length - seen.length;
     const dots = ENDING_ORDER.map((eid) => `<i class="${seen.includes(eid) ? 'on' : ''}"></i>`).join('');

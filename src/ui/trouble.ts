@@ -7,6 +7,7 @@
  * down. Busted is a card, because being caught should stop you for a second.
  */
 import { HEAT_NAMES, type Trouble } from '../sim/trouble';
+import { ICON } from './icons';
 
 const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -62,7 +63,7 @@ export class BustedCard {
     const again = busts > 1 ? `<p class="b-again">That's ${busts} times. It gets longer every time.</p>` : '';
     this.el.innerHTML = `
       <div class="b-card" role="dialog" aria-modal="true" aria-labelledby="b-title">
-        <div class="jb-eyebrow">CAUGHT</div>
+        <div class="jb-eyebrow">${ICON.alert}CAUGHT</div>
         <h2 id="b-title">BUSTED</h2>
         <p>An officer walks you home. Your parents are waiting on the step, and they take your <b>board</b> and your <b>slingshot</b>.</p>
         <p class="b-term">Grounded for <b>${clock(seconds)}</b>: on foot, nothing to throw, until your mom gives it all back.</p>
