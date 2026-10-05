@@ -113,3 +113,16 @@ export function recordJobRun(
   try { localStorage.setItem(JOBS_KEY, JSON.stringify(all)); } catch { /* best effort */ }
   return { record, bests };
 }
+
+/** Trouble that outlives a page: how many times caught, and how long is left grounded. */
+const TROUBLE_KEY = 'underwatch.trouble.v1';
+export function loadTrouble(): { busts: number; groundedLeft: number } | undefined {
+  try {
+    const raw = localStorage.getItem(TROUBLE_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && typeof v.busts === 'number' ? { busts: v.busts, groundedLeft: Math.max(0, Number(v.groundedLeft) || 0) } : undefined;
+  } catch { return undefined; }
+}
+export function saveTrouble(t: { busts: number; groundedLeft: number }): void {
+  try { localStorage.setItem(TROUBLE_KEY, JSON.stringify(t)); } catch { /* best effort */ }
+}

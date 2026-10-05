@@ -334,7 +334,7 @@ export class TownBuilder {
     const p: Prop = {
       id: this.id('PR'), kind, pos, rot,
       scale: opts.scale ?? 1, tint: opts.tint,
-      hittable: opts.hittable ?? ['bin', 'sign', 'car', 'hydrant', 'cone', 'planter', 'pole'].includes(kind),
+      hittable: opts.hittable ?? ['bin', 'sign', 'car', 'hydrant', 'cone', 'planter', 'pole', 'mailbox'].includes(kind),
       district: this.currentDistrict,
     };
     this.props.push(p);

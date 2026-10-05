@@ -57,6 +57,8 @@ export interface SimEvents extends Record<string, unknown> {
   'person:struck': { targetId: string; pos: Vec2; witnesses: number; seen: boolean };
   'player:bail': { pos: Vec2 };
   'player:land': { pos: Vec2; speed: number };
+  /** A stone went through a window (or a windscreen). */
+  'world:glass': { pos: Vec2; z: number; buildingId: string; kind: string };
   /** The board locked onto a rail, a ledge, a bench or a wall. */
   'player:grind': { pos: Vec2; name: string; kind: string };
   /** Off the line again, after this long on it. */

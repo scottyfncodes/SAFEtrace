@@ -40,7 +40,9 @@ import { JobRun } from './sim/jobs/run';
 import type { JobDef } from './sim/jobs/types';
 import { JobBoard, JobHud, JobResults, repOf } from './ui/jobs';
 import { PERKS, kitFor } from './sim/jobs/kit';
-import { loadJobRecords, recordJobRun } from './core/save';
+import { loadJobRecords, loadTrouble, recordJobRun, saveTrouble } from './core/save';
+import { Trouble } from './sim/trouble';
+import { BustedCard, LEVEL_CALL, MOM_RETURNS, TroubleHud, YELPS } from './ui/trouble';
 
 /**
  * How far a pull reaches along the ground, from a flick to all the way back.
@@ -84,7 +86,7 @@ class Game {
   private ending: EndingCard;
   /** Nothing in Bellhaven happens while the player is reading a menu. */
   private get paused(): boolean {
-    return this.notebook.open || this.menu.open || this.ending.open || this.board.open || this.results.open;
+    return this.notebook.open || this.menu.open || this.ending.open || this.board.open || this.results.open || this.busted.open;
   }
   /**
    * What is being played: the afternoon (the story), or jobs. The same town,
@@ -92,6 +94,11 @@ class Game {
    */
   private mode: 'story' | 'jobs' = 'story';
   private run: JobRun | null = null;
+  /** Heat, police, and being grounded: jobs and free skate only. */
+  private trouble: Trouble | null = null;
+  private troubleHud!: TroubleHud;
+  private busted!: BustedCard;
+  private troubleSaveIn = 0;
   private board!: JobBoard;
   private jobHud!: JobHud;
   private results!: JobResults;
@@ -169,6 +176,8 @@ class Game {
       close: () => this.resumeFromOverlay(),
     }, loadJobRecords, () => this.run !== null || this.phase === 'play');
     this.jobHud = new JobHud(uiRoot);
+    this.troubleHud = new TroubleHud(uiRoot);
+    this.busted = new BustedCard(document.body, this.touchPrimary);
     this.results = new JobResults(document.body, this.touchPrimary, {
       retry: () => { if (this.run) this.startJob(this.run.def); },
       next: () => {
@@ -338,6 +347,7 @@ class Game {
     this.mode = 'jobs';
     this.sim.storyActive = false;
     this.sim.visionUnlocked = true;
+    this.trouble = new Trouble(this.sim, loadTrouble());
     this.hud.setJobsMode(true);
     document.documentElement.classList.add('jobs-mode');
     this.phase = 'play';
@@ -361,6 +371,7 @@ class Game {
     this.results.hide();
     this.run?.dispose();
     this.clearTransientState();
+    this.trouble?.reset();
     // The kit is what the records have earned so far.
     this.sim.kit = kitFor(repOf(loadJobRecords()));
     this.run = new JobRun(this.sim, def, JOB.run);
@@ -411,6 +422,34 @@ class Game {
     }
   }
 
+  /** Heat, the chase, and being caught. */
+  private stepTrouble(dt: number): void {
+    const t = this.trouble;
+    if (!t) return;
+    t.step(dt);
+    for (const n of t.takeNotes()) {
+      if (n.kind === 'level' && (n.up || n.level === 0)) {
+        this.jobHud.say(LEVEL_CALL[n.level]);
+        if (n.level >= 3) this.audio.motif(0.8); else this.audio.servo();
+      } else if (n.kind === 'busted') {
+        // A job does not survive being walked home.
+        if (this.run) { this.run.dispose(); this.run = null; this.jobHud.setVisible(false); this.syncJobPin(); }
+        this.clearHeldInput();
+        this.touch.setSlingOut(false);
+        this.renderer.chase.reset(this.sim);
+        this.audio.motif(1);
+        this.busted.show(n.seconds, n.busts, () => this.resumeFromOverlay());
+        saveTrouble(t.save());
+      } else if (n.kind === 'returned') {
+        this.jobHud.say({ text: MOM_RETURNS, tone: 'good' });
+        this.audio.hackDone();
+        saveTrouble(t.save());
+      }
+    }
+    this.troubleSaveIn -= dt;
+    if (this.troubleSaveIn <= 0) { this.troubleSaveIn = 3; saveTrouble(t.save()); }
+  }
+
   /** From the board to the story: a clean page, the way the afternoon expects to start. */
   private leaveForStory(): void {
     this.discarding = true;
@@ -430,7 +469,7 @@ class Game {
     this.sim.bus.on('case:clue', mark);
     this.sim.bus.on('case:deduction', mark);
     this.sim.bus.on('talk:closed', mark);
-    window.addEventListener('pagehide', () => this.persist());
+    window.addEventListener('pagehide', () => { this.persist(); if (this.trouble) saveTrouble(this.trouble.save()); });
   }
 
   private persist(): void {
@@ -701,7 +740,7 @@ class Game {
       }
       if (this.phase !== 'play') return;
       if (this.ending.open) return;
-      if (this.board.key(e.code) || this.results.key(e.code)) { e.preventDefault(); return; }
+      if (this.busted.key(e.code) || this.board.key(e.code) || this.results.key(e.code)) { e.preventDefault(); return; }
       if (this.notebook.key(e.code) || this.menu.key(e.code)) { e.preventDefault(); return; }
       if (this.mode === 'jobs') {
         if (e.code === 'KeyT' && this.run) { this.startJob(this.run.def); e.preventDefault(); return; }
@@ -755,6 +794,16 @@ class Game {
     const bus = this.sim.bus;
     bus.on('player:push', () => this.audio.push());
     bus.on('player:pop', () => this.audio.pop());
+    // Somebody hit by a stone says so.
+    bus.on('person:struck', ({ targetId }) => {
+      const sim = this.sim;
+      const who = sim.npcs.find((n) => n.id === targetId) ?? sim.patrols.find((p) => p.id === targetId)
+        ?? sim.people.find((p) => p.id === targetId);
+      if (!who) return;
+      const line = sim.patrols.some((p) => p.id === targetId) ? 'HEY! STOP RIGHT THERE!' : YELPS[sim.tick % YELPS.length];
+      this.renderer.speak(() => who.pos, line, 2.2);
+    });
+    bus.on('world:glass', ({ pos }) => { this.audio.impact('glass', 1, 1); this.renderer.burst('chip', pos, 1.5, 10, 0, 1.1); });
     // Grinds: the trucks biting the rail, and letting go of it.
     bus.on('player:grind', () => { this.audio.land(0.55); this.audio.impact('metal', 0.5, 1); this.renderer.kick(0.07); });
     bus.on('player:grindEnd', () => this.audio.pop());
@@ -915,7 +964,7 @@ class Game {
 
     // Aiming has its own vocabulary, so the engine is told which one is live.
     this.touch.setAiming(this.sim.aimMode);
-    this.touch.setSlingAvailable(!this.sim.hack);
+    this.touch.setSlingAvailable(!this.sim.hack && !this.sim.grounded);
     this.touch.setGrindReady(!!this.sim.grindNear || !!this.sim.grind);
     // The scrape of trucks on a rail, for as long as the board is on one.
     if (this.sim.grind) {
@@ -954,7 +1003,7 @@ class Game {
       this.aimYaw = damp(this.aimYaw, this.lookTargetYaw, 0.012, dt);
       this.sim.lookPitch = damp(this.sim.lookPitch, this.lookTargetPitch, 0.012, dt);
       this.sim.step(dt, this.intent, this.aimTargetPoint());
-      if (this.mode === 'story') this.story.update(); else this.stepJob(dt);
+      if (this.mode === 'story') this.story.update(); else { this.stepTrouble(dt); this.stepJob(dt); }
       return;
     }
 
@@ -982,7 +1031,7 @@ class Game {
     if (tap) this.resolveTap(tap);
     this.orientMove();
     this.sim.step(dt, this.intent, this.aimPoint());
-    if (this.mode === 'jobs') { this.stepJob(dt); return; }
+    if (this.mode === 'jobs') { this.stepTrouble(dt); this.stepJob(dt); return; }
     this.story.update();
 
     /*
@@ -1199,6 +1248,7 @@ class Game {
       : null;
     this.renderer.render(dt);
     this.hud.update(dt);
+    this.troubleHud.update(this.mode === 'jobs' ? this.trouble : null);
     if (this.run && this.mode === 'jobs') {
       this.jobHud.update(this.run, dt, this.sim.player.pos, this.renderer.chase.yaw);
     }
