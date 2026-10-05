@@ -9,6 +9,8 @@ import './ui/styles.css';
 // the mobile overrides only win if they come later in source order.
 import './ui/mobile.css';
 import './ui/jobs.css';
+import { PlanStrip, STRIP_LINGER, barrierAhead, chainText, stripView } from './ui/planStrip';
+import { draftPlan } from './sim/recon';
 import { InputManager, emptyIntent, mergeIntent, type Intent } from './core/input';
 import { TouchAdapter, TouchEngine, isTouchPrimary } from './core/touch';
 import { Loop } from './core/loop';
@@ -35,7 +37,7 @@ import {
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
 import { JOBS } from './content/jobs';
-import { FRAME, JOB } from './content/copy';
+import { FRAME, JOB, RECON_COPY } from './content/copy';
 import { JobRun } from './sim/jobs/run';
 import { applyCondition, camerasDown, conditionFor, dayIndex, type Condition } from './sim/jobs/conditions';
 import type { JobDef } from './sim/jobs/types';
@@ -125,6 +127,20 @@ class Game {
   private mapDrag: { x: number; y: number; moved: number } | null = null;
   /** Whether the plan was open last tick, so the first opening can be noticed. */
   private planWasOpen = false;
+  /**
+   * Recon (sim/recon.ts). The plan view is the recon layer; leaving it with
+   * PLAN commits to an approach, and leaving it any other way (Esc, a menu)
+   * just puts it away. `probe` is a spot read for what a stone there would
+   * turn, in a job, where the pin belongs to the job.
+   */
+  private planStrip!: PlanStrip;
+  private reconWasOpen = false;
+  private planCancelled = false;
+  private probe: { x: number; y: number } | null = null;
+  private stripLinger = 0;
+  private barrierIn = 0;
+  private barrierId: string | null = null;
+  private previewIn = 0;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const worldData = buildBellhaven();
@@ -188,6 +204,7 @@ class Game {
     }, loadJobRecords, () => this.run !== null || this.phase === 'play');
     this.board.today = { condition: this.condition, down: camerasDown(this.sim, this.condition, this.day, JOBS).length };
     this.jobHud = new JobHud(uiRoot);
+    this.planStrip = new PlanStrip(uiRoot);
     this.jobHud.condition = this.condition.id === 'CLEAR' ? null : JOB.condition[this.condition.id].name;
     this.troubleHud = new TroubleHud(uiRoot);
     this.busted = new BustedCard(document.body, this.touchPrimary);
@@ -256,14 +273,29 @@ class Game {
 
   /** Put the plan away, on every device at once. */
   private closePlan(): void {
+    if (this.sim.planViewActive) this.planCancelled = true;
     this.touch.setPlanOpen(false);
     this.input.setPlanOpen(false);
   }
 
   /** Put a pin on the map, or take it off if the tap was on the pin. */
   private markAt(world: { x: number; y: number }): void {
+    // Every mark is also a reading: what a stone dropped there would turn.
+    this.sim.probe(world);
+    const near = 34 / Math.max(1, this.renderer.cam.zoom) + 3;
+    // In a job the pin is the job's, and once the player has put their own
+    // pin down it is where they are going: a mark anywhere else is only a
+    // reading, so working out where a stone goes never moves the destination.
+    const own = this.waypoint && !this.renderer.waypointLabel && dist(this.waypoint, world) >= near;
+    if ((this.mode === 'jobs' && this.run) || own) {
+      const pickUp = this.probe && dist(this.probe, world) < near;
+      this.probe = pickUp ? null : { x: world.x, y: world.y };
+      this.renderer.probe = this.probe;
+      this.audio.hackTick();
+      return;
+    }
     const wp = this.waypoint;
-    const pickUp = wp && dist(wp, world) < 34 / Math.max(1, this.renderer.cam.zoom) + 3;
+    const pickUp = wp && dist(wp, world) < near;
     this.waypoint = pickUp ? null : { x: world.x, y: world.y };
     this.renderer.waypoint = this.waypoint;
     this.renderer.waypointLabel = null;
@@ -406,6 +438,73 @@ class Game {
     this.waypoint = next ? { x: next.pos.x, y: next.pos.y } : null;
     this.renderer.waypoint = this.waypoint;
     this.renderer.waypointLabel = next ? next.label : null;
+  }
+
+  // ------------------------------------------------------------- recon
+
+  /** Where the plan is going: the job's next point, or the pin. */
+  private planTarget(): { pos: { x: number; y: number }; label: string | null } | null {
+    if (this.mode === 'jobs' && this.run) {
+      const n = this.run.status === 'running' ? this.run.nextPoint() : null;
+      return n ? { pos: n.pos, label: n.label } : null;
+    }
+    return this.waypoint ? { pos: this.waypoint, label: this.renderer.waypointLabel } : null;
+  }
+
+  /** While the plan is open, the sim is told what the map is looking at. */
+  private feedRecon(): void {
+    if (!this.sim.planViewActive) { this.sim.reconFocus = null; return; }
+    const cam = this.renderer.cam;
+    const radius = Math.min(this.renderer.w, this.renderer.h) / 2 / Math.max(0.5, cam.zoom);
+    this.sim.reconFocus = { centre: { x: cam.pos.x, y: cam.pos.y }, radius };
+  }
+
+  /**
+   * Recon, after the tick: the approach as it stands while the plan is open,
+   * the commitment when PLAN puts it away, and the barrier line before then.
+   */
+  private stepRecon(dt: number): void {
+    const open = this.sim.planViewActive;
+    const target = this.planTarget();
+    if (open) {
+      this.previewIn -= dt;
+      if (this.previewIn <= 0) {
+        this.previewIn = 0.15;
+        const draft = target ? draftPlan(this.sim, this.sim.recon, this.sim.player.pos, target.pos, target.label) : null;
+        this.renderer.planPreview = draft;
+        this.renderer.planChain = draft && draft.steps.length > 1 ? chainText(draft) : null;
+      }
+    } else if (this.reconWasOpen) {
+      // PLAN: commit. Anything else that closed it: just closed.
+      if (!this.planCancelled && target) {
+        const plan = this.sim.commitPlan(target.pos, target.label);
+        if (plan) {
+          this.jobHud.say({ text: RECON_COPY.committed, tone: 'info' });
+          this.audio.hackDone();
+          this.stripLinger = 0;
+        }
+      }
+      this.planCancelled = false;
+      this.renderer.planPreview = null;
+      this.renderer.planChain = null;
+      this.probe = null;
+      this.renderer.probe = null;
+    }
+    this.reconWasOpen = open;
+
+    // A finished plan stays on the strip for a moment, then goes.
+    const plan = this.sim.plan;
+    if (plan && plan.status !== 'executing' && this.stripLinger > 0) {
+      this.stripLinger -= dt;
+      if (this.stripLinger <= 0) this.sim.plan = null;
+    }
+
+    // Before a plan: is something watching the way?
+    this.barrierIn -= dt;
+    if (this.barrierIn <= 0) {
+      this.barrierIn = 0.35;
+      this.barrierId = !open && !this.sim.plan ? barrierAhead(this.sim, target?.pos ?? null) : null;
+    }
   }
 
   private stepJob(dt: number): void {
@@ -905,6 +1004,19 @@ class Game {
         this.audio.flutter();
       }
     });
+    // Recon pays off, or does not, out loud.
+    bus.on('recon:intel', ({ kind }) => { if (kind === 'timed') this.audio.hackDone(); else this.audio.hackTick(); });
+    bus.on('plan:held', () => {
+      this.jobHud.say({ text: RECON_COPY.held, tone: 'good' });
+      this.audio.clue();
+      this.stripLinger = STRIP_LINGER;
+    });
+    bus.on('plan:blown', () => {
+      // The stamp says what happened; the strip under the run says why.
+      this.jobHud.say({ text: RECON_COPY.blown, tone: 'warn' });
+      this.audio.servo();
+      this.stripLinger = STRIP_LINGER;
+    });
     // Cameras turning to a sound are heard doing it, faintly.
     bus.on('world:attention', ({ pos, sensors }) => {
       if (sensors.length) this.audio.servo();
@@ -1062,7 +1174,9 @@ class Game {
 
     if (tap) this.resolveTap(tap);
     this.orientMove();
+    this.feedRecon();
     this.sim.step(dt, this.intent, this.aimPoint());
+    this.stepRecon(dt);
     if (this.mode === 'jobs') { this.stepTrouble(dt); this.stepJob(dt); return; }
     this.story.update();
 
@@ -1290,6 +1404,10 @@ class Game {
     if (this.run && this.mode === 'jobs') {
       this.jobHud.update(this.run, dt, this.sim.player.pos, this.renderer.chase.yaw);
     }
+    const strip = this.phase === 'play' && !this.sim.planViewActive ? stripView(this.sim, this.sim.plan, this.renderer.chase.yaw) : null;
+    const barrier = this.phase === 'play' && !this.sim.planViewActive && this.barrierId
+      ? RECON_COPY.barrier(this.barrierId, this.touchPrimary) : null;
+    this.planStrip.show(strip, barrier);
     this.audio.setDraw(this.sim.aimMode || this.sim.player.aiming ? this.sim.player.draw : 0);
 
     const p = this.sim.player;

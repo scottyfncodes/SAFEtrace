@@ -298,6 +298,62 @@ export const PLAN = {
 };
 
 /**
+ * Recon, and the plan it becomes (sim/recon.ts). The plan view is where the
+ * player works a barrier out; PLAN is where they commit to how. Short,
+ * because it is read on the move, and always about a thing the player could
+ * have seen: a camera, its timing, a stone.
+ */
+export const RECON_COPY = {
+  /** Under the reticle in the middle of the map. */
+  focus: 'HOLD A CAMERA IN THE MIDDLE TO READ IT',
+  spotted: (id: string) => `${id} SPOTTED`,
+  timed: (id: string, sweepDeg: number, period: number) =>
+    sweepDeg > 0 ? `${id} · SWINGS ${sweepDeg}° EVERY ${Math.round(period)}s` : `${id} · FIXED`,
+  /** On the plan, the approach as it stands. */
+  preview: (chain: string) => `PLAN: ${chain}`,
+  noBarrier: 'NOTHING WATCHES THIS WAY',
+  unscouted: (n: number) => `${n} CAMERA${n === 1 ? '' : 'S'} ON THIS WAY NOT READ YET`,
+  noTarget: 'MARK WHERE YOU ARE GOING TO PLAN A WAY THERE',
+  commitTouch: 'PLAN TO COMMIT · DRAG TO LOOK',
+  commitMouse: 'Q TO COMMIT · DRAG TO LOOK · SCROLL TO ZOOM',
+  /** One step of a plan, as the chain prints it. */
+  step: {
+    distract: (id: string) => `STONE → ${id} TURNS`,
+    gap: (id: string, gap: number) => `${id} GAP ${gap.toFixed(1)}s`,
+    covered: (id: string) => `${id} NEVER LOOKS AWAY`,
+    unknown: (id: string) => `${id} ?`,
+    target: (label: string | null) => label ?? 'THERE',
+  },
+  /** The stamp across the glass. */
+  committed: 'PLAN SET',
+  held: 'PLAN HELD',
+  blown: 'PLAN BLOWN',
+  /** Why, in a line: always something the recon could have shown. */
+  reason: {
+    unscouted: (id: string) => `${id} — NOT IN YOUR RECON`,
+    mistimed: (id: string) => `${id} SWUNG BACK — MISTIMED`,
+    unturned: (id: string) => `${id} WAS NEVER TURNED`,
+    turning: (id: string) => `${id} HADN'T TURNED YET`,
+    woreOff: (id: string) => `${id} TURNED BACK — TOO SLOW`,
+    lookedBack: (id: string) => `${id} LOOKED BACK UP THE THROW`,
+    inCone: (id: string) => `${id} NEVER LOOKS AWAY`,
+    offRoute: (id: string) => `${id} — OFF YOUR WAY`,
+  } as Record<string, (id: string) => string>,
+  /** Live, on the strip, for the step being executed. */
+  live: {
+    throwAt: (id: string, m: number, arrow: string) => `STONE ${m} m ${arrow} → ${id}`,
+    turned: (id: string, s: number) => `${id} TURNED · GO · ${s.toFixed(1)}s`,
+    go: (id: string, s: number) => `${id} AWAY · GO · ${s.toFixed(1)}s`,
+    wait: (id: string, s: number) => `${id} · WAIT ${s.toFixed(1)}s`,
+    covered: (id: string) => `${id} NEVER LOOKS AWAY`,
+    unknown: (id: string) => `${id} · NOT READ`,
+    target: (m: number, arrow: string) => `${m} m ${arrow}`,
+  },
+  /** The barrier: something watches the way, and recon is one press away. */
+  barrier: (id: string, touch: boolean) => `${id} COVERS YOUR WAY · ${touch ? 'PLAN' : 'Q'} TO RECON`,
+};
+
+/**
  * What the plan says about the surveillance, in the player's voice before
  * VISION and the machine's after it. These are readings, not instructions:
  * they say what the town will do, and leave what to do about it to the player.

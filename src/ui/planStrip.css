@@ -1,0 +1,44 @@
+/* ======================================================================
+   The plan, carried out into the street. The same dark glass and hairline
+   as the run strip, under it: the committed chain, the step being done lit
+   in the system's cyan, and one live line. Holes in the plan — a camera
+   never read, one that never looks away — are the attention colour,
+   because that is where it will go wrong.
+   ====================================================================== */
+
+#plan-strip {
+  box-sizing: border-box;
+  position: absolute; top: calc(20px + var(--plan-strip-offset, 96px)); left: 50%; transform: translateX(-50%);
+  max-width: min(460px, calc(100vw - 40px));
+  font-family: var(--font-mono); color: var(--ink-text);
+  font-size: calc(9.5px * var(--text-scale));
+  letter-spacing: var(--track-tech);
+  background: var(--brackets), var(--glass-soft);
+  --bk: var(--sys-line);
+  border: 1px solid var(--ink-line);
+  border-left: 2px solid var(--sys);
+  border-radius: var(--r-sm); clip-path: var(--clip-panel);
+  padding: 5px 10px 6px;
+  pointer-events: none;
+  transition: opacity 260ms var(--ease), border-color 260ms var(--ease);
+}
+#plan-strip.hidden { opacity: 0; }
+#plan-strip .ps-chain { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+#plan-strip .ps-chain em { font-style: normal; color: var(--sys); font-weight: 600; margin-right: 2px; }
+#plan-strip .ps-chain b { color: var(--ink-faint); font-weight: 400; }
+#plan-strip .ps-done { color: var(--ink-muted); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+#plan-strip .ps-now { color: var(--sys); font-weight: 600; }
+#plan-strip .ps-next { color: var(--ink-text-2); }
+#plan-strip .ps-hole { color: var(--st-orange); }
+#plan-strip .ps-live { margin-top: 3px; color: var(--own); font-weight: 500; }
+#plan-strip .ps-chain + .ps-live { border-top: 1px solid var(--ink-line); padding-top: 3px; }
+
+#plan-strip.t-held { border-left-color: var(--st-acid); --bk: rgba(var(--st-acid-rgb), 0.5); }
+#plan-strip.t-held .ps-chain em { color: var(--st-acid); }
+#plan-strip.t-blown { border-left-color: var(--st-orange); --bk: rgba(var(--st-orange-rgb), 0.5); }
+#plan-strip.t-blown .ps-chain em { color: var(--st-orange); }
+#plan-strip.t-barrier { border-left-color: var(--st-orange); }
+#plan-strip.t-barrier .ps-live { margin-top: 0; color: var(--ink-text); }
+
+/* Story mode has no run strip above it. */
+:root:not(.jobs-mode) #plan-strip { --plan-strip-offset: 0px; top: calc(20px + var(--safe-top, 0px) + 44px); }

@@ -24,6 +24,8 @@ export const STYLE = {
   grindPerSecond: 420,
   /** Setting a board down on a roof. */
   roof: 400,
+  /** Getting to where the plan said, the way the plan said: the recon was right. */
+  plan: 600,
   /** Per second of air, paid on landing, for air longer than `airFloor`. */
   air: 220,
   airFloor: 0.7,

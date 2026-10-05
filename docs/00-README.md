@@ -53,6 +53,7 @@ before implementation and is the authority for what the game is trying to be.
 | 46 | [The Observation System](46-the-observation-system.md) | A visual identity pass: one squared, bracketed, mono-labelled language over every screen, an observation frame that lights only when the system has you, and nothing in the game changed |
 | 47 | [The First Minute](47-the-first-minute.md) | The board opens on air off the Lot, the sling teaches itself on its own button, the match lands on Devon, each day has its own conditions, and the town's sound follows the system's attention |
 | 48 | [Fourteen](48-fourteen.md) | The rider and Devon drawn as teenagers: a shorter frame with a larger head and narrow shoulders, then an oversized hoodie, baggy trousers, chunky shoes and a slouchy beanie with hair escaping it |
+| 49 | [Recon, and the Plan](49-recon-and-the-plan.md) | PLAN commits: recon reads the cameras held in the middle of the map and the spots you mark, the plan becomes a chain of steps (a stone, a gap, a warning, a hole), and the town decides whether it holds — and says why when it does not |
 
 ## The one-sentence pitch
 
