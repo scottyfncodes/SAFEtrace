@@ -219,6 +219,22 @@ export class Sim {
   npcSubjects: Subject[] = [];
   npcTracks: Track[] = [];
 
+  /**
+   * Marks a stone leaves that stay: a smashed window, a starred windscreen.
+   * Kept for the renderer and for the town's memory of the afternoon.
+   */
+  readonly damage: Array<{ pos: Vec2; z: number; facing: number; kind: 'pane' | 'windscreen'; tick: number }> = [];
+  /**
+   * When the trouble layer is running (sim/trouble.ts), it owns the police:
+   * the story's own offence reports stand down so two systems do not send
+   * the same officer.
+   */
+  troubleActive = false;
+  /** Board and sling confiscated: on foot, nothing to throw, nothing to grind. */
+  grounded = false;
+  /** Officers the trouble layer has sent somewhere, and how fast. */
+  private readonly patrolOrders = new Map<string, { target: Vec2; speed: number; path: Vec2[]; repath: number }>();
+
   /** Everything in the town a board can grind, worked out once (traversal/grinds.ts). */
   readonly grinds: GrindLine[];
   /** The grind in progress, if the board is on a line. */
@@ -473,6 +489,7 @@ export class Sim {
     // device and cannot drift between them.
     const looking = intent.planView;
     if (looking) intent = suppressWhileLooking(intent);
+    if (this.grounded) intent = groundedIntent(intent);
 
     if (intent.aimModePressed) {
       if (this.aimMode) this.exitAimMode(); else this.enterAimMode();
@@ -1225,6 +1242,7 @@ export class Sim {
           this.bus.emit('projectile:impact', {
             kind: impact.kind, pos: { ...impact.pos }, z: impact.z, speed, surface, vel: { ...impact.vel },
           });
+          if (impact.kind === 'building') this.maybeBreakWindow(impact.pos, impact.z, impact.vel, speed);
           this.makeNoise('noise', impact.pos, NOISE_REACH.ground, 4.5, 0.9,
             { vel: impact.vel, vz: impact.vz, z: impact.z });
         }
@@ -1605,6 +1623,7 @@ export class Sim {
       prop.knockedAt = this.tick;
       prop.knockDir = Math.atan2(vel.y, vel.x);
       const isCar = prop.kind === 'car';
+      if (isCar) this.markDamage('windscreen', prop.pos, 1.25, Math.atan2(-vel.y, -vel.x));
       const label = isCar ? 'VEHICLE ALARM' : SYSTEM.noiseAnomaly;
       if (isCar) prop.alarmUntil = this.tick + 60 * 30;
       // The most powerful use of the slingshot: making a sound somewhere you are not.
@@ -2011,6 +2030,7 @@ export class Sim {
    * it. There is no other caller, and there must never be one.
    */
   reportOffence(track: Track, at: Vec2, reason: string): void {
+    if (this.troubleActive && track === this.playerTrack) return;
     track.wantedUntil = Math.max(track.wantedUntil, this.tick + WANTED_TICKS);
     this.dispatcher.pursuit.report(track.id, track, this.tick, at, reason);
   }
@@ -2090,6 +2110,8 @@ export class Sim {
     for (const p of this.patrols) {
       // The unit routes to the forecast, not to the truth — and only while
       // somebody is actually looking at the subject.
+      const order = this.patrolOrders.get(p.id);
+      if (order) { this.moveOnOrder(p, order, dt); continue; }
       const live = p.task ? this.liveTargetFor(p.task) : null;
       updatePatrol(p, dt, this.world, live);
 
@@ -2474,6 +2496,9 @@ export class Sim {
     for (const p of this.patrols) Object.assign(p, makePatrol(p.id, p.route, p.home));
     for (const a of this.assets) { a.available = true; a.task = null; }
     this.huntedBy.clear();
+    this.patrolOrders.clear();
+    this.damage.length = 0;
+    if (this.grounded) { this.player.onBoard = false; this.player.stance = 'FOOT'; }
     this.dispatcher = new Dispatcher();
     this.disturbance.reset();
     this.evidence.clear();
@@ -2518,6 +2543,78 @@ export class Sim {
       d.state = track ? 'TRACK' : 'INVESTIGATE';
       d.reason = reason;
     }
+  }
+
+  /**
+   * Send an officer somewhere at a speed, outside the dispatcher: the trouble
+   * layer's chase. Straight at the target when there is a clear line, round
+   * by the roads when there is not.
+   */
+  commandPatrol(id: string, target: Vec2, speed: number): void {
+    const p = this.patrols.find((x) => x.id === id);
+    if (!p) return;
+    const a = this.assets.find((x) => x.id === id);
+    if (a) { a.available = false; a.task = null; }
+    const o = this.patrolOrders.get(id);
+    if (o) { o.target = { ...target }; o.speed = speed; return; }
+    p.task = null;
+    p.state = 'RESPONDING';
+    p.reason = 'PURSUIT';
+    this.patrolOrders.set(id, { target: { ...target }, speed, path: [], repath: 0 });
+  }
+
+  /** Stand an officer down: back to the beat. */
+  releasePatrol(id: string): void {
+    if (!this.patrolOrders.delete(id)) return;
+    const p = this.patrols.find((x) => x.id === id);
+    if (p) { p.state = 'ROUTINE'; p.task = null; p.path = []; p.reason = 'ROUTINE PATROL'; }
+    this.releaseAsset(id);
+  }
+
+  private moveOnOrder(p: Patrol, o: { target: Vec2; speed: number; path: Vec2[]; repath: number }, dt: number): void {
+    const direct = dist(p.pos, o.target) < 14 || !this.world.blocked(p.pos, o.target, 1.7);
+    let goal = o.target;
+    if (!direct) {
+      o.repath -= dt;
+      if (o.repath <= 0 || o.path.length === 0) {
+        o.repath = 1.2;
+        const a = this.world.nearestRoadNode(p.pos), b = this.world.nearestRoadNode(o.target);
+        o.path = a && b ? [...this.world.pathPoints(a.id, b.id), o.target] : [o.target];
+      }
+      while (o.path.length > 1 && dist(p.pos, o.path[0]) < 3) o.path.shift();
+      goal = o.path[0] ?? o.target;
+    } else {
+      o.path = [];
+    }
+    const want = Math.atan2(goal.y - p.pos.y, goal.x - p.pos.x);
+    p.heading = want;
+    const step = Math.min(o.speed * dt, dist(p.pos, goal));
+    const to = { x: p.pos.x + Math.cos(want) * step, y: p.pos.y + Math.sin(want) * step };
+    p.pos = this.world.resolveCollision(p.pos, to, 0.5);
+  }
+
+  /** Which officers are on a chase order. */
+  get orderedPatrols(): string[] { return [...this.patrolOrders.keys()]; }
+
+  /**
+   * A stone into a wall at window height, on a building people use, is a
+   * window. Hard enough, and it goes.
+   */
+  private maybeBreakWindow(pos: Vec2, z: number, vel: Vec2, speed: number): void {
+    if (speed < 9 || z < 0.8) return;
+    const back = { x: pos.x - (vel.x / (Math.hypot(vel.x, vel.y) || 1)) * 0.3, y: pos.y - (vel.y / (Math.hypot(vel.x, vel.y) || 1)) * 0.3 };
+    const b = this.world.buildingAt({ x: pos.x + (pos.x - back.x), y: pos.y + (pos.y - back.y) }) ?? this.world.buildingAt(pos);
+    if (!b || b.kind === 'structure' || b.kind === 'utility' || b.kind === 'shed' || z > b.height - 0.4) return;
+    if (this.damage.some((d) => d.kind === 'pane' && dist(d.pos, pos) < 0.8 && Math.abs(d.z - z) < 0.8)) return;
+    this.markDamage('pane', back, z, Math.atan2(-vel.y, -vel.x));
+    this.bus.emit('world:glass', { pos: { ...pos }, z, buildingId: b.id, kind: b.kind });
+    const loud = b.kind === 'shop' || b.kind === 'civic' || b.kind === 'school';
+    this.makeNoise(loud ? 'alarm' : 'clatter', pos, loud ? NOISE_REACH.car : NOISE_REACH.prop, loud ? 10 : 6, 1, null, loud ? 'ALARM' : 'GLASS');
+  }
+
+  private markDamage(kind: 'pane' | 'windscreen', pos: Vec2, z: number, facing: number): void {
+    this.damage.push({ pos: { ...pos }, z, facing, kind, tick: this.tick });
+    if (this.damage.length > 160) this.damage.shift();
   }
 
   /** Call a job's drone off: it goes back to its round. */
@@ -2572,6 +2669,15 @@ export class Sim {
  * the stick did nothing, so "find where I am going" and "go there" could not
  * happen in the same view. Moving is what the plan is for.
  */
+/** No board, no sling: feet, and eyes. */
+function groundedIntent(intent: Intent): Intent {
+  return {
+    ...intent, toggleStance: false, aim: false, fire: false, firePressed: false, aimModePressed: false,
+    trickPressed: false, grabPressed: false, grind: false, grindPressed: false, olliePressed: false,
+    ollieHeld: false, ollieReleased: false, throwVector: null, drawAmount: null,
+  };
+}
+
 function suppressWhileLooking(intent: Intent): Intent {
   return {
     ...intent,

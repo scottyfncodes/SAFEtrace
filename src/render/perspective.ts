@@ -1604,6 +1604,28 @@ export class PerspectiveRenderer {
    * rails as a bar on posts. These were in the world data all along and were
    * never drawn, so the ramps in Bellhaven were invisible.
    */
+  /**
+   * What stones have broken: a star of dark glass on the wall where a window
+   * went, a white star on a windscreen. Flat to the face it is on, a hair
+   * proud of it.
+   */
+  private collectDamage(sim: Sim, cam: Cam, near: (p: Vec2, r: number) => boolean): void {
+    for (const d of sim.damage) {
+      if (!near(d.pos, 90)) continue;
+      const nx = Math.cos(d.facing), ny = Math.sin(d.facing);
+      const tx = -ny, ty = nx;
+      const c = { x: d.pos.x + nx * 0.04, y: d.pos.y + ny * 0.04 };
+      const big = d.kind === 'pane' ? 0.55 : 0.4;
+      const pts = [];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r = i % 2 === 0 ? big * (0.8 + hash01(i * 31 + d.tick) * 0.5) : big * 0.28;
+        pts.push({ x: c.x + tx * Math.cos(a) * r, y: c.y + ty * Math.cos(a) * r, z: d.z + Math.sin(a) * r });
+      }
+      this.push(cam, pts, d.kind === 'pane' ? '#151B21' : '#F2F5F2');
+    }
+  }
+
   private collectSkateFeatures(sim: Sim, cam: Cam, near: (p: Vec2, r: number) => boolean): void {
     for (const f of sim.world.data.features) {
       const c = f.poly[0];
@@ -1708,6 +1730,7 @@ export class PerspectiveRenderer {
       if (p.can) this.boxAt(cam, { x: p.at.x + across.x * 0.34, y: p.at.y + across.y * 0.34 }, p.rot, 0.46, 0.46, POLE_H - 2.5, POLE_H - 1.3, PRINT.steel);
     }
     this.collectSkateFeatures(sim, cam, near);
+    this.collectDamage(sim, cam, near);
     const wasInking = this.inkAs;
     this.inkAs = null;
     for (const w of sd.wires) {
