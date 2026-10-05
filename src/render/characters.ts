@@ -57,6 +57,14 @@ export interface Body {
 }
 
 export const ADULT: Body = { scale: 1, shoulder: 0.22, hip: 0.15, headR: 0.13, limb: 0.145, stoop: 0 };
+/**
+ * Fourteen. Between the children (0.64, big heads) and the adults: about a
+ * metre sixty, a head a little large for the body, narrow shoulders that
+ * have not filled out, long thin limbs, and a slouch. Most of a teenager on
+ * a figure this size is the clothes (see `fit`), but the frame has to be
+ * right first or the clothes hang off a grown-up.
+ */
+export const TEEN: Body = { scale: 0.9, shoulder: 0.185, hip: 0.14, headR: 0.158, limb: 0.115, stoop: 0.035 };
 
 export type Gait = 'stand' | 'walk' | 'run' | 'ride';
 export type Gesture = 'stop' | 'radio' | null;
@@ -85,6 +93,14 @@ export interface Look {
   badge?: string;
   /** Apron, belt, coat lining: the garment's second colour. */
   trim?: string;
+  /**
+   * How it is worn. `baggy` is a skater's: an oversized hoodie or tee to
+   * below the hips with dropped shoulders and wide sleeves, wide trousers or
+   * long shorts, and chunky shoes with a sole you can see.
+   */
+  fit?: 'baggy';
+  /** Hair escaping from under the hat at the front and over the ears. */
+  fringe?: boolean;
 }
 
 // ------------------------------------------------------------------ colour
@@ -273,16 +289,22 @@ export function officerLook(id: string): Look {
  * is Devon before he is green, and before he is close.
  */
 export const DEVON: Look = {
-  body: { ...ADULT, scale: 0.97, shoulder: 0.2, limb: 0.13 },
+  body: { ...TEEN, scale: 0.89, shoulder: 0.18 },
   garment: 'tee', top: VENEER.friend, bottom: '#2F343C', skin: VENEER.skin, hair: VENEER.hair[0], hairStyle: 'short',
   hat: 'bucket', hatColour: VENEER.friendHat, shoes: '#E4E0D6', shorts: true, carry: 'board', carryColour: shade(VENEER.friend, -0.45),
+  fit: 'baggy', fringe: true,
 };
 
-/** The rider: amber hoodie, dark trousers, a dark beanie, light skate shoes. */
+/**
+ * The rider, fourteen: an oversized amber hoodie with the hood down and
+ * bunched at the neck, baggy dark trousers stacked over chunky skate shoes,
+ * and a slouchy dark beanie with hair pushing out from under it.
+ */
 export const RIDER: Look = {
-  body: { ...ADULT, scale: 0.98, limb: 0.13 },
-  garment: 'hoodie', top: SIGNAL.player, bottom: VENEER.trousers[0], skin: VENEER.skin, hair: VENEER.hair[0], hairStyle: 'short',
+  body: TEEN,
+  garment: 'hoodie', top: SIGNAL.player, bottom: VENEER.trousers[0], skin: VENEER.skin, hair: VENEER.hair[2], hairStyle: 'short',
   hat: 'beanie', hatColour: PRINT.ink, shoes: '#E4E0D6', carry: 'none', carryColour: PRINT.ink,
+  fit: 'baggy', fringe: true,
 };
 
 /** The named people of Bellhaven, so you know them before they speak. */
@@ -431,32 +453,61 @@ export function paintFigure(ctx: CanvasRenderingContext2D, proj: Projector, j: J
   const add = (a: P3, f: number, r: number, z: number): P3 => ({ x: a.x + (fx * f + rx * r) * k, y: a.y + (fy * f + ry * r) * k, z: a.z + z * k });
 
   // ---- legs and shoes
+  const baggy = look.fit === 'baggy';
   const shins = look.shorts ? look.skin : look.bottom;
   for (const side of ['L', 'R'] as const) {
     const hip = j[`hip${side}`], knee = j[`knee${side}`], foot = j[`foot${side}`];
-    limb(hip, knee, q[`hip${side}`], q[`knee${side}`], look.body.limb * 1.1, look.bottom);
-    limb(knee, foot, q[`knee${side}`], q[`foot${side}`], look.body.limb * 0.95, shins);
+    // Baggy: wide all the way down, the trousers as wide at the ankle as the thigh.
+    limb(hip, knee, q[`hip${side}`], q[`knee${side}`], look.body.limb * (baggy ? 1.55 : 1.1), look.bottom);
+    limb(knee, foot, q[`knee${side}`], q[`foot${side}`], look.body.limb * (baggy && !look.shorts ? 1.5 : 0.95), shins);
+    if (baggy && look.shorts) {
+      // Long shorts: they finish a hand's width below the knee.
+      const cut = { x: knee.x + (foot.x - knee.x) * 0.28, y: knee.y + (foot.y - knee.y) * 0.28, z: knee.z + (foot.z - knee.z) * 0.28 };
+      const pc = P(cut);
+      if (pc) limb(knee, cut, q[`knee${side}`], pc, look.body.limb * 1.55, look.bottom);
+    }
     const tx = Math.cos(j.toes), ty = Math.sin(j.toes);
-    const heel = { x: foot.x - tx * 0.05 * k, y: foot.y - ty * 0.05 * k, z: foot.z + 0.04 * k };
-    const toe = { x: foot.x + tx * 0.17 * k, y: foot.y + ty * 0.17 * k, z: foot.z + 0.04 * k };
+    // Skate shoes are big: longer, wider, and on a sole of their own.
+    const back = baggy ? 0.07 : 0.05, ahead = baggy ? 0.19 : 0.17;
+    const heel = { x: foot.x - tx * back * k, y: foot.y - ty * back * k, z: foot.z + 0.04 * k };
+    const toe = { x: foot.x + tx * ahead * k, y: foot.y + ty * ahead * k, z: foot.z + 0.04 * k };
     const ph = small ? null : P(heel), pt = small ? null : P(toe);
-    if (ph && pt) limb(heel, toe, ph, pt, 0.09, look.shoes);
+    if (ph && pt) {
+      if (baggy) {
+        const sh = { ...heel, z: foot.z + 0.005 }, st = { ...toe, z: foot.z + 0.005 };
+        const psh = P(sh), pst = P(st);
+        if (psh && pst) limb(sh, st, psh, pst, 0.08, '#3A3F46');
+      }
+      limb(heel, toe, ph, pt, baggy ? 0.12 : 0.09, look.shoes);
+    }
   }
 
   // ---- torso: shoulders to hips, or to the hem of whatever they wear
-  const hemZ = look.garment === 'coat' ? 0.42 : look.garment === 'dress' ? 0.38 : look.garment === 'tee' && look.hat === 'bucket' ? 0.66 : 0.8;
-  const flare = look.garment === 'coat' ? 0.06 : look.garment === 'dress' ? 0.12 : 0.02;
+  const hemZ = look.garment === 'coat' ? 0.42 : look.garment === 'dress' ? 0.38
+    : look.garment === 'tee' && look.hat === 'bucket' ? 0.66 : baggy ? 0.7 : 0.8;
+  const flare = look.garment === 'coat' ? 0.06 : look.garment === 'dress' ? 0.12 : baggy ? 0.07 : 0.02;
   const hemL = P({ ...add(j.hipL, 0, -flare, 0), z: (look.body.scale * hemZ) + (j.pelvis.z - 0.9 * k) });
   const hemR = P({ ...add(j.hipR, 0, flare, 0), z: (look.body.scale * hemZ) + (j.pelvis.z - 0.9 * k) });
   const neck = P(add(j.chest, 0, 0, 0.06));
   if (!hemL || !hemR || !neck) return;
-  const torso = [q.shL, neck, q.shR, hemR, hemL];
+  // Oversized: the shoulder seam drops off the shoulder, so the body is a box.
+  const drop = (sh: P3, side: number) => (baggy ? P(add(sh, 0, side * 0.035, -0.03)) : null);
+  const shLo = drop(j.shL, -1) ?? q.shL, shRo = drop(j.shR, 1) ?? q.shR;
+  const torso = [shLo, neck, shRo, hemR, hemL];
   const midTop = neck, midBot = lerpPt(hemL, hemR, 0.5);
-  const shadowSide = shadowRight ? [midTop, q.shR, hemR, midBot] : [q.shL, midTop, midBot, hemL];
+  const shadowSide = shadowRight ? [midTop, shRo, hemR, midBot] : [shLo, midTop, midBot, hemL];
   const lines: Array<[Pt, Pt]> = [];
   if (look.garment === 'coat' && front > -0.2) lines.push([neck, midBot]);
   if (look.garment === 'uniform') lines.push([lerpPt(q.shL, hemL, 0.62), lerpPt(q.shR, hemR, 0.62)]);
   if (look.garment === 'cardigan' && front > -0.2) lines.push([neck, lerpPt(midTop, midBot, 0.7)]);
+  // A hoodie from the front: the pouch pocket across the belly, and the cords.
+  if (look.garment === 'hoodie' && front > 0.15 && !small) {
+    const p0 = lerpPt(lerpPt(shLo, hemL, 0.68), lerpPt(shRo, hemR, 0.68), 0.18);
+    const p1 = lerpPt(lerpPt(shLo, hemL, 0.68), lerpPt(shRo, hemR, 0.68), 0.82);
+    lines.push([p0, p1]);
+    const c0 = lerpPt(neck, lerpPt(shLo, shRo, 0.42), 0.6), c1 = lerpPt(neck, lerpPt(shLo, shRo, 0.58), 0.6);
+    lines.push([c0, lerpPt(c0, midBot, 0.22)], [c1, lerpPt(c1, midBot, 0.2)]);
+  }
   const torsoDepth = dist(j.chest) + 0.001;
   poly(torso, torsoDepth, look.top, { ps: shadowSide, col: shade(look.top, -0.28) }, lines);
   // A belt, or an apron's bib, on the front of the body.
@@ -481,9 +532,28 @@ export function paintFigure(ctx: CanvasRenderingContext2D, proj: Projector, j: J
   for (const side of ['L', 'R'] as const) {
     const sh = j[`sh${side}`], el = j[`el${side}`], hand = j[`hand${side}`];
     const nearer = !small && (dist(sh) + dist(hand)) / 2 < torsoDepth - 0.04;
-    limb(sh, el, q[`sh${side}`], q[`el${side}`], look.body.limb * 0.95, sleeve, nearer);
-    limb(el, hand, q[`el${side}`], q[`hand${side}`], look.body.limb * 0.8, fore, nearer);
+    const sw = baggy && sleeve === look.top ? 1.3 : 1;
+    limb(sh, el, q[`sh${side}`], q[`el${side}`], look.body.limb * 0.95 * sw, sleeve, nearer);
+    limb(el, hand, q[`el${side}`], q[`hand${side}`], look.body.limb * 0.8 * (baggy && fore === look.top ? 1.3 : 1), fore, nearer);
     if (!small) disc(q[`hand${side}`], 0.05 * k * q[`hand${side}`].s, dist(hand) - 0.001, look.skin, nearer);
+  }
+
+  // ---- the hood, down: a flat roll of fabric behind the neck.
+  if (look.garment === 'hoodie' && look.hat !== 'hood') {
+    const hood = add(j.chest, -0.12, 0, -0.01), ph = P(hood);
+    const hl = P(add(j.chest, -0.11, -0.12, -0.02)), hr = P(add(j.chest, -0.11, 0.12, -0.02));
+    if (ph && hl && hr) {
+      const col = shade(look.top, -0.14);
+      parts.push({
+        depth: dist(hood), inner: front > 0,
+        draw: (pass) => {
+          const w = Math.hypot(hr.x - hl.x, hr.y - hl.y) / 2 + (pass === 'ink' ? ink : 0);
+          const h = 0.065 * k * ph.s + (pass === 'ink' ? ink : 0);
+          ctx.beginPath(); ctx.ellipse(ph.x, ph.y, Math.max(1, w), Math.max(1, h), Math.atan2(hr.y - hl.y, hr.x - hl.x), 0, Math.PI * 2);
+          ctx.fillStyle = pass === 'ink' ? INK : col; ctx.fill();
+        },
+      });
+    }
   }
 
   // ---- carried things
@@ -555,8 +625,27 @@ export function paintFigure(ctx: CanvasRenderingContext2D, proj: Projector, j: J
       if (sp) { const a = Math.atan2(sp.y - hp.y, sp.x - hp.x); ctx.beginPath(); ctx.arc(hp.x, hp.y, R, a - Math.PI / 2, a + Math.PI / 2); ctx.closePath(); ctx.fillStyle = shade(look.skin, -0.25); ctx.fill(); }
       if (look.hat === 'hood') return;
       // Hair: more of the head from behind than from in front.
-      const cover = look.hairStyle === 'crop' ? 0.3 + Math.max(0, -headFront) * 0.35 : 0.42 + Math.max(0, -headFront) * 0.4;
+      const cover = look.fringe && look.hat !== 'none' ? 0.74
+        : look.hairStyle === 'crop' ? 0.3 + Math.max(0, -headFront) * 0.35 : 0.42 + Math.max(0, -headFront) * 0.4;
       capOf(cover, look.hair)('fill');
+      if (look.fringe && look.hat !== 'none') {
+        // Not a band: hair, pushed out under the hat in uneven points.
+        const a0 = Math.atan2(U.y, U.x), sp = Math.acos(Math.max(-1, Math.min(1, 1 - 2 * cover)));
+        const e0 = { x: hp.x + Math.cos(a0 - sp) * R, y: hp.y + Math.sin(a0 - sp) * R };
+        const e1 = { x: hp.x + Math.cos(a0 + sp) * R, y: hp.y + Math.sin(a0 + sp) * R };
+        ctx.fillStyle = look.hair;
+        ctx.beginPath();
+        const n = 5;
+        for (let i = 0; i < n; i++) {
+          const t0 = i / n, t1 = (i + 1) / n, tm = (t0 + t1) / 2;
+          const len = R * (i % 2 ? 0.16 : 0.26);
+          const b0 = { x: e0.x + (e1.x - e0.x) * t0, y: e0.y + (e1.y - e0.y) * t0 };
+          const b1 = { x: e0.x + (e1.x - e0.x) * t1, y: e0.y + (e1.y - e0.y) * t1 };
+          const tip = { x: e0.x + (e1.x - e0.x) * tm - U.x * len, y: e0.y + (e1.y - e0.y) * tm - U.y * len };
+          ctx.moveTo(b0.x + U.x * R * 0.05, b0.y + U.y * R * 0.05); ctx.lineTo(tip.x, tip.y); ctx.lineTo(b1.x + U.x * R * 0.05, b1.y + U.y * R * 0.05);
+        }
+        ctx.fill();
+      }
       if (look.hairStyle === 'bun') { ctx.beginPath(); ctx.arc(hp.x + U.x * R * 0.95 - F.x * R * 0.5, hp.y + U.y * R * 0.95 - F.y * R * 0.5, R * 0.42, 0, Math.PI * 2); ctx.fillStyle = look.hair; ctx.fill(); }
       // A face, close enough to have one: a brow and a nose on the side it faces.
       if (headFront > 0.25 && R > 5) {
@@ -582,7 +671,17 @@ export function paintFigure(ctx: CanvasRenderingContext2D, proj: Projector, j: J
           ctx.save(); ctx.translate(U.x * R * lift, U.y * R * lift); capOf(cover, col, R * 0.04)('fill'); ctx.restore();
         };
         switch (look.hat) {
-          case 'beanie': crown(0.58, 0.12); break;
+          case 'beanie':
+            if (look.fit === 'baggy') {
+              // Slouchy: worn back off the forehead so hair shows under it,
+              // with the slack folded down behind — the shape that says how
+              // old the wearer is.
+              crown(0.5, 0.24);
+              const sx = hp.x + U.x * R * 1.05 - F.x * R * 0.6, sy = hp.y + U.y * R * 1.05 - F.y * R * 0.6;
+              ctx.beginPath(); ctx.ellipse(sx, sy, R * 0.6 + (pass === 'ink' ? ink : 0), R * 0.44 + (pass === 'ink' ? ink : 0), Math.atan2(U.x, -U.y), 0, Math.PI * 2);
+              ctx.fillStyle = pass === 'ink' ? INK : col; ctx.fill();
+            } else crown(0.58, 0.12);
+            break;
           case 'headband': if (pass === 'fill') { ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, R * 0.28); ctx.beginPath(); ctx.arc(hp.x, hp.y, R * 0.98, Math.atan2(U.y, U.x) - 1.3, Math.atan2(U.y, U.x) + 1.3); ctx.stroke(); } break;
           case 'bucket': brim(1.75, 0.42, 0.42); crown(0.5, 0.22); break;
           case 'brim': brim(1.9, 0.38, 0.5); crown(0.45, 0.35); break;

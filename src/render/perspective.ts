@@ -2471,7 +2471,15 @@ export class PerspectiveRenderer {
     const sliding = p.onBoard ? p.slip : 0;
     const load = clamp01(Math.abs(lean) * 0.55 + Math.max(0, -p.crouch) * 0.8 + tuck * 1.6 + sliding * 0.5);
     // The standing knee bends as the other foot goes down to the road.
-    const hipZ = z + 0.80 - crouch - load * 0.17 - reach * 0.07;
+    /*
+     * The frame is the look's: the rig below was built for a 0.98 adult, and
+     * everything vertical about the person — hip height, bones, torso, neck,
+     * shoulder width — scales from there, so a fourteen-year-old stands
+     * shorter on the same board without the feet leaving the deck.
+     */
+    const S = look.body.scale / 0.98;
+    const legU = LEG_UPPER * S, legL = LEG_LOWER * S, armU = ARM_UPPER * S, armL = ARM_LOWER * S;
+    const hipZ = z + 0.80 * S - crouch - load * 0.17 - reach * 0.07;
 
     /*
      * On foot, the legs do something else entirely: they run.
@@ -2513,8 +2521,8 @@ export class PerspectiveRenderer {
     const P3at = (q: Vec2, qz: number) => ({ x: q.x, y: q.y, z: qz });
     const hipL3 = P3at(hipL, hipZ), hipR3 = P3at(hipR, hipZ);
     const footL3 = P3at(leftFoot, leftZ), footR3 = P3at(rightFoot, rightZ);
-    const kneeL3 = solveTwoBone(hipL3, footL3, LEG_UPPER, LEG_LOWER, toe);
-    const kneeR3 = solveTwoBone(hipR3, footR3, LEG_UPPER, LEG_LOWER, toe);
+    const kneeL3 = solveTwoBone(hipL3, footL3, legU, legL, toe);
+    const kneeR3 = solveTwoBone(hipR3, footR3, legU, legL, toe);
     void legCol;
 
     /*
@@ -2531,7 +2539,7 @@ export class PerspectiveRenderer {
     const bodyAt = at(bodyF, bodyR);
     // Torso: taller than it is wide, sitting straight on top of the hips, so
     // the body reads as a body and not as a bar floating over a pair of legs.
-    const torsoH = 0.28 - dip * 0.5;
+    const torsoH = 0.28 * S - dip * 0.5;
 
     /*
      * Arms, with elbows in them.
@@ -2577,7 +2585,7 @@ export class PerspectiveRenderer {
     const arms: Record<number, { sh: { x: number; y: number; z: number }; el: { x: number; y: number; z: number }; hand: { x: number; y: number; z: number } }> = {};
     for (const side of [1, -1]) {
       // The shoulder is on the torso, not floating beside it.
-      const shoulder = at(bodyF, side * 0.17 + bodyR);
+      const shoulder = at(bodyF, side * look.body.shoulder * 0.8 + bodyR);
       /*
        * A grab sends one hand to the deck instead of out for balance —
        * `onBoard` is the same function the trick above turns the deck through,
@@ -2595,7 +2603,7 @@ export class PerspectiveRenderer {
           ? grabPoint.z
           : shoulderZ - 0.34 - side * lean * 0.12 + (p.stance === 'AIR' ? 0.14 : 0);
       const sh3 = P3at(shoulder, shoulderZ), hand3 = P3at(hand, handZ);
-      arms[side] = { sh: sh3, el: solveTwoBone(sh3, hand3, ARM_UPPER, ARM_LOWER, elbowTo), hand: hand3 };
+      arms[side] = { sh: sh3, el: solveTwoBone(sh3, hand3, armU, armL, elbowTo), hand: hand3 };
     }
     void sleeve;
     if (slingOn) {
@@ -2614,7 +2622,11 @@ export class PerspectiveRenderer {
     const joints: Joints = {
       pelvis: { x: (hipL.x + hipR.x) / 2, y: (hipL.y + hipR.y) / 2, z: hipZ },
       chest: { ...bodyAt, z: shoulderZ - 0.02 },
-      head: { ...bodyAt, z: shoulderZ + 0.17 },
+      // The neck, then the head: a slouch puts it a little ahead of the chest.
+      head: {
+        x: bodyAt.x + toe.x * look.body.stoop, y: bodyAt.y + toe.y * look.body.stoop,
+        z: shoulderZ + 0.045 * S + look.body.headR * look.body.scale,
+      },
       // Left is the rider's front foot; in the body's own frame that is its
       // left hand side only when facing the toe edge, which it is.
       hipL: hipL3, hipR: hipR3, kneeL: kneeL3, kneeR: kneeR3, footL: footL3, footR: footR3,
