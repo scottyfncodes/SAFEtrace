@@ -22,6 +22,7 @@
 import type { Vec2 } from '../core/math';
 import { clamp, clamp01, damp, lerp, smoothstep, solveTwoBone, wrapAngle } from '../core/math';
 import { hashString } from '../core/rng';
+import type { Shot } from './camera';
 import type { Sim } from '../sim/sim';
 import type { RockShape } from '../sim/slingshot';
 import type { Building, Prop, WorldData } from '../sim/worldTypes';
@@ -265,7 +266,7 @@ export class ChaseCamera {
    * standing on Maple Court. The advertisement is the front end; this puts
    * the tour back.
    */
-  cinematic: { pos: Vec2; zoom: number } | null = null;
+  cinematic: Shot | null = null;
   private cineYaw = -2.2;
   private cineTime = 0;
   /** The last frame the rig showed, so leaving a shot is a move rather than a cut. */
@@ -337,7 +338,7 @@ export class ChaseCamera {
     this.cineTime += dt;
     if (this.cinematic) {
       // A slow orbit: nothing in the advertisement is ever still.
-      this.cineYaw += dt * 0.045;
+      if (!this.cinematic.still) this.cineYaw += dt * 0.045;
       this.handoff = null;
       return;
     }
@@ -501,13 +502,14 @@ export class ChaseCamera {
       // The advertisement authored its shots as pixels-per-metre over a flat
       // map. The same number reads naturally as a distance: tighter framing,
       // closer rig.
-      const d = clamp(720 / Math.max(4, c.zoom), 40, 110);
-      const yaw = this.cineYaw + Math.sin(this.cineTime * 0.07) * 0.1;
-      const h = d * 0.62;
+      const d = c.close?.dist ?? clamp(720 / Math.max(4, c.zoom), 40, 110);
+      const yaw = this.cineYaw + (c.still ? 0 : Math.sin(this.cineTime * 0.07) * 0.1);
+      const h = c.close?.height ?? d * 0.62;
       const s: CamState = {
         pos: { x: c.pos.x - Math.cos(yaw) * d, y: c.pos.y - Math.sin(yaw) * d, z: h },
         yaw,
-        pitch: -Math.atan2(h, d) * 0.92,
+        // A portrait aims short of the subject, which lifts them up the frame.
+        pitch: c.close ? -Math.atan2(h, Math.max(1, d - c.close.lead)) : -Math.atan2(h, d) * 0.92,
       };
       this.lastState = s;
       // The rig itself is parked where the shot hands over, so the first

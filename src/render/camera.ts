@@ -1,4 +1,17 @@
 /** View transform: follow, lookahead, zoom by speed, and shake. */
+
+/**
+ * A scripted shot. `close` is a portrait rather than a tour: the rig sits a
+ * few metres off the subject and aims a little short of it, so the subject
+ * stands in the upper part of the frame with room underneath (the title).
+ */
+export interface Shot {
+  pos: Vec2;
+  zoom: number;
+  close?: { dist: number; height: number; lead: number };
+  /** Reduced motion: hold the shot rather than orbit. */
+  still?: boolean;
+}
 import { type Vec2, clamp, damp, lerp } from '../core/math';
 
 export class ViewCamera {
@@ -14,7 +27,7 @@ export class ViewCamera {
   private shakeSeed = 0;
   offset: Vec2 = { x: 0, y: 0 };
   /** Set by cinematics to take manual control. */
-  scripted: { pos: Vec2; zoom: number } | null = null;
+  scripted: Shot | null = null;
   /**
    * The plan, as a map rather than a close-up.
    *

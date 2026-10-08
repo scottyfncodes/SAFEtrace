@@ -54,6 +54,11 @@ export function loadSettings(): Settings {
   }
 }
 
+/** Whether this browser has ever saved settings: a first launch has not. */
+export function settingsSaved(): boolean {
+  try { return localStorage.getItem(KEY) !== null; } catch { return false; }
+}
+
 export function saveSettings(s: Settings): void {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private mode */ }
 }

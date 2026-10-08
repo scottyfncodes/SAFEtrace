@@ -29,8 +29,8 @@ export class Advertisement {
   private t = 0;
   private running = false;
   /**
-   * Seconds since this showing began. The key that dismissed the preferences
-   * card is Enter, and Enter is also a skip key — so the same press that
+   * Seconds since this showing began. The key that rides from the title
+   * is Enter, and Enter is also a skip key — so the same press that
    * started the advertisement used to end it on the next frame, and nobody
    * who used a keyboard ever saw it. A skip only counts once the first shot
    * has had a moment to land.

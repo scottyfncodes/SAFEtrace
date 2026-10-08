@@ -6,7 +6,7 @@
  * already using, radiating outward from the player so the town becomes data
  * around them rather than being covered by it.
  */
-import { type Rect, type Vec2, clamp01, easeInOutCubic, smoothstep } from '../core/math';
+import { type Rect, type Vec2, clamp01, dist, easeInOutCubic, smoothstep } from '../core/math';
 import type { ControlVisual } from '../core/touch';
 import type { Settings } from '../core/settings';
 import { NOISE_REACH, type Sim } from '../sim/sim';
@@ -1225,6 +1225,7 @@ export class Renderer {
       this.drawInteractPrompt(ctx, eye, dt);
       this.drawMatchLock(ctx, eye, dt);
       this.drawBeacon(ctx, eye, 1 - sim.planViewBlend);
+      this.drawTitleWatch(ctx, eye, dt);
     }
     if (sim.planViewBlend <= 0.001) {
       if (this.controlVisual) {
@@ -1791,6 +1792,102 @@ export class Renderer {
    * is gone in under eight seconds. Nothing about it is dramatic; the system
    * is simply sure.
    */
+  /**
+   * The title screen, seen the way the town sees it: the nearest cameras'
+   * real cones swept across the street, and a bracket that has already found
+   * the kid. Every cone is a sensor's own position, facing and range, read
+   * live, so the sweep on the title is the sweep in the game.
+   */
+  titleWatch: { lines: [string, string] } | null = null;
+  private titleT = 0;
+
+  private drawTitleWatch(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
+    const tw = this.titleWatch;
+    if (!tw) { this.titleT = 0; return; }
+    this.titleT += dt;
+    const sim = this.sim;
+    const p = sim.player.pos;
+    const reduce = this.settings.reduceMotion;
+    const cyan = this.settings.colourSafeMachine ? '#7FD3FF' : TECH.cyan;
+    // The nearest cameras that are actually in the picture.
+    const onScreen = (q: { x: number; y: number } | null) => !!q && q.x > -40 && q.x < this.w + 40 && q.y > -40 && q.y < this.h + 40;
+    const near = sim.sensors
+      .filter((c) => c.state !== 'OFFLINE' && c.data.kind !== 'reader' && dist(c.data.pos, p) < 120)
+      .map((c) => ({ c, apex: this.perspective.screenOf(eye, c.data.pos, c.data.height, this.w, this.h) }))
+      .filter((v) => onScreen(v.apex))
+      .sort((a, b) => dist(a.c.data.pos, p) - dist(b.c.data.pos, p))
+      .slice(0, 3);
+    ctx.save();
+    for (const { c, apex } of near) {
+      if (!apex) continue;
+      const reach = Math.min(c.data.range, 26);
+      const edge: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i <= 8; i++) {
+        const a = c.facing - c.data.fov / 2 + (c.data.fov * i) / 8;
+        const q = this.perspective.screenOf(eye, { x: c.data.pos.x + Math.cos(a) * reach, y: c.data.pos.y + Math.sin(a) * reach }, 0, this.w, this.h);
+        if (q) edge.push(q);
+      }
+      if (edge.length < 2) continue;
+      const g = ctx.createLinearGradient(apex.x, apex.y, edge[edge.length >> 1].x, edge[edge.length >> 1].y);
+      g.addColorStop(0, alpha(cyan, 0.22));
+      g.addColorStop(1, alpha(cyan, 0.02));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(apex.x, apex.y);
+      for (const q of edge) ctx.lineTo(q.x, q.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = alpha(cyan, 0.4);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(edge[0].x, edge[0].y); ctx.lineTo(apex.x, apex.y); ctx.lineTo(edge[edge.length - 1].x, edge[edge.length - 1].y);
+      ctx.stroke();
+      ctx.fillStyle = alpha(cyan, 0.95);
+      ctx.fillRect(apex.x - 2, apex.y - 2, 4, 4);
+    }
+
+    // The bracket: closes on the kid, then breathes as the lock holds.
+    const foot = this.perspective.screenOf(eye, p, 0, this.w, this.h);
+    const head = this.perspective.screenOf(eye, p, 1.9, this.w, this.h);
+    if (foot && head) {
+      const lock = reduce ? 1 : smoothstep(clamp01((this.titleT - 0.6) / 0.45));
+      const breathe = reduce ? 0 : Math.sin(this.titleT * 2.2) * 0.04;
+      const cx = (foot.x + head.x) / 2, cy = (foot.y + head.y) / 2;
+      const half = Math.max(22, Math.abs(foot.y - head.y) * 0.8) * (1 + (1 - lock) * 0.9 + breathe);
+      const arm = Math.max(8, half * 0.36);
+      const a = reduce ? 1 : clamp01((this.titleT - 0.5) / 0.2);
+      ctx.strokeStyle = alpha(TECH.acid, 0.95 * a);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as Array<[number, number]>) {
+        const x = cx + sx * half, y = cy + sy * half;
+        ctx.moveTo(x, y - sy * arm); ctx.lineTo(x, y); ctx.lineTo(x - sx * arm, y);
+      }
+      ctx.stroke();
+      if (lock >= 1) {
+        const t = this.titleT - 1.05;
+        const reveal = (text: string, from: number) => text.slice(0, reduce ? text.length : Math.max(0, Math.floor((t - from) * 40)));
+        const [l1, l2] = tw.lines;
+        ctx.font = '600 11px "IBM Plex Mono", ui-monospace, Menlo, monospace';
+        const wid = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width) + 16;
+        const right = cx + half + 10 + wid < this.w - 12;
+        const bx = right ? cx + half + 10 : Math.max(12, cx - half - 10 - wid);
+        const by = cy - half;
+        ctx.fillStyle = alpha('#0A1016', 0.86 * a);
+        ctx.fillRect(bx, by, wid, 36);
+        ctx.fillStyle = alpha(TECH.acid, 0.95 * a);
+        ctx.fillRect(right ? bx : bx + wid - 2, by, 2, 36);
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = alpha('#EEF3F6', 0.95 * a);
+        ctx.fillText(reveal(l1, 0), bx + 8, by + 11);
+        ctx.fillStyle = alpha(TECH.acid, a);
+        ctx.fillText(reveal(l2, l1.length / 40 + 0.15), bx + 8, by + 25);
+      }
+    }
+    ctx.restore();
+  }
+
   private drawMatchLock(ctx: CanvasRenderingContext2D, eye: CamState, dt: number): void {
     const m = this.matchLock;
     if (!m) return;

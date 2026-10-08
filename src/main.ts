@@ -14,7 +14,7 @@ import { draftPlan } from './sim/recon';
 import { InputManager, emptyIntent, mergeIntent, type Intent } from './core/input';
 import { TouchAdapter, TouchEngine, isTouchPrimary } from './core/touch';
 import { Loop } from './core/loop';
-import { loadSettings, saveSettings, type Settings } from './core/settings';
+import { loadSettings, saveSettings, settingsSaved, type Settings } from './core/settings';
 import { buildBellhaven } from './content/bellhaven';
 import { validateWorld } from './sim/world';
 import { Sim } from './sim/sim';
@@ -37,7 +37,8 @@ import {
 import type { EndingId } from './content/case';
 import type { StorySnapshot } from './content/story';
 import { JOBS } from './content/jobs';
-import { FRAME, JOB, RECON_COPY } from './content/copy';
+import { FRAME, JOB, RECON_COPY, TITLE } from './content/copy';
+import { ICON } from './ui/icons';
 import { JobRun } from './sim/jobs/run';
 import { applyCondition, camerasDown, conditionFor, dayIndex, type Condition } from './sim/jobs/conditions';
 import type { JobDef } from './sim/jobs/types';
@@ -61,7 +62,7 @@ const MOUSE_PITCH = 0.0021;
 /** How close the player must be to reach into a node, in metres. */
 const NODE_REACH = 16;
 
-type Phase = 'prefs' | 'ad' | 'play' | 'reprise';
+type Phase = 'title' | 'ad' | 'play' | 'reprise';
 
 /** Set once this browser has thrown a stone: the sling lesson never shows again. */
 const SLING_TAUGHT_KEY = 'underwatch.slingTaught.v1';
@@ -85,7 +86,7 @@ class Game {
   private lookTargetPitch = 0.06;
   private loop: Loop;
   private touchPrimary = isTouchPrimary();
-  private phase: Phase = 'prefs';
+  private phase: Phase = 'title';
   private intent: Intent = emptyIntent();
   private verbKeys = new Map<string, number>();
   private notebook: Notebook;
@@ -266,7 +267,7 @@ class Game {
 
     this.bindPersistence();
     document.getElementById('boot')?.remove();
-    this.showPrefs();
+    this.showTitle();
   }
 
   // ------------------------------------------------------------- the plan
@@ -708,51 +709,112 @@ class Game {
   // ------------------------------------------------------------------ startup
 
   /**
-   * Not a game menu: a device-level accessibility prompt, dismissed in one
-   * keypress. It exists because the sequence about to run is exactly the one
-   * these options are for.
+   * The title is the town. The renderer is already running on the real
+   * Bellhaven, framed close on the kid, with the nearest cameras' cones
+   * sweeping and a bracket that has found them before the player has done
+   * anything at all. Over it: the name, one line, and the verb.
+   *
+   * The accessibility options used to be this screen. They are now one
+   * labelled control on it — and they still take effect before anything they
+   * protect runs: the advertisement only starts from here, and a system set
+   * to reduce motion is honoured on a first launch without being asked.
    */
-  private showPrefs(): void {
-    document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
+  private showTitle(): void {
+    if (!settingsSaved() && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      this.settings.reduceMotion = true;
+      this.settings.transitionIntensity = 0.25;
+    }
+    const first = !settingsSaved();
+    this.applyLook();
     const saved = loadAfternoon();
+
+    // A portrait of the kid where the advertisement's last shot ends.
+    const p = this.sim.player.pos;
+    this.renderer.cam.scripted = {
+      pos: { x: p.x, y: p.y }, zoom: 12,
+      close: this.touchPrimary || window.innerWidth < window.innerHeight
+        ? { dist: 9.5, height: 3.6, lead: 3.4 }
+        : { dist: 16, height: 4.4, lead: 1.2 },
+      still: this.settings.reduceMotion,
+    };
+    this.renderer.titleWatch = { lines: TITLE.lock(this.sim.playerSubject.displayName) };
+    this.hud.setVisible(false);
+    this.loop.start();
+
     const el = document.createElement('div');
-    el.id = 'prefs';
+    el.id = 'title';
     el.innerHTML = `
-      <div class="card" role="dialog" aria-modal="true" aria-labelledby="pref-title">
-        <div class="st-title" aria-label="UNDERWATCH"><div><b>UNDER</b><span>WATCH</span></div></div>
-        <div class="sys-line" aria-hidden="true"><i></i>${FRAME.ready} · BELLHAVEN</div>
-        <h2 id="pref-title">Before you begin</h2>
-        <p class="muted">These can be changed at any time.</p>
+      <div class="t-scan" aria-hidden="true"></div>
+      <div class="t-frame" aria-hidden="true"></div>
+      <header class="t-top">
+        <h1 class="st-title" aria-label="UNDERWATCH"><div><b>UNDER</b><span>WATCH</span></div></h1>
+        <div class="t-rec" aria-hidden="true"><i></i>${FRAME.rec}</div>
+      </header>
+      <div class="sys-line t-sys" aria-hidden="true"><i></i>${FRAME.ready} · BELLHAVEN</div>
+      <div class="t-foot">
+        <p class="t-premise">${TITLE.premise.map((l) => `<span>${l}</span>`).join(' ')}</p>
+        <button type="button" class="t-ride" id="title-ride">${TITLE.ride}<small>Jobs · ${TITLE.rideSub}</small></button>
+        ${saved
+          ? `<button type="button" class="t-quiet" id="title-continue">${TITLE.continue}<small>${saved.label}</small></button>
+             <div class="t-row"><button type="button" class="t-link" id="title-story">${TITLE.restart}</button></div>`
+          : `<button type="button" class="t-quiet" id="title-story">${TITLE.story}<small>${TITLE.storySub}</small></button>`}
+        <div class="t-row">
+          <button type="button" class="t-access" id="title-access" aria-haspopup="dialog" aria-expanded="false">
+            ${ICON.sliders}<span>${TITLE.access}</span>${first ? `<em>· ${TITLE.accessHint}</em>` : ''}
+          </button>
+          ${this.touchPrimary ? '' : '<span class="t-key"><kbd>Enter</kbd> to ride</span>'}
+        </div>
+      </div>
+      <div class="t-sheet" role="dialog" aria-modal="true" aria-labelledby="title-access-h" hidden>
+        <h2 id="title-access-h">${TITLE.accessTitle}</h2>
         <div class="settings-group">
           <label class="setting"><span class="s-label">Reduce motion and flashing</span><input class="switch" type="checkbox" role="switch" id="pref-motion"></label>
           <label class="setting"><span class="s-label">Colour-blind safe palette</span><input class="switch" type="checkbox" role="switch" id="pref-colour"></label>
           <label class="setting"><span class="s-label">Larger text</span><input class="switch" type="checkbox" role="switch" id="pref-text"></label>
         </div>
-        <div class="actions modes">
-          <button type="button" class="go mode-jobs" id="pref-jobs">Jobs<small>Skate the city. Stay off the grid.</small></button>
-        ${saved
-          ? `<button type="button" class="go quiet" id="pref-continue">Continue the afternoon<small>${saved.label}</small></button>
-             <button type="button" class="go quiet" id="pref-go">Start a new afternoon<small>The story</small></button>`
-          : '<button type="button" class="go quiet" id="pref-go">The afternoon<small>The story</small></button>'}
-        </div>
-        ${this.touchPrimary ? '' : '<div class="keyhint"><kbd>Enter</kbd> for jobs</div>'}
+        <p class="muted">${TITLE.accessNote}</p>
+        <button type="button" class="t-quiet" id="title-access-done">Done</button>
       </div>`;
     document.body.appendChild(el);
-    (el.querySelector('#pref-motion') as HTMLInputElement).checked = this.settings.reduceMotion;
-    (el.querySelector('#pref-colour') as HTMLInputElement).checked = this.settings.colourSafeMachine;
-    (el.querySelector('#pref-text') as HTMLInputElement).checked = this.settings.textScale > 1;
+    const $ = <T extends HTMLElement>(sel: string) => el.querySelector(sel) as T;
+    const motion = $<HTMLInputElement>('#pref-motion');
+    const colour = $<HTMLInputElement>('#pref-colour');
+    const text = $<HTMLInputElement>('#pref-text');
+    motion.checked = this.settings.reduceMotion;
+    colour.checked = this.settings.colourSafeMachine;
+    text.checked = this.settings.textScale > 1;
+
+    // A switch takes effect the moment it is flipped, so the title itself
+    // shows what it changed; it is written down when the player rides.
+    const read = () => {
+      this.settings.reduceMotion = motion.checked;
+      this.settings.transitionIntensity = this.settings.reduceMotion ? 0.25 : 1;
+      this.settings.colourSafeMachine = colour.checked;
+      this.settings.textScale = text.checked ? 1.2 : 1;
+      if (this.renderer.cam.scripted) this.renderer.cam.scripted.still = this.settings.reduceMotion;
+      this.applyLook();
+      saveSettings(this.settings);
+    };
+    for (const box of [motion, colour, text]) box.addEventListener('change', read);
+
+    const sheet = $<HTMLElement>('.t-sheet');
+    const access = $<HTMLButtonElement>('#title-access');
+    const showSheet = (open: boolean) => {
+      sheet.hidden = !open;
+      el.classList.toggle('sheet-open', open);
+      access.setAttribute('aria-expanded', String(open));
+      if (open) motion.focus(); else access.focus();
+    };
+    access.addEventListener('click', () => showSheet(true));
+    $('#title-access-done').addEventListener('click', () => showSheet(false));
 
     let gone = false;
     const go = (resume: boolean | 'jobs') => {
       if (gone) return;
       gone = true;
-      this.settings.reduceMotion = (el.querySelector('#pref-motion') as HTMLInputElement).checked;
-      this.settings.transitionIntensity = this.settings.reduceMotion ? 0.25 : 1;
-      this.settings.colourSafeMachine = (el.querySelector('#pref-colour') as HTMLInputElement).checked;
-      this.settings.textScale = (el.querySelector('#pref-text') as HTMLInputElement).checked ? 1.2 : 1;
-      document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
-      document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
+      window.removeEventListener('keydown', onKey);
       saveSettings(this.settings);
+      this.renderer.titleWatch = null;
       el.classList.add('hidden');
       window.setTimeout(() => el.remove(), 520);
       this.audio.start();
@@ -766,18 +828,26 @@ class Game {
       }
     };
 
-    el.querySelector('#pref-go')!.addEventListener('click', () => go(false));
-    el.querySelector('#pref-jobs')!.addEventListener('click', () => go('jobs'));
-    el.querySelector('#pref-continue')?.addEventListener('click', () => go(true));
-    window.addEventListener('keydown', function once(e) {
+    $('#title-ride').addEventListener('click', () => go('jobs'));
+    $('#title-story').addEventListener('click', () => go(false));
+    el.querySelector('#title-continue')?.addEventListener('click', () => go(true));
+    const onKey = (e: KeyboardEvent) => {
+      if (!sheet.hidden) {
+        if (e.code === 'Escape') showSheet(false);
+        return;
+      }
       // A focused button answers for itself: Enter on "Start a new afternoon"
       // must start a new one, not take the shortcut's default.
-      if ((e.target as HTMLElement | null)?.closest?.('#prefs button')) return;
-      if (e.code === 'Enter' || e.code === 'Space') {
-        window.removeEventListener('keydown', once);
-        go('jobs');
-      }
-    });
+      if ((e.target as HTMLElement | null)?.closest?.('#title button, #title input')) return;
+      if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); go('jobs'); }
+    };
+    window.addEventListener('keydown', onKey);
+  }
+
+  /** The three look-and-feel settings, on the document. */
+  private applyLook(): void {
+    document.documentElement.style.setProperty('--text-scale', String(this.settings.textScale));
+    document.documentElement.classList.toggle('reduce-motion', this.settings.reduceMotion);
   }
 
   /**
@@ -1098,10 +1168,11 @@ class Game {
     this.intent = mergeIntent(this.input.sample(), this.touch.sample());
     const tap = this.touch.takeTap();
 
-    if (this.phase === 'ad' || this.phase === 'reprise') {
+    if (this.phase === 'title' || this.phase === 'ad' || this.phase === 'reprise') {
       // A tap anywhere skips, the same as Escape. The world keeps running
-      // underneath the advertisement, because it is the same world.
-      if (this.intent.skip) this.ad.skip();
+      // underneath the advertisement, because it is the same world — and
+      // under the title, which is the same town at rest.
+      if (this.intent.skip && this.phase !== 'title') this.ad.skip();
       this.sim.step(dt, emptyIntent(), null);
       return;
     }
@@ -1369,8 +1440,8 @@ class Game {
   }
 
   private render(dt: number): void {
-    const showing = this.phase === 'ad' || this.phase === 'reprise';
-    if (showing) this.ad.update(dt);
+    const showing = this.phase === 'title' || this.phase === 'ad' || this.phase === 'reprise';
+    if (this.phase !== 'title' && showing) this.ad.update(dt);
     // The advertisement is an advertisement: no thumbs, no prompts, no pin
     // on it. The controls are for the street, and appear with it.
     this.renderer.controlVisual = !showing && (this.touchPrimary || this.touch.engaged) ? this.touch.visual : null;

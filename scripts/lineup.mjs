@@ -32,7 +32,7 @@ for (const vp of [{ name: 'phone', width: 390, height: 844, scale: 2 }, { name: 
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('pageerror', e.message));
   await page.goto(url);
-  await page.click('#pref-go');
+  await page.click('#title-story');
   await page.waitForTimeout(600);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__underwatch?.phase === 'play', null, { timeout: 60000 });

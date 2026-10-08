@@ -38,8 +38,12 @@ nobody. Five endings are read off what you did and what you worked out.
 
 ## Jobs
 
-The title screen offers **Jobs** first: the same town with the story left
-out. Pick a job from the board, read one line, and skate. Each job is a place
+The title screen is the town itself: the kid on Maple Court, the nearest
+cameras sweeping, and a bracket that has already found them. **Ride** is
+jobs: the same town with the story left out; the afternoon (or a saved one
+to continue) sits under it. Accessibility options are one labelled control
+on the title and in the pause menu, and a system set to reduce motion is
+honoured on a first launch. Pick a job from the board, read one line, and skate. Each job is a place
 to be and whatever is watching on the way, never a route. Being seen does not
 fail a job. Your exposure climbs from UNSEEN through SPOTTED and TRACKED to
 UNDERWATCH, drones come to where you were last seen, and you skate out of it

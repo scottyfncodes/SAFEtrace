@@ -251,11 +251,6 @@
 .reduce-motion #job-callout.show, .reduce-motion #job-move.show { animation-duration: 1.2s; }
 .reduce-motion #job-hud.lvl-underwatch { animation: none; }
 
-/* Title: two ways in. */
-#prefs .modes { display: flex; flex-direction: column; gap: 8px; }
-#prefs .go.mode-jobs { background: var(--own); border-color: var(--own); color: #17120A; }
-#prefs .go.mode-jobs:hover { background: #FFD884; }
-
 @media (max-width: 640px), (pointer: coarse) {
   /*
    * On a phone the run is a strip, not a panel: two short lines in the dead

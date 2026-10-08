@@ -454,3 +454,24 @@ export const FRAME = {
   /** The frame, while the system is sure of somebody. */
   match: (confidence: number) => `MATCH ${confidence.toFixed(1)}%`,
 };
+
+/**
+ * The title screen. The town is the picture; these are the only words on it.
+ * The verb is the game's own: you ride.
+ */
+export const TITLE = {
+  premise: ['A kid on a skateboard.', 'A town that is already watching.'],
+  ride: 'Ride',
+  rideSub: 'Skate the city. Stay off the grid.',
+  story: 'The afternoon',
+  storySub: 'The story',
+  continue: 'Continue the afternoon',
+  restart: 'Start a new afternoon',
+  /** The bracket's two lines, as the system prints them. */
+  lock: (subject: string): [string, string] => [subject, 'TRACK ACQUIRED'],
+  access: 'Accessibility',
+  /** First launch only: what is behind the control, so nobody has to guess. */
+  accessHint: 'motion, colour, text size',
+  accessTitle: 'Accessibility',
+  accessNote: 'Saved on this device. Also in the pause menu.',
+};
