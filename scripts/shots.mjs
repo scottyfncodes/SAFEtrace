@@ -49,8 +49,8 @@ for (const vp of VIEWPORTS) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error('pageerror', e.message));
   await page.goto(url);
-  await page.waitForSelector('#pref-go');
-  await page.click('#pref-go');
+  await page.waitForSelector('#title-story');
+  await page.click('#title-story');
   await page.waitForTimeout(600);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__underwatch?.phase === 'play', null, { timeout: 60000 }).catch(async () => {

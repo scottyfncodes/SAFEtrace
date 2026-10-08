@@ -186,13 +186,10 @@ html.touch #inspect .verb.node { background: rgba(242, 245, 247, 0.07); }
 #inspect .rec.hold { color: var(--st-warn); }
 #inspect .verb.waiting { opacity: 0.45; }
 
-/* The preferences card is the first thing a thumb touches. */
+/* The title is the first thing a thumb touches. */
 @media (max-width: 820px), (pointer: coarse) {
-  #prefs { padding: calc(24px + var(--safe-top)) calc(20px + var(--safe-right)) calc(24px + var(--safe-bottom)) calc(20px + var(--safe-left)); }
-  #prefs .card { font-size: 14px; }
-  #prefs .st-title { margin-bottom: 32px; }
-  #prefs .setting { min-height: 52px; font-size: 15px; }
-  #prefs .go { min-height: 52px; font-size: 14px; }
+  #title .t-sheet .setting { min-height: 52px; font-size: 15px; }
+  #title .t-access, #title .t-link { min-height: 44px; }
 }
 
 /* The player's own buttons, the conversation card and the overlays, on a phone.

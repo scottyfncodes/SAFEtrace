@@ -727,50 +727,117 @@ html.reduce-motion #inspect.show::after { animation: none; }
 }
 
 /* ====================================================================== */
-/* First run                                                               */
+/* The title                                                               */
 /* ====================================================================== */
-/* Not a game menu: a device-level accessibility prompt, dismissed in one key. */
-#prefs {
-  position: fixed; inset: 0; z-index: 30; display: flex;
-  align-items: center; justify-content: center;
+/* The title is the town: the renderer draws Bellhaven and the kid behind
+   this, and the system's own marks — a scan, four corners, REC — sit on the
+   glass. Nothing here has a background of its own except two fades that
+   keep the words legible over a bright street. */
+#title {
+  position: fixed; inset: 0; z-index: 30;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: calc(22px + var(--safe-top)) calc(22px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(22px + var(--safe-left));
+  color: var(--ink-text); pointer-events: auto;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(var(--st-cyan-ink-rgb), 0.10), transparent 70%),
-    var(--ink-bg);
+    linear-gradient(to bottom, rgba(11, 16, 22, 0.72) 0%, rgba(11, 16, 22, 0) 22%),
+    linear-gradient(to top, rgba(11, 16, 22, 0.94) 0%, rgba(11, 16, 22, 0.7) 26%, rgba(11, 16, 22, 0) 46%);
   transition: opacity 500ms var(--ease);
-  padding: 24px;
 }
-#prefs.hidden { opacity: 0; pointer-events: none; }
-#prefs .card {
-  width: min(440px, 100%); color: var(--ink-text);
-  font-size: var(--fs-small); line-height: 1.6; letter-spacing: 0.01em;
-  padding: 26px 26px 24px;
-  background: var(--brackets), rgba(var(--ink-text-rgb), 0.015);
-  --bk: var(--sys-line);
-  animation: rise 600ms var(--ease) both;
+#title.hidden { opacity: 0; pointer-events: none; }
+#title .t-scan {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+  background: repeating-linear-gradient(to bottom, rgba(var(--sys-rgb), 0.045) 0 1px, transparent 1px 3px);
 }
-#prefs .st-title { margin-bottom: 10px; }
-#prefs .sys-line { display: flex; margin-bottom: 34px; }
-#prefs h2 { font-weight: 300; font-size: var(--fs-h2); margin: 0 0 4px; letter-spacing: -0.005em; line-height: 1.25; }
-#prefs .muted { color: var(--ink-muted); font-size: var(--fs-small); margin: 0 0 18px; }
-#prefs .settings-group { border-top: 1px solid var(--ink-line); border-bottom: 1px solid var(--ink-line); margin-bottom: 28px; }
-#prefs label { pointer-events: auto; }
-#prefs .actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-#prefs .go {
-  pointer-events: auto; cursor: pointer;
+#title .t-scan::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 18%;
+  background: linear-gradient(to bottom, transparent, rgba(var(--sys-rgb), 0.07) 85%, rgba(var(--sys-rgb), 0.22) 100%);
+  animation: t-scan 6.5s linear infinite;
+}
+@keyframes t-scan { from { transform: translateY(-100%); } to { transform: translateY(600%); } }
+#title .t-frame {
+  position: absolute; pointer-events: none;
+  inset: calc(10px + var(--safe-top)) calc(10px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
+  --bk: rgba(var(--sys-rgb), 0.55); --bracket: 22px;
+  background: var(--brackets);
+}
+#title .t-top { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+#title .st-title { margin: 0; font-size: clamp(19px, 2.2vw, 30px); font-weight: inherit; gap: 10px; text-shadow: 0 2px 16px rgba(11, 16, 22, 0.6); }
+#title .t-rec {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 3px;
+  font-family: var(--font-mono); font-size: var(--fs-tech); letter-spacing: var(--track-tech); color: var(--ink-text);
+}
+#title .t-rec i { width: 7px; height: 7px; border-radius: 50%; background: #FF4D3D; box-shadow: 0 0 8px rgba(255, 77, 61, 0.7); animation: t-rec 1.6s steps(1) infinite; }
+@keyframes t-rec { 50% { opacity: 0.25; } }
+#title .t-sys { position: absolute; top: calc(22px + var(--safe-top) + clamp(19px, 2.2vw, 30px) + 22px); left: calc(22px + var(--safe-left)); }
+#title .t-foot { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: min(440px, 100%); }
+#title .t-premise {
+  margin: 0 0 8px; font-size: clamp(19px, 1.7vw, 24px); font-weight: 300; line-height: 1.3; letter-spacing: -0.005em;
+  color: #FFF; text-shadow: 0 2px 18px rgba(11, 16, 22, 0.7);
+}
+#title .t-premise span { display: block; }
+#title button { font: inherit; cursor: pointer; }
+#title .t-ride, #title .t-quiet {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  min-height: 50px; padding: 9px 22px; border-radius: var(--r-sm);
-  clip-path: var(--clip-btn);
-  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-  background: var(--ink-text); color: var(--ink-surface); border: 1px solid var(--ink-text);
+  border-radius: var(--r-sm); clip-path: var(--clip-btn);
+  text-transform: uppercase; font-weight: 600;
   transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
-#prefs .go:hover { background: #FFF; }
-#prefs .go:active { transform: translateY(1px); }
-#prefs .go:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--focus); }
-#prefs .go small { display: block; font-size: 11px; font-weight: 400; letter-spacing: 0.02em; text-transform: none; opacity: 0.68; margin-top: 3px; }
-#prefs .go.quiet { background: transparent; color: var(--ink-text-2); border-color: var(--ink-line-strong); font-weight: 500; }
-#prefs .go.quiet:hover { color: var(--ink-text); border-color: var(--sys-line); background: var(--sys-wash); }
-#prefs .keyhint { margin-top: 14px; text-align: center; font-size: var(--fs-meta); color: var(--ink-muted); }
+#title .t-ride {
+  min-height: 76px; padding: 10px 22px; font-size: 26px; letter-spacing: 0.22em;
+  background: var(--own); color: #17120A; border: 1px solid var(--own);
+  box-shadow: 0 10px 36px rgba(var(--own-rgb), 0.22);
+}
+#title .t-ride:hover { background: #FFD884; }
+#title .t-ride:active, #title .t-quiet:active { transform: translateY(1px); }
+#title .t-ride small, #title .t-quiet small {
+  display: block; margin-top: 4px; font-size: 11.5px; font-weight: 500; letter-spacing: 0.02em; text-transform: none; opacity: 0.72;
+}
+#title .t-quiet {
+  min-height: 52px; padding: 8px 22px; font-size: 12.5px; letter-spacing: 0.1em;
+  background: rgba(11, 16, 22, 0.55); color: var(--ink-text); border: 1px solid var(--ink-line-strong);
+}
+#title .t-quiet:hover { border-color: var(--sys-line); background: rgba(var(--sys-rgb), 0.1); }
+#title :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#title .t-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; }
+#title .t-link, #title .t-access {
+  background: none; border: 0; padding: 8px 2px; color: var(--ink-text-2); font-size: var(--fs-small);
+}
+#title .t-link { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--ink-line-strong); }
+#title .t-access { display: inline-flex; align-items: center; gap: 7px; }
+#title .t-access em { font-style: normal; color: var(--ink-muted); }
+#title .t-link:hover, #title .t-access:hover { color: var(--ink-text); }
+#title .t-key { font-size: var(--fs-meta); color: var(--ink-muted); }
+#title.sheet-open .t-foot { visibility: hidden; }
+#title .t-sheet {
+  position: absolute; z-index: 2; left: calc(22px + var(--safe-left)); bottom: calc(20px + var(--safe-bottom));
+  width: min(440px, calc(100% - 44px - var(--safe-left) - var(--safe-right)));
+  padding: 20px 20px 18px; font-size: var(--fs-small); line-height: 1.5;
+  background: var(--brackets), rgba(11, 16, 22, 0.94); --bk: var(--sys-line);
+  animation: rise 400ms var(--ease) both;
+}
+#title .t-sheet[hidden] { display: none; }
+#title .t-sheet h2 { margin: 0 0 10px; font-size: var(--fs-h2); font-weight: 300; }
+#title .t-sheet .settings-group { border-top: 1px solid var(--ink-line); border-bottom: 1px solid var(--ink-line); }
+#title .t-sheet .muted { color: var(--ink-muted); margin: 12px 0 14px; }
+#title .t-sheet .t-quiet { width: 100%; }
+/* The scan and the light are the only things that travel; with motion
+   reduced they stop outright, rather than flicker at the 1ms the global
+   rule below would give an infinite animation. */
+html.reduce-motion #title .t-scan::after { animation: none !important; display: none; }
+html.reduce-motion #title .t-rec i { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  #title .t-scan::after { animation: none !important; display: none; }
+  #title .t-rec i { animation: none !important; }
+}
+/* A wide screen: the words keep to the lower left, the kid keeps the middle. */
+@media (min-width: 821px) and (pointer: fine) {
+  #title { padding-left: calc(6vw + var(--safe-left)); padding-bottom: calc(7vh + var(--safe-bottom)); }
+  #title .t-sys { left: calc(6vw + var(--safe-left)); }
+  #title .t-sheet { left: calc(6vw + var(--safe-left)); bottom: calc(7vh + var(--safe-bottom)); }
+  #title { background:
+    linear-gradient(to bottom, rgba(11, 16, 22, 0.6) 0%, rgba(11, 16, 22, 0) 20%),
+    linear-gradient(to top, rgba(11, 16, 22, 0.88) 0%, rgba(11, 16, 22, 0.4) 30%, rgba(11, 16, 22, 0) 50%); }
+}
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 /* --------------------------------------------------------------------- misc */

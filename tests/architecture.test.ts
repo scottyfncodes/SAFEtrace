@@ -110,13 +110,13 @@ describe('architecture', () => {
     for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selector = m[1].trim().replace(/\s+/g, ' ');
       if (!/pointer-events:\s*auto/.test(m[2])) continue;
-      // The advertisement, the preferences card, the notebook, the pause menu
+      // The advertisement, the title, the notebook, the pause menu
       // and the ending are full-screen modals that deliberately take every
       // touch while they are up; verb chips, answer chips and the two
       // buttons under the phone are controls. Nothing else may — and the
       // buttons and the conversation card are placed clear of the thumbs by
       // the geometry test below.
-      if (/^#ad\b|^#prefs\b|^#notebook\b|^#menu\b|^#ending\b|\.go\b|\.verb\b|\.choice\b|\.hud-button\b|^#talk\.show\b/.test(selector)) continue;
+      if (/^#ad\b|^#title\b|^#notebook\b|^#menu\b|^#ending\b|\.go\b|\.verb\b|\.choice\b|\.hud-button\b|^#talk\.show\b/.test(selector)) continue;
       offenders.push(selector);
     }
     expect(offenders).toEqual([]);

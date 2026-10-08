@@ -40,6 +40,8 @@ export const ICON = {
   person: WRAP('<circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>'),
   /** Sector: a quarter of the grid. */
   grid: WRAP('<path d="M2.5 2.5h11v11h-11zM8 2.5v11M2.5 8h11"/>'),
+  /** Two sliders: settings the player sets for themselves. */
+  sliders: WRAP('<path d="M2 4.5h2M7.5 4.5H14M2 11.5h6.5M12 11.5h2"/><circle cx="5.75" cy="4.5" r="1.75"/><circle cx="10.25" cy="11.5" r="1.75"/>'),
   /** Close. */
   close: WRAP('<path d="M4 4l8 8M12 4l-8 8"/>'),
 };
